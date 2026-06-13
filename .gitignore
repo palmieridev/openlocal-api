@@ -1,0 +1,19 @@
+.env
+.env.*
+!.env.example
+
+/bin/
+/tmp/
+/dist/
+/coverage.out
+
+*.log
+
+
+# Go build artifacts
+go.sum
+
+# AI
+.agents/
+skills-lock.json
+AGENTS.md
