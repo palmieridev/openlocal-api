@@ -20,4 +20,3 @@ sqlc generate
 go test ./...
 go run ./cmd/api
 ```
-

@@ -1,0 +1,167 @@
+openapi: 3.1.0
+info:
+  title: Openlocal API
+  version: 0.1.0
+  description: API for Openlocal local commerce inventory, storefronts, marketplace discovery, and analytics.
+servers:
+  - url: http://localhost:8080
+security:
+  - clerkBearer: []
+components:
+  securitySchemes:
+    clerkBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+paths:
+  /healthz:
+    get:
+      security: []
+      responses:
+        "200":
+          description: Service health.
+  /api/v1/me:
+    get:
+      responses:
+        "200":
+          description: Current local user projection.
+        "401":
+          description: Missing or invalid Clerk token.
+  /api/v1/businesses:
+    post:
+      responses:
+        "201":
+          description: Business created for active Clerk organization.
+        "403":
+          description: Active Clerk organization is required.
+  /api/v1/businesses/{id}:
+    get:
+      responses:
+        "200":
+          description: Private business profile for an authorized member.
+    patch:
+      responses:
+        "200":
+          description: Updated private business profile.
+  /api/v1/products:
+    get:
+      parameters:
+        - name: business_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Private product list.
+    post:
+      responses:
+        "201":
+          description: Product created.
+  /api/v1/products/{id}:
+    get:
+      responses:
+        "200":
+          description: Private product.
+    patch:
+      responses:
+        "200":
+          description: Product updated.
+    delete:
+      responses:
+        "204":
+          description: Product archived.
+  /api/v1/variants:
+    post:
+      responses:
+        "201":
+          description: Variant created.
+  /api/v1/variants/{id}:
+    get:
+      responses:
+        "200":
+          description: Private variant, including cost for authorized users.
+    patch:
+      responses:
+        "200":
+          description: Variant updated.
+    delete:
+      responses:
+        "204":
+          description: Variant archived.
+  /api/v1/variants/by-barcode/{barcode}:
+    get:
+      responses:
+        "200":
+          description: Business-scoped barcode lookup.
+  /api/v1/variants/by-sku/{sku}:
+    get:
+      responses:
+        "200":
+          description: Business-scoped SKU lookup.
+  /api/v1/inventory/movements:
+    get:
+      responses:
+        "200":
+          description: Private movement ledger.
+    post:
+      responses:
+        "201":
+          description: Movement inserted and stock level updated transactionally.
+  /api/v1/inventory/stock-levels:
+    get:
+      responses:
+        "200":
+          description: Private stock levels.
+  /api/v1/analytics/abc:
+    get:
+      responses:
+        "200":
+          description: ABC classification.
+  /api/v1/analytics/pareto:
+    get:
+      responses:
+        "200":
+          description: Pareto data from the ABC calculation.
+  /api/v1/analytics/eoq:
+    get:
+      responses:
+        "200":
+          description: EOQ recommendation from demand and manual cost assumptions.
+  /api/v1/analytics/low-stock:
+    get:
+      responses:
+        "200":
+          description: Low-stock variants.
+  /api/v1/public/businesses/{slug}:
+    get:
+      security: []
+      responses:
+        "200":
+          description: Public business profile.
+  /api/v1/public/businesses/{slug}/products:
+    get:
+      security: []
+      responses:
+        "200":
+          description: Public products without private cost or stock data.
+  /api/v1/marketplace/search:
+    get:
+      security: []
+      responses:
+        "200":
+          description: Public marketplace product search.
+  /api/v1/marketplace/businesses:
+    get:
+      security: []
+      responses:
+        "200":
+          description: Public marketplace business search.
+  /api/v1/marketplace/products:
+    get:
+      security: []
+      responses:
+        "200":
+          description: Public marketplace product search.
+
