@@ -14,7 +14,7 @@ Openlocal API is a Go/Fiber/PostgreSQL backend for local commerce: business prof
 ## Local Setup
 
 ```sh
-docker compose up -d postgres
+make db-up
 migrate -path db/migrations -database "$DATABASE_URL" up
 sqlc generate
 go test ./...
