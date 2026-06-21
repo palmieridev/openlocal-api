@@ -1,4 +1,4 @@
-package server
+package catalog
 
 import (
 	"encoding/json"
@@ -25,7 +25,7 @@ func TestPublicVariantDTOExcludesPrivateFields(t *testing.T) {
 		ReorderPoint:      decimal.NewFromInt(5),
 		Status:            "active",
 	}
-	body, err := json.Marshal(mapVariant(variant, false))
+	body, err := json.Marshal(MapVariant(variant, false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,15 +37,5 @@ func TestPublicVariantDTOExcludesPrivateFields(t *testing.T) {
 		if _, ok := payload[forbidden]; ok {
 			t.Fatalf("public DTO exposed %s: %s", forbidden, string(body))
 		}
-	}
-}
-
-func TestSignedQuantity(t *testing.T) {
-	qty := decimal.NewFromInt(3)
-	if got := signedQuantity("IN_PURCHASE", qty); !got.Equal(qty) {
-		t.Fatalf("expected positive in movement, got %s", got)
-	}
-	if got := signedQuantity("OUT_SALE", qty); !got.Equal(qty.Neg()) {
-		t.Fatalf("expected negative out movement, got %s", got)
 	}
 }
