@@ -50,6 +50,22 @@ func (q *Queries) AddBusinessMember(ctx context.Context, arg AddBusinessMemberPa
 	return i, err
 }
 
+const archiveBusinessesByClerkOrgID = `-- name: ArchiveBusinessesByClerkOrgID :exec
+UPDATE businesses
+SET status = 'archived',
+    updated_at = now()
+WHERE id IN (
+    SELECT business_id
+    FROM business_members
+    WHERE clerk_org_id = $1
+)
+`
+
+func (q *Queries) ArchiveBusinessesByClerkOrgID(ctx context.Context, clerkOrgID string) error {
+	_, err := q.db.Exec(ctx, archiveBusinessesByClerkOrgID, clerkOrgID)
+	return err
+}
+
 const createBusiness = `-- name: CreateBusiness :one
 INSERT INTO businesses (
     name, slug, description, business_type, phone, whatsapp, email, website,
@@ -139,6 +155,21 @@ func (q *Queries) CreateBusiness(ctx context.Context, arg CreateBusinessParams) 
 	return i, err
 }
 
+const deleteBusinessMemberByClerkOrgAndUser = `-- name: DeleteBusinessMemberByClerkOrgAndUser :exec
+DELETE FROM business_members
+WHERE clerk_org_id = $1 AND user_id = $2
+`
+
+type DeleteBusinessMemberByClerkOrgAndUserParams struct {
+	ClerkOrgID string    `json:"clerk_org_id"`
+	UserID     uuid.UUID `json:"user_id"`
+}
+
+func (q *Queries) DeleteBusinessMemberByClerkOrgAndUser(ctx context.Context, arg DeleteBusinessMemberByClerkOrgAndUserParams) error {
+	_, err := q.db.Exec(ctx, deleteBusinessMemberByClerkOrgAndUser, arg.ClerkOrgID, arg.UserID)
+	return err
+}
+
 const getBusinessForMember = `-- name: GetBusinessForMember :one
 SELECT b.id, b.name, b.slug, b.description, b.business_type, b.phone, b.whatsapp, b.email, b.website, b.logo_url, b.cover_image_url, b.status, b.address, b.neighborhood, b.city, b.state, b.country, b.postal_code, b.latitude, b.longitude, b.pickup_available, b.delivery_available, b.created_at, b.updated_at
 FROM businesses b
@@ -181,6 +212,20 @@ func (q *Queries) GetBusinessForMember(ctx context.Context, arg GetBusinessForMe
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getBusinessIDByClerkOrgID = `-- name: GetBusinessIDByClerkOrgID :one
+SELECT business_id
+FROM business_members
+WHERE clerk_org_id = $1
+LIMIT 1
+`
+
+func (q *Queries) GetBusinessIDByClerkOrgID(ctx context.Context, clerkOrgID string) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getBusinessIDByClerkOrgID, clerkOrgID)
+	var business_id uuid.UUID
+	err := row.Scan(&business_id)
+	return business_id, err
 }
 
 const getBusinessMemberRole = `-- name: GetBusinessMemberRole :one

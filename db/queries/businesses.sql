@@ -50,6 +50,12 @@ SELECT role
 FROM business_members
 WHERE business_id = $1 AND user_id = $2 AND clerk_org_id = $3;
 
+-- name: GetBusinessIDByClerkOrgID :one
+SELECT business_id
+FROM business_members
+WHERE clerk_org_id = $1
+LIMIT 1;
+
 -- name: AddBusinessMember :one
 INSERT INTO business_members (business_id, user_id, clerk_org_id, role)
 VALUES ($1, $2, $3, $4)
@@ -58,6 +64,20 @@ ON CONFLICT (business_id, user_id) DO UPDATE SET
     role = EXCLUDED.role,
     updated_at = now()
 RETURNING *;
+
+-- name: DeleteBusinessMemberByClerkOrgAndUser :exec
+DELETE FROM business_members
+WHERE clerk_org_id = $1 AND user_id = $2;
+
+-- name: ArchiveBusinessesByClerkOrgID :exec
+UPDATE businesses
+SET status = 'archived',
+    updated_at = now()
+WHERE id IN (
+    SELECT business_id
+    FROM business_members
+    WHERE clerk_org_id = $1
+);
 
 -- name: ListPublicBusinesses :many
 SELECT id, name, slug, description, business_type, logo_url, cover_image_url,

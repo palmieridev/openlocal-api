@@ -16,6 +16,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/palmieridev/openlocal-api/internal/auth"
+	"github.com/palmieridev/openlocal-api/internal/clerk"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	v "github.com/palmieridev/openlocal-api/internal/platform/validator"
 )
@@ -24,14 +25,15 @@ type Runtime struct {
 	Logger *slog.Logger
 	Pool   *pgxpool.Pool
 	Q      *db.Queries
+	Clerk  clerk.OrganizationClient
 }
 
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-func NewRuntime(logger *slog.Logger, pool *pgxpool.Pool) Runtime {
-	rt := Runtime{Logger: logger, Pool: pool}
+func NewRuntime(logger *slog.Logger, pool *pgxpool.Pool, clerkClient clerk.OrganizationClient) Runtime {
+	rt := Runtime{Logger: logger, Pool: pool, Clerk: clerkClient}
 	if pool != nil {
 		rt.Q = db.New(pool)
 	}

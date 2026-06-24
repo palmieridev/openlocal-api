@@ -3,6 +3,7 @@ package business
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/palmieridev/openlocal-api/internal/api"
+	"github.com/palmieridev/openlocal-api/internal/clerk"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	v "github.com/palmieridev/openlocal-api/internal/platform/validator"
 )
@@ -26,9 +27,6 @@ func (h Handler) create(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	if authCtx.ClerkOrgID == "" || authCtx.Role == "" {
-		return fiber.NewError(fiber.StatusForbidden, "active Clerk organization is required")
-	}
 	var req Request
 	if err := v.DecodeStrict(c, &req); err != nil {
 		return err
@@ -37,22 +35,36 @@ func (h Handler) create(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	if h.rt.Clerk == nil {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "clerk organization client is not configured")
+	}
+	org, err := h.rt.Clerk.CreateOrganization(c.Context(), clerk.CreateOrganizationInput{
+		Name:      params.Name,
+		Slug:      params.Slug,
+		CreatedBy: authCtx.ClerkUserID,
+	})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadGateway, "failed to create Clerk organization")
+	}
 	tx, err := h.rt.Pool.Begin(c.Context())
 	if err != nil {
+		_ = h.rt.Clerk.DeleteOrganization(c.Context(), org.ID)
 		return err
 	}
 	defer api.Rollback(c.Context(), tx)
 	qtx := h.rt.Q.WithTx(tx)
 	business, err := qtx.CreateBusiness(c.Context(), params)
 	if err != nil {
+		_ = h.rt.Clerk.DeleteOrganization(c.Context(), org.ID)
 		return err
 	}
 	if _, err := qtx.AddBusinessMember(c.Context(), db.AddBusinessMemberParams{
 		BusinessID: business.ID,
 		UserID:     user.ID,
-		ClerkOrgID: authCtx.ClerkOrgID,
+		ClerkOrgID: org.ID,
 		Role:       "owner",
 	}); err != nil {
+		_ = h.rt.Clerk.DeleteOrganization(c.Context(), org.ID)
 		return err
 	}
 	if _, err := qtx.CreateInventoryLocation(c.Context(), db.CreateInventoryLocationParams{
@@ -60,15 +72,20 @@ func (h Handler) create(c *fiber.Ctx) error {
 		Name:       "Default",
 		IsDefault:  true,
 	}); err != nil {
+		_ = h.rt.Clerk.DeleteOrganization(c.Context(), org.ID)
 		return err
 	}
 	if err := api.Audit(qtx, c.Context(), business.ID, user.ID, "business.create", "business", business.ID); err != nil {
+		_ = h.rt.Clerk.DeleteOrganization(c.Context(), org.ID)
 		return err
 	}
 	if err := tx.Commit(c.Context()); err != nil {
+		_ = h.rt.Clerk.DeleteOrganization(c.Context(), org.ID)
 		return err
 	}
-	return c.Status(fiber.StatusCreated).JSON(Map(business, true))
+	response := Map(business, true)
+	response.ClerkOrgID = org.ID
+	return c.Status(fiber.StatusCreated).JSON(response)
 }
 
 func (h Handler) get(c *fiber.Ctx) error {

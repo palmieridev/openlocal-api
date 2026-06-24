@@ -37,6 +37,7 @@ type Request struct {
 
 type Response struct {
 	ID                uuid.UUID `json:"id"`
+	ClerkOrgID        string    `json:"clerk_org_id,omitempty"`
 	Name              string    `json:"name"`
 	Slug              string    `json:"slug"`
 	Description       string    `json:"description"`
