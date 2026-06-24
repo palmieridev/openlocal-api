@@ -12,13 +12,17 @@ import (
 )
 
 type Config struct {
-	AppEnv             string
-	HTTPAddr           string
-	DatabaseURL        string
-	ClerkIssuerURL     string
-	ClerkJWKSURL       string
-	CORSAllowedOrigins []string
-	AuthTestBypass     bool
+	AppEnv                 string
+	HTTPAddr               string
+	DatabaseURL            string
+	ClerkSecretKey         string
+	ClerkAPIURL            string
+	ClerkWebhookSecret     string
+	ClerkIssuerURL         string
+	ClerkJWKSURL           string
+	ClerkAuthorizedParties []string
+	CORSAllowedOrigins     []string
+	AuthTestBypass         bool
 }
 
 func Load() (Config, error) {
@@ -26,13 +30,17 @@ func Load() (Config, error) {
 	_ = godotenv.Load()
 
 	cfg := Config{
-		AppEnv:             getenv("APP_ENV", "development"),
-		HTTPAddr:           getenv("HTTP_ADDR", ":8080"),
-		DatabaseURL:        getenv("DATABASE_URL", "postgres://openlocal:openlocal@localhost:5432/openlocal?sslmode=disable"),
-		ClerkIssuerURL:     os.Getenv("CLERK_ISSUER_URL"),
-		ClerkJWKSURL:       os.Getenv("CLERK_JWKS_URL"),
-		CORSAllowedOrigins: splitCSV(getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173")),
-		AuthTestBypass:     getbool("AUTH_TEST_BYPASS", false),
+		AppEnv:                 getenv("APP_ENV", "development"),
+		HTTPAddr:               getenv("HTTP_ADDR", ":8080"),
+		DatabaseURL:            getenv("DATABASE_URL", "postgres://openlocal:openlocal@localhost:5432/openlocal?sslmode=disable"),
+		ClerkSecretKey:         os.Getenv("CLERK_SECRET_KEY"),
+		ClerkAPIURL:            getenv("CLERK_API_URL", "https://api.clerk.com/v1"),
+		ClerkWebhookSecret:     os.Getenv("CLERK_WEBHOOK_SIGNING_SECRET"),
+		ClerkIssuerURL:         os.Getenv("CLERK_ISSUER_URL"),
+		ClerkJWKSURL:           os.Getenv("CLERK_JWKS_URL"),
+		ClerkAuthorizedParties: splitCSV(os.Getenv("CLERK_AUTHORIZED_PARTIES")),
+		CORSAllowedOrigins:     splitCSV(getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173")),
+		AuthTestBypass:         getbool("AUTH_TEST_BYPASS", false),
 	}
 	if cfg.ClerkIssuerURL == "" || cfg.ClerkJWKSURL == "" {
 		if issuer, err := issuerFromPublishableKey(os.Getenv("CLERK_PUBLISHABLE_KEY")); err == nil {
@@ -44,6 +52,9 @@ func Load() (Config, error) {
 	if !cfg.AuthTestBypass && (cfg.ClerkIssuerURL == "" || cfg.ClerkJWKSURL == "") {
 		return Config{}, errors.New("CLERK_ISSUER_URL and CLERK_JWKS_URL are required unless AUTH_TEST_BYPASS=true")
 	}
+	if !cfg.AuthTestBypass && cfg.ClerkSecretKey == "" {
+		return Config{}, errors.New("CLERK_SECRET_KEY is required unless AUTH_TEST_BYPASS=true")
+	}
 	return cfg, nil
 }
 
@@ -54,7 +65,7 @@ func issuerFromPublishableKey(key string) (string, error) {
 	if key == "" {
 		return "", errors.New("empty Clerk publishable key")
 	}
-	decoded, err := base64.StdEncoding.DecodeString(key)
+	decoded, err := decodeBase64String(key)
 	if err != nil {
 		return "", err
 	}
@@ -63,6 +74,19 @@ func issuerFromPublishableKey(key string) (string, error) {
 		return "", fmt.Errorf("invalid Clerk publishable key host")
 	}
 	return "https://" + host, nil
+}
+
+func decodeBase64String(value string) ([]byte, error) {
+	if decoded, err := base64.RawStdEncoding.DecodeString(value); err == nil {
+		return decoded, nil
+	}
+	if decoded, err := base64.StdEncoding.DecodeString(value); err == nil {
+		return decoded, nil
+	}
+	if decoded, err := base64.RawURLEncoding.DecodeString(value); err == nil {
+		return decoded, nil
+	}
+	return base64.URLEncoding.DecodeString(value)
 }
 
 func first(values ...string) string {

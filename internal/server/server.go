@@ -17,11 +17,13 @@ import (
 	"github.com/palmieridev/openlocal-api/internal/auth"
 	"github.com/palmieridev/openlocal-api/internal/business"
 	"github.com/palmieridev/openlocal-api/internal/catalog"
+	"github.com/palmieridev/openlocal-api/internal/clerk"
 	"github.com/palmieridev/openlocal-api/internal/config"
 	"github.com/palmieridev/openlocal-api/internal/inventory"
 	"github.com/palmieridev/openlocal-api/internal/marketplace"
 	v "github.com/palmieridev/openlocal-api/internal/platform/validator"
 	"github.com/palmieridev/openlocal-api/internal/users"
+	"github.com/palmieridev/openlocal-api/internal/webhooks"
 )
 
 type Deps struct {
@@ -37,7 +39,7 @@ type Server struct {
 
 func New(deps Deps) *fiber.App {
 	s := &Server{
-		rt: api.NewRuntime(deps.Logger, deps.Pool),
+		rt: api.NewRuntime(deps.Logger, deps.Pool, clerk.NewClient(deps.Config.ClerkSecretKey, deps.Config.ClerkAPIURL)),
 	}
 
 	app := fiber.New(fiber.Config{
@@ -58,6 +60,7 @@ func New(deps Deps) *fiber.App {
 	app.Get("/healthz", s.health)
 
 	apiGroup := app.Group("/api/v1")
+	webhooks.NewHandler(s.rt, deps.Config.ClerkWebhookSecret).RegisterRoutes(apiGroup)
 	marketplace.NewHandler(s.rt).RegisterPublicRoutes(apiGroup)
 	catalog.NewHandler(s.rt).RegisterPublicRoutes(apiGroup)
 

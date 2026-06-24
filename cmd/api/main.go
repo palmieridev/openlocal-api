@@ -24,7 +24,7 @@ func main() {
 	defer pool.Close()
 
 	authMiddleware := auth.Middleware{
-		Verifier:      auth.NewVerifier(cfg.ClerkIssuerURL, cfg.ClerkJWKSURL),
+		Verifier:      auth.NewVerifier(cfg.ClerkIssuerURL, cfg.ClerkJWKSURL, cfg.ClerkAuthorizedParties),
 		AllowTestAuth: cfg.AuthTestBypass,
 	}
 	app := server.New(server.Deps{

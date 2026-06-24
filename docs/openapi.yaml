@@ -29,11 +29,23 @@ paths:
           description: Missing or invalid Clerk token.
   /api/v1/businesses:
     post:
+      description: Creates a Clerk organization and the matching Openlocal business.
       responses:
         "201":
-          description: Business created for active Clerk organization.
-        "403":
-          description: Active Clerk organization is required.
+          description: Business created. Response includes clerk_org_id for frontend org activation.
+        "502":
+          description: Clerk organization creation failed.
+  /api/v1/webhooks/clerk:
+    post:
+      security: []
+      description: Clerk webhook receiver for user, organization, and membership sync. Requires valid Svix signature headers.
+      responses:
+        "204":
+          description: Webhook accepted.
+        "400":
+          description: Invalid signature or payload.
+        "503":
+          description: Webhook signing secret is not configured.
   /api/v1/businesses/{id}:
     get:
       responses:
@@ -164,4 +176,3 @@ paths:
       responses:
         "200":
           description: Public marketplace product search.
-

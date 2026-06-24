@@ -12,6 +12,21 @@ import (
 	"github.com/google/uuid"
 )
 
+const deidentifyUserByClerkID = `-- name: DeidentifyUserByClerkID :exec
+UPDATE users
+SET email = NULL,
+    first_name = NULL,
+    last_name = NULL,
+    image_url = NULL,
+    updated_at = now()
+WHERE clerk_user_id = $1
+`
+
+func (q *Queries) DeidentifyUserByClerkID(ctx context.Context, clerkUserID string) error {
+	_, err := q.db.Exec(ctx, deidentifyUserByClerkID, clerkUserID)
+	return err
+}
+
 const getUserByClerkID = `-- name: GetUserByClerkID :one
 SELECT id, clerk_user_id, email, first_name, last_name, image_url, created_at, updated_at FROM users WHERE clerk_user_id = $1
 `

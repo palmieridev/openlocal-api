@@ -16,30 +16,40 @@ import (
 )
 
 type Verifier struct {
-	issuer  string
-	jwksURL string
-	client  *http.Client
-	mu      sync.RWMutex
-	keys    map[string]*rsa.PublicKey
-	loaded  time.Time
+	issuer            string
+	jwksURL           string
+	authorizedParties map[string]struct{}
+	client            *http.Client
+	mu                sync.RWMutex
+	keys              map[string]*rsa.PublicKey
+	loaded            time.Time
 }
 
-func NewVerifier(issuer, jwksURL string) *Verifier {
+func NewVerifier(issuer, jwksURL string, authorizedParties []string) *Verifier {
+	parties := make(map[string]struct{}, len(authorizedParties))
+	for _, party := range authorizedParties {
+		party = strings.TrimRight(strings.TrimSpace(party), "/")
+		if party != "" {
+			parties[party] = struct{}{}
+		}
+	}
 	return &Verifier{
-		issuer:  strings.TrimRight(issuer, "/"),
-		jwksURL: jwksURL,
-		client:  &http.Client{Timeout: 5 * time.Second},
-		keys:    map[string]*rsa.PublicKey{},
+		issuer:            strings.TrimRight(issuer, "/"),
+		jwksURL:           jwksURL,
+		authorizedParties: parties,
+		client:            &http.Client{Timeout: 5 * time.Second},
+		keys:              map[string]*rsa.PublicKey{},
 	}
 }
 
 type Claims struct {
-	Email     string `json:"email"`
-	FirstName string `json:"first_name"`
-	LastName  string `json:"last_name"`
-	ImageURL  string `json:"image_url"`
-	OrgID     string `json:"org_id"`
-	OrgRole   string `json:"org_role"`
+	Email           string `json:"email"`
+	FirstName       string `json:"first_name"`
+	LastName        string `json:"last_name"`
+	ImageURL        string `json:"image_url"`
+	OrgID           string `json:"org_id"`
+	OrgRole         string `json:"org_role"`
+	AuthorizedParty string `json:"azp"`
 	jwt.RegisteredClaims
 }
 
@@ -61,7 +71,24 @@ func (v *Verifier) Verify(ctx context.Context, token string) (Claims, error) {
 	if !parsed.Valid || claims.Subject == "" {
 		return Claims{}, errors.New("invalid jwt")
 	}
+	if err := v.verifyAuthorizedParty(claims.AuthorizedParty); err != nil {
+		return Claims{}, err
+	}
 	return claims, nil
+}
+
+func (v *Verifier) verifyAuthorizedParty(azp string) error {
+	if len(v.authorizedParties) == 0 {
+		return nil
+	}
+	azp = strings.TrimRight(strings.TrimSpace(azp), "/")
+	if azp == "" {
+		return errors.New("jwt authorized party is missing")
+	}
+	if _, ok := v.authorizedParties[azp]; !ok {
+		return errors.New("jwt authorized party is not allowed")
+	}
+	return nil
 }
 
 func (v *Verifier) key(ctx context.Context, kid string) (*rsa.PublicKey, error) {
