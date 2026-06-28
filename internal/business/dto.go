@@ -83,6 +83,9 @@ func Map(b db.Business, includePrivate bool) Response {
 		UpdatedAt:         api.TS(b.UpdatedAt),
 	}
 	if includePrivate {
+		if b.ClerkOrgID.Valid {
+			out.ClerkOrgID = b.ClerkOrgID.String
+		}
 		out.Phone = api.StringPtr(b.Phone)
 		out.Whatsapp = api.StringPtr(b.Whatsapp)
 		out.Email = api.StringPtr(b.Email)

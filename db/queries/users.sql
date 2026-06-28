@@ -15,11 +15,6 @@ SELECT * FROM users WHERE clerk_user_id = $1;
 -- name: GetUserByID :one
 SELECT * FROM users WHERE id = $1;
 
--- name: DeidentifyUserByClerkID :exec
-UPDATE users
-SET email = NULL,
-    first_name = NULL,
-    last_name = NULL,
-    image_url = NULL,
-    updated_at = now()
+-- name: DeleteUserByClerkID :exec
+DELETE FROM users
 WHERE clerk_user_id = $1;

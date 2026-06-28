@@ -12,18 +12,13 @@ import (
 	"github.com/google/uuid"
 )
 
-const deidentifyUserByClerkID = `-- name: DeidentifyUserByClerkID :exec
-UPDATE users
-SET email = NULL,
-    first_name = NULL,
-    last_name = NULL,
-    image_url = NULL,
-    updated_at = now()
+const deleteUserByClerkID = `-- name: DeleteUserByClerkID :exec
+DELETE FROM users
 WHERE clerk_user_id = $1
 `
 
-func (q *Queries) DeidentifyUserByClerkID(ctx context.Context, clerkUserID string) error {
-	_, err := q.db.Exec(ctx, deidentifyUserByClerkID, clerkUserID)
+func (q *Queries) DeleteUserByClerkID(ctx context.Context, clerkUserID string) error {
+	_, err := q.db.Exec(ctx, deleteUserByClerkID, clerkUserID)
 	return err
 }
 

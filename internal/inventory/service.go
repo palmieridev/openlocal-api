@@ -78,6 +78,6 @@ func MovementParams(req StockMovementRequest, userID uuid.UUID) (db.CreateStockM
 		ReferenceType: api.NullString(v.CleanOptional(req.ReferenceType)),
 		ReferenceID:   api.NullString(v.CleanOptional(req.ReferenceID)),
 		Notes:         v.Clean(req.Notes),
-		CreatedBy:     userID,
+		CreatedBy:     uuid.NullUUID{UUID: userID, Valid: true},
 	}, businessID, nil
 }

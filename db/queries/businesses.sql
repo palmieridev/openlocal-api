@@ -1,10 +1,10 @@
 -- name: CreateBusiness :one
 INSERT INTO businesses (
-    name, slug, description, business_type, phone, whatsapp, email, website,
+    clerk_org_id, name, slug, description, business_type, phone, whatsapp, email, website,
     logo_url, cover_image_url, status, address, neighborhood, city, state,
     country, postal_code, latitude, longitude, pickup_available, delivery_available
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
 )
 RETURNING *;
 
@@ -51,9 +51,13 @@ FROM business_members
 WHERE business_id = $1 AND user_id = $2 AND clerk_org_id = $3;
 
 -- name: GetBusinessIDByClerkOrgID :one
+SELECT id
+FROM businesses
+WHERE businesses.clerk_org_id = $1::text
+UNION
 SELECT business_id
 FROM business_members
-WHERE clerk_org_id = $1
+WHERE business_members.clerk_org_id = $1::text
 LIMIT 1;
 
 -- name: AddBusinessMember :one
@@ -73,10 +77,11 @@ WHERE clerk_org_id = $1 AND user_id = $2;
 UPDATE businesses
 SET status = 'archived',
     updated_at = now()
-WHERE id IN (
+WHERE businesses.clerk_org_id = $1::text
+   OR id IN (
     SELECT business_id
     FROM business_members
-    WHERE clerk_org_id = $1
+    WHERE business_members.clerk_org_id = $1::text
 );
 
 -- name: ListPublicBusinesses :many

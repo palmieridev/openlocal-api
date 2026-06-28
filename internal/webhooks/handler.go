@@ -54,7 +54,7 @@ func (h Handler) dispatch(c *fiber.Ctx, event eventEnvelope) error {
 		if event.Data.ID == "" {
 			return nil
 		}
-		return h.rt.Q.DeidentifyUserByClerkID(c.Context(), event.Data.ID)
+		return h.rt.Q.DeleteUserByClerkID(c.Context(), event.Data.ID)
 	case "organization.deleted":
 		orgID := event.Data.organizationID()
 		if orgID == "" {

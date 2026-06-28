@@ -54,30 +54,32 @@ const archiveBusinessesByClerkOrgID = `-- name: ArchiveBusinessesByClerkOrgID :e
 UPDATE businesses
 SET status = 'archived',
     updated_at = now()
-WHERE id IN (
+WHERE businesses.clerk_org_id = $1::text
+   OR id IN (
     SELECT business_id
     FROM business_members
-    WHERE clerk_org_id = $1
+    WHERE business_members.clerk_org_id = $1::text
 )
 `
 
-func (q *Queries) ArchiveBusinessesByClerkOrgID(ctx context.Context, clerkOrgID string) error {
-	_, err := q.db.Exec(ctx, archiveBusinessesByClerkOrgID, clerkOrgID)
+func (q *Queries) ArchiveBusinessesByClerkOrgID(ctx context.Context, dollar_1 string) error {
+	_, err := q.db.Exec(ctx, archiveBusinessesByClerkOrgID, dollar_1)
 	return err
 }
 
 const createBusiness = `-- name: CreateBusiness :one
 INSERT INTO businesses (
-    name, slug, description, business_type, phone, whatsapp, email, website,
+    clerk_org_id, name, slug, description, business_type, phone, whatsapp, email, website,
     logo_url, cover_image_url, status, address, neighborhood, city, state,
     country, postal_code, latitude, longitude, pickup_available, delivery_available
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
 )
-RETURNING id, name, slug, description, business_type, phone, whatsapp, email, website, logo_url, cover_image_url, status, address, neighborhood, city, state, country, postal_code, latitude, longitude, pickup_available, delivery_available, created_at, updated_at
+RETURNING id, name, slug, description, business_type, phone, whatsapp, email, website, logo_url, cover_image_url, status, address, neighborhood, city, state, country, postal_code, latitude, longitude, pickup_available, delivery_available, created_at, updated_at, clerk_org_id
 `
 
 type CreateBusinessParams struct {
+	ClerkOrgID        sql.NullString      `json:"clerk_org_id"`
 	Name              string              `json:"name"`
 	Slug              string              `json:"slug"`
 	Description       string              `json:"description"`
@@ -103,6 +105,7 @@ type CreateBusinessParams struct {
 
 func (q *Queries) CreateBusiness(ctx context.Context, arg CreateBusinessParams) (Business, error) {
 	row := q.db.QueryRow(ctx, createBusiness,
+		arg.ClerkOrgID,
 		arg.Name,
 		arg.Slug,
 		arg.Description,
@@ -151,6 +154,7 @@ func (q *Queries) CreateBusiness(ctx context.Context, arg CreateBusinessParams) 
 		&i.DeliveryAvailable,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ClerkOrgID,
 	)
 	return i, err
 }
@@ -171,7 +175,7 @@ func (q *Queries) DeleteBusinessMemberByClerkOrgAndUser(ctx context.Context, arg
 }
 
 const getBusinessForMember = `-- name: GetBusinessForMember :one
-SELECT b.id, b.name, b.slug, b.description, b.business_type, b.phone, b.whatsapp, b.email, b.website, b.logo_url, b.cover_image_url, b.status, b.address, b.neighborhood, b.city, b.state, b.country, b.postal_code, b.latitude, b.longitude, b.pickup_available, b.delivery_available, b.created_at, b.updated_at
+SELECT b.id, b.name, b.slug, b.description, b.business_type, b.phone, b.whatsapp, b.email, b.website, b.logo_url, b.cover_image_url, b.status, b.address, b.neighborhood, b.city, b.state, b.country, b.postal_code, b.latitude, b.longitude, b.pickup_available, b.delivery_available, b.created_at, b.updated_at, b.clerk_org_id
 FROM businesses b
 JOIN business_members bm ON bm.business_id = b.id
 WHERE b.id = $1 AND bm.user_id = $2
@@ -210,22 +214,27 @@ func (q *Queries) GetBusinessForMember(ctx context.Context, arg GetBusinessForMe
 		&i.DeliveryAvailable,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ClerkOrgID,
 	)
 	return i, err
 }
 
 const getBusinessIDByClerkOrgID = `-- name: GetBusinessIDByClerkOrgID :one
+SELECT id
+FROM businesses
+WHERE businesses.clerk_org_id = $1::text
+UNION
 SELECT business_id
 FROM business_members
-WHERE clerk_org_id = $1
+WHERE business_members.clerk_org_id = $1::text
 LIMIT 1
 `
 
-func (q *Queries) GetBusinessIDByClerkOrgID(ctx context.Context, clerkOrgID string) (uuid.UUID, error) {
-	row := q.db.QueryRow(ctx, getBusinessIDByClerkOrgID, clerkOrgID)
-	var business_id uuid.UUID
-	err := row.Scan(&business_id)
-	return business_id, err
+func (q *Queries) GetBusinessIDByClerkOrgID(ctx context.Context, dollar_1 string) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getBusinessIDByClerkOrgID, dollar_1)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getBusinessMemberRole = `-- name: GetBusinessMemberRole :one
@@ -421,7 +430,7 @@ WHERE businesses.id = $1 AND EXISTS (
       AND bm.user_id = $2
       AND bm.role IN ('owner', 'manager')
 )
-RETURNING id, name, slug, description, business_type, phone, whatsapp, email, website, logo_url, cover_image_url, status, address, neighborhood, city, state, country, postal_code, latitude, longitude, pickup_available, delivery_available, created_at, updated_at
+RETURNING id, name, slug, description, business_type, phone, whatsapp, email, website, logo_url, cover_image_url, status, address, neighborhood, city, state, country, postal_code, latitude, longitude, pickup_available, delivery_available, created_at, updated_at, clerk_org_id
 `
 
 type UpdateBusinessParams struct {
@@ -500,6 +509,7 @@ func (q *Queries) UpdateBusiness(ctx context.Context, arg UpdateBusinessParams) 
 		&i.DeliveryAvailable,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ClerkOrgID,
 	)
 	return i, err
 }

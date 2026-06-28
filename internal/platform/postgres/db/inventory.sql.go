@@ -93,7 +93,7 @@ type CreateStockMovementParams struct {
 	ReferenceType sql.NullString      `json:"reference_type"`
 	ReferenceID   sql.NullString      `json:"reference_id"`
 	Notes         string              `json:"notes"`
-	CreatedBy     uuid.UUID           `json:"created_by"`
+	CreatedBy     uuid.NullUUID       `json:"created_by"`
 }
 
 func (q *Queries) CreateStockMovement(ctx context.Context, arg CreateStockMovementParams) (StockMovement, error) {

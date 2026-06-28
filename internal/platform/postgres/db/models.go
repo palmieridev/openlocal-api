@@ -48,6 +48,7 @@ type Business struct {
 	DeliveryAvailable bool                `json:"delivery_available"`
 	CreatedAt         pgtype.Timestamptz  `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz  `json:"updated_at"`
+	ClerkOrgID        sql.NullString      `json:"clerk_org_id"`
 }
 
 type BusinessCategory struct {

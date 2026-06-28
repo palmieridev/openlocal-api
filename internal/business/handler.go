@@ -53,6 +53,7 @@ func (h Handler) create(c *fiber.Ctx) error {
 	}
 	defer api.Rollback(c.Context(), tx)
 	qtx := h.rt.Q.WithTx(tx)
+	params.ClerkOrgID = api.NullString(&org.ID)
 	business, err := qtx.CreateBusiness(c.Context(), params)
 	if err != nil {
 		_ = h.rt.Clerk.DeleteOrganization(c.Context(), org.ID)
