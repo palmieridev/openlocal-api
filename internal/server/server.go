@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"strings"
 
+	fiberswagger "github.com/gofiber/contrib/swagger"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/helmet"
@@ -12,6 +13,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/palmieridev/openlocal-api/docs"
 	"github.com/palmieridev/openlocal-api/internal/analytics"
 	"github.com/palmieridev/openlocal-api/internal/api"
 	"github.com/palmieridev/openlocal-api/internal/auth"
@@ -58,6 +60,14 @@ func New(deps Deps) *fiber.App {
 	app.Use(limiter.New(limiter.Config{Max: 120}))
 
 	app.Get("/healthz", s.health)
+	app.Use(fiberswagger.New(fiberswagger.Config{
+		BasePath:    "/",
+		FilePath:    "openapi.yaml",
+		FileContent: docs.OpenAPIYAML,
+		Path:        "docs",
+		Title:       "Openlocal API Documentation",
+		CacheAge:    1,
+	}))
 
 	apiGroup := app.Group("/api/v1")
 	webhooks.NewHandler(s.rt, deps.Config.ClerkWebhookSecret).RegisterRoutes(apiGroup)
