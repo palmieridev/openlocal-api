@@ -91,10 +91,18 @@ WHERE id = $1 AND business_id = $2;
 -- name: ListPublicProductsByBusinessSlug :many
 SELECT p.id, p.name, p.slug, p.description, p.brand, p.unit, p.product_type,
        pv.id AS variant_id, pv.sku, pv.name AS variant_name, pv.price, pv.currency,
-       pv.public_stock_status
+       pv.public_stock_status,
+       COALESCE(pi.url, '') AS image_url
 FROM businesses b
 JOIN products p ON p.business_id = b.id
 JOIN product_variants pv ON pv.product_id = p.id
+LEFT JOIN LATERAL (
+    SELECT url
+    FROM product_images
+    WHERE product_id = p.id
+    ORDER BY position ASC, created_at ASC
+    LIMIT 1
+) pi ON true
 WHERE b.slug = $1
   AND b.status = 'active'
   AND p.is_public = true
@@ -107,10 +115,18 @@ LIMIT $2 OFFSET $3;
 SELECT b.slug AS business_slug, b.name AS business_name,
        p.id, p.name, p.slug, p.description, p.brand, p.unit, p.product_type,
        pv.id AS variant_id, pv.sku, pv.name AS variant_name, pv.price, pv.currency,
-       pv.public_stock_status
+       pv.public_stock_status,
+       COALESCE(pi.url, '') AS image_url
 FROM businesses b
 JOIN products p ON p.business_id = b.id
 JOIN product_variants pv ON pv.product_id = p.id
+LEFT JOIN LATERAL (
+    SELECT url
+    FROM product_images
+    WHERE product_id = p.id
+    ORDER BY position ASC, created_at ASC
+    LIMIT 1
+) pi ON true
 WHERE b.status = 'active'
   AND p.is_public = true
   AND p.status = 'active'
@@ -118,4 +134,3 @@ WHERE b.status = 'active'
   AND ($1::text = '' OR to_tsvector('simple', p.name || ' ' || p.description) @@ plainto_tsquery('simple', $1))
 ORDER BY p.name ASC
 LIMIT $2 OFFSET $3;
-

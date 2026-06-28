@@ -172,7 +172,7 @@ type StockMovement struct {
 	ReferenceType sql.NullString      `json:"reference_type"`
 	ReferenceID   sql.NullString      `json:"reference_id"`
 	Notes         string              `json:"notes"`
-	CreatedBy     uuid.UUID           `json:"created_by"`
+	CreatedBy     uuid.NullUUID       `json:"created_by"`
 	CreatedAt     pgtype.Timestamptz  `json:"created_at"`
 }
 

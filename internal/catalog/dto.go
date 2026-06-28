@@ -277,7 +277,16 @@ func PublicProductRows(rows []db.ListPublicProductsByBusinessSlugRow) []fiber.Ma
 			"price":               row.Price.StringFixed(2),
 			"currency":            row.Currency,
 			"public_stock_status": row.PublicStockStatus,
+			"image_url":           stringPtr(row.ImageUrl),
 		})
 	}
 	return out
+}
+
+func stringPtr(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
 }
