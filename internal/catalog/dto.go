@@ -132,6 +132,12 @@ func MapVariant(v db.ProductVariant, includePrivate bool) VariantResponse {
 	return out
 }
 
+// enumValue normalizes an enum-style field (lowercase, trimmed) while preserving
+// underscores, unlike v.Slug which would replace them with hyphens.
+func enumValue(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
 func ProductParams(req ProductRequest) (db.CreateProductParams, uuid.UUID, error) {
 	businessID, err := v.ParseUUID(req.BusinessID, "business_id")
 	if err != nil {
@@ -157,10 +163,12 @@ func ProductParams(req ProductRequest) (db.CreateProductParams, uuid.UUID, error
 		Description: v.Clean(req.Description),
 		Brand:       api.NullString(v.CleanOptional(req.Brand)),
 		Unit:        api.FirstNonEmpty(v.Clean(req.Unit), "piece"),
-		ProductType: api.FirstNonEmpty(v.Slug(req.ProductType), "stocked_product"),
+		// product_type and status are enums (underscored), not slugs — v.Slug would
+		// turn "stocked_product" into "stocked-product" and break the DB CHECK.
+		ProductType: api.FirstNonEmpty(enumValue(req.ProductType), "stocked_product"),
 		IsHandmade:  req.IsHandmade,
 		IsPublic:    req.IsPublic,
-		Status:      api.FirstNonEmpty(v.Slug(req.Status), "draft"),
+		Status:      api.FirstNonEmpty(enumValue(req.Status), "draft"),
 	}, businessID, nil
 }
 
@@ -218,21 +226,22 @@ func VariantParams(req VariantRequest) (db.CreateVariantParams, uuid.UUID, error
 		return db.CreateVariantParams{}, uuid.Nil, fiber.NewError(fiber.StatusBadRequest, "sku and internal_code are required")
 	}
 	return db.CreateVariantParams{
-		ProductID:         productID,
-		BusinessID:        businessID,
-		Sku:               sku,
-		Barcode:           api.NullString(v.CleanOptional(req.Barcode)),
-		InternalCode:      internalCode,
-		Name:              v.Clean(req.Name),
-		Attributes:        attributes,
-		Price:             price,
-		Cost:              cost,
-		Currency:          strings.ToUpper(api.FirstNonEmpty(v.Clean(req.Currency), "MXN")),
-		TrackInventory:    req.TrackInventory,
-		PublicStockStatus: api.FirstNonEmpty(v.Slug(req.PublicStockStatus), "unknown"),
+		ProductID:      productID,
+		BusinessID:     businessID,
+		Sku:            sku,
+		Barcode:        api.NullString(v.CleanOptional(req.Barcode)),
+		InternalCode:   internalCode,
+		Name:           v.Clean(req.Name),
+		Attributes:     attributes,
+		Price:          price,
+		Cost:           cost,
+		Currency:       strings.ToUpper(api.FirstNonEmpty(v.Clean(req.Currency), "MXN")),
+		TrackInventory: req.TrackInventory,
+		// Enums (underscored values like low_stock/out_of_stock) — not slugs.
+		PublicStockStatus: api.FirstNonEmpty(enumValue(req.PublicStockStatus), "unknown"),
 		ReorderPoint:      reorderPoint,
 		LeadTimeDays:      req.LeadTimeDays,
-		Status:            api.FirstNonEmpty(v.Slug(req.Status), "active"),
+		Status:            api.FirstNonEmpty(enumValue(req.Status), "active"),
 	}, businessID, nil
 }
 

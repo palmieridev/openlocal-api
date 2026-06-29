@@ -43,14 +43,23 @@ func NewVerifier(issuer, jwksURL string, authorizedParties []string) *Verifier {
 }
 
 type Claims struct {
-	Email           string `json:"email"`
-	FirstName       string `json:"first_name"`
-	LastName        string `json:"last_name"`
-	ImageURL        string `json:"image_url"`
-	OrgID           string `json:"org_id"`
-	OrgRole         string `json:"org_role"`
-	AuthorizedParty string `json:"azp"`
+	Email           string    `json:"email"`
+	FirstName       string    `json:"first_name"`
+	LastName        string    `json:"last_name"`
+	ImageURL        string    `json:"image_url"`
+	OrgID           string    `json:"org_id"`
+	OrgRole         string    `json:"org_role"`
+	Org             *orgClaim `json:"o"`
+	AuthorizedParty string    `json:"azp"`
 	jwt.RegisteredClaims
+}
+
+// orgClaim is the active-organization object in Clerk v2 session tokens
+// (`o: {id, rol, slg}`), which replaced the flat v1 `org_id`/`org_role` claims.
+type orgClaim struct {
+	ID   string `json:"id"`
+	Role string `json:"rol"`
+	Slug string `json:"slg"`
 }
 
 func (v *Verifier) Verify(ctx context.Context, token string) (Claims, error) {
@@ -74,7 +83,23 @@ func (v *Verifier) Verify(ctx context.Context, token string) (Claims, error) {
 	if err := v.verifyAuthorizedParty(claims.AuthorizedParty); err != nil {
 		return Claims{}, err
 	}
+	claims.applyOrgFallback()
 	return claims, nil
+}
+
+// applyOrgFallback copies the Clerk v2 nested `o` claim into the flat
+// OrgID/OrgRole fields when the v1 claims are absent, so downstream code can
+// read OrgID/OrgRole regardless of token version.
+func (c *Claims) applyOrgFallback() {
+	if c.Org == nil {
+		return
+	}
+	if c.OrgID == "" {
+		c.OrgID = c.Org.ID
+	}
+	if c.OrgRole == "" {
+		c.OrgRole = c.Org.Role
+	}
 }
 
 func (v *Verifier) verifyAuthorizedParty(azp string) error {
