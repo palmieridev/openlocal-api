@@ -698,6 +698,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/businesses/me:
+    get:
+      tags:
+        - Businesses
+      description: Resolves the current Openlocal business from the active Clerk organization claim.
+      responses:
+        "200":
+          description: Private business profile for the active Clerk organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Business"
+        "403":
+          description: Active Clerk organization or local business membership is required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No Openlocal business is linked to the active Clerk organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/webhooks/clerk:
     post:
       tags:
@@ -832,6 +856,28 @@ paths:
       responses:
         "204":
           description: Product archived.
+  /api/v1/products/{id}/variants:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: "#/components/parameters/BusinessIDQuery"
+    get:
+      tags:
+        - Catalog
+      description: Lists all variants for a product scoped to the caller's business.
+      responses:
+        "200":
+          description: Private variants for the product.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Variant"
   /api/v1/variants:
     post:
       tags:

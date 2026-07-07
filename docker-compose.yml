@@ -1,4 +1,24 @@
 services:
+  api:
+    image: golang:1.26-alpine
+    working_dir: /app
+    env_file:
+      - .env
+      - .env.local
+    environment:
+      DATABASE_URL: postgres://${PGUSER:-openlocal}:${PGPASSWORD:-openlocal}@postgres:5432/${PGDATABASE:-openlocal}?sslmode=disable
+      HTTP_ADDR: ${HTTP_ADDR:-:8080}
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+    command: sh -c "go install github.com/air-verse/air@latest && air -c .air.toml"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - openlocal-go-build:/root/.cache/go-build
+      - openlocal-go-mod:/go/pkg/mod
+
   postgres:
     image: postgres:17-alpine
     env_file:
@@ -18,4 +38,6 @@ services:
       - openlocal-postgres:/var/lib/postgresql/data
 
 volumes:
+  openlocal-go-build:
+  openlocal-go-mod:
   openlocal-postgres:

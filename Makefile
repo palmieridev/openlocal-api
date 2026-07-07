@@ -1,6 +1,6 @@
 include .env
 
-.PHONY: test start sqlc migrate-up migrate-down seed run db-up db-stop db-down db-logs db-ps db-reset
+.PHONY: test start sqlc migrate-up migrate-down seed run api db-up stop db-down db-logs db-ps db-reset
 
 COMPOSE ?= podman-compose
 
@@ -24,11 +24,15 @@ run:
 
 start:
 	$(COMPOSE) start
+
+stop:
+	$(COMPOSE) stop
+
+api:
+	$(COMPOSE) up -d api
+
 db-up:
 	$(COMPOSE) up -d postgres
-
-db-stop:
-	$(COMPOSE) stop postgres
 
 db-logs:
 	$(COMPOSE) logs -f postgres
