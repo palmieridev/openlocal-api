@@ -1,7 +1,10 @@
 package business
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgx/v5"
 	"github.com/palmieridev/openlocal-api/internal/api"
 	"github.com/palmieridev/openlocal-api/internal/clerk"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
@@ -18,6 +21,7 @@ func NewHandler(rt api.Runtime) Handler {
 
 func (h Handler) RegisterPrivateRoutes(private fiber.Router) {
 	private.Post("/businesses", h.create)
+	private.Get("/businesses/me", h.getMe)
 	private.Get("/businesses/:id", h.get)
 	private.Patch("/businesses/:id", h.update)
 }
@@ -87,6 +91,41 @@ func (h Handler) create(c *fiber.Ctx) error {
 	response := Map(business, true)
 	response.ClerkOrgID = org.ID
 	return c.Status(fiber.StatusCreated).JSON(response)
+}
+
+func (h Handler) getMe(c *fiber.Ctx) error {
+	authCtx, user, err := h.rt.CurrentUser(c)
+	if err != nil {
+		return err
+	}
+	if authCtx.ClerkOrgID == "" {
+		return fiber.NewError(fiber.StatusForbidden, "active Clerk organization is required")
+	}
+	businessID, err := h.rt.Q.GetBusinessIDByClerkOrgID(c.Context(), authCtx.ClerkOrgID)
+	if err != nil {
+		return err
+	}
+	role, err := h.rt.Q.GetBusinessMemberRole(c.Context(), db.GetBusinessMemberRoleParams{
+		BusinessID: businessID,
+		UserID:     user.ID,
+		ClerkOrgID: authCtx.ClerkOrgID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fiber.NewError(fiber.StatusForbidden, "business membership is required")
+	}
+	if err != nil {
+		return err
+	}
+	switch role {
+	case "owner", "manager", "staff":
+	default:
+		return fiber.NewError(fiber.StatusForbidden, "role is not allowed")
+	}
+	business, err := h.rt.Q.GetBusinessForMember(c.Context(), db.GetBusinessForMemberParams{ID: businessID, UserID: user.ID})
+	if err != nil {
+		return err
+	}
+	return c.JSON(Map(business, true))
 }
 
 func (h Handler) get(c *fiber.Ctx) error {
