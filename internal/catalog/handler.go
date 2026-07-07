@@ -21,6 +21,7 @@ func NewHandler(rt api.Runtime) Handler {
 func (h Handler) RegisterPrivateRoutes(private fiber.Router) {
 	private.Post("/products", h.createProduct)
 	private.Get("/products", h.listProducts)
+	private.Get("/products/:id/variants", h.listVariantsByProduct)
 	private.Get("/products/:id", h.getProduct)
 	private.Patch("/products/:id", h.updateProduct)
 	private.Delete("/products/:id", h.archiveProduct)
@@ -92,6 +93,28 @@ func (h Handler) getProduct(c *fiber.Ctx) error {
 		return err
 	}
 	return c.JSON(MapProduct(product, true))
+}
+
+func (h Handler) listVariantsByProduct(c *fiber.Ctx) error {
+	productID, businessID, err := api.IDAndBusinessFromRequest(c, "product id")
+	if err != nil {
+		return err
+	}
+	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager", "staff"); err != nil {
+		return err
+	}
+	if _, err := h.rt.Q.GetProductForBusiness(c.Context(), db.GetProductForBusinessParams{ID: productID, BusinessID: businessID}); err != nil {
+		return err
+	}
+	variants, err := h.rt.Q.ListVariantsByProduct(c.Context(), db.ListVariantsByProductParams{ProductID: productID, BusinessID: businessID})
+	if err != nil {
+		return err
+	}
+	out := make([]VariantResponse, 0, len(variants))
+	for _, variant := range variants {
+		out = append(out, MapVariant(variant, true))
+	}
+	return c.JSON(out)
 }
 
 func (h Handler) updateProduct(c *fiber.Ctx) error {
