@@ -163,18 +163,19 @@ type StockLevel struct {
 }
 
 type StockMovement struct {
-	ID            uuid.UUID           `json:"id"`
-	BusinessID    uuid.UUID           `json:"business_id"`
-	VariantID     uuid.UUID           `json:"variant_id"`
-	LocationID    uuid.UUID           `json:"location_id"`
-	MovementType  string              `json:"movement_type"`
-	Quantity      decimal.Decimal     `json:"quantity"`
-	UnitCost      decimal.NullDecimal `json:"unit_cost"`
-	ReferenceType sql.NullString      `json:"reference_type"`
-	ReferenceID   sql.NullString      `json:"reference_id"`
-	Notes         string              `json:"notes"`
-	CreatedBy     uuid.NullUUID       `json:"created_by"`
-	CreatedAt     pgtype.Timestamptz  `json:"created_at"`
+	ID             uuid.UUID           `json:"id"`
+	BusinessID     uuid.UUID           `json:"business_id"`
+	VariantID      uuid.UUID           `json:"variant_id"`
+	LocationID     uuid.UUID           `json:"location_id"`
+	MovementType   string              `json:"movement_type"`
+	Quantity       decimal.Decimal     `json:"quantity"`
+	UnitCost       decimal.NullDecimal `json:"unit_cost"`
+	ReferenceType  sql.NullString      `json:"reference_type"`
+	ReferenceID    sql.NullString      `json:"reference_id"`
+	Notes          string              `json:"notes"`
+	CreatedBy      uuid.NullUUID       `json:"created_by"`
+	CreatedAt      pgtype.Timestamptz  `json:"created_at"`
+	IdempotencyKey sql.NullString      `json:"idempotency_key"`
 }
 
 type Tag struct {

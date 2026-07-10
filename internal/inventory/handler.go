@@ -1,7 +1,10 @@
 package inventory
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgx/v5"
 	"github.com/palmieridev/openlocal-api/internal/api"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	v "github.com/palmieridev/openlocal-api/internal/platform/validator"
@@ -26,6 +29,10 @@ func (h Handler) createStockMovement(c *fiber.Ctx) error {
 	if err := v.DecodeStrict(c, &req); err != nil {
 		return err
 	}
+	idempotencyKey, err := v.IdempotencyKey(c.Get("Idempotency-Key"))
+	if err != nil {
+		return err
+	}
 	businessID, err := v.ParseUUID(req.BusinessID, "business_id")
 	if err != nil {
 		return err
@@ -34,7 +41,7 @@ func (h Handler) createStockMovement(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	params, businessID, err := MovementParams(req, user.ID)
+	params, businessID, err := MovementParams(req, user.ID, idempotencyKey)
 	if err != nil {
 		return err
 	}
@@ -53,6 +60,12 @@ func (h Handler) createStockMovement(c *fiber.Ctx) error {
 	}
 	params.LocationID = locationID
 	movement, err := qtx.CreateStockMovement(c.Context(), params)
+	if errors.Is(err, pgx.ErrNoRows) {
+		if rollbackErr := tx.Rollback(c.Context()); rollbackErr != nil {
+			return rollbackErr
+		}
+		return h.replayStockMovement(c, params)
+	}
 	if err != nil {
 		return err
 	}
@@ -71,7 +84,36 @@ func (h Handler) createStockMovement(c *fiber.Ctx) error {
 	if err := tx.Commit(c.Context()); err != nil {
 		return err
 	}
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"movement": movement, "stock_level": level})
+	return c.Status(fiber.StatusCreated).JSON(MovementCreatedResponse{
+		Movement:   MapStockMovement(movement),
+		StockLevel: MapStockLevel(level),
+	})
+}
+
+func (h Handler) replayStockMovement(c *fiber.Ctx, params db.CreateStockMovementParams) error {
+	movement, err := h.rt.Q.GetStockMovementByIdempotencyKey(c.Context(), db.GetStockMovementByIdempotencyKeyParams{
+		BusinessID:     params.BusinessID,
+		IdempotencyKey: params.IdempotencyKey,
+	})
+	if err != nil {
+		return err
+	}
+	if !SameMovement(movement, params) {
+		return fiber.NewError(fiber.StatusConflict, "Idempotency-Key was already used for a different stock movement")
+	}
+	level, err := h.rt.Q.GetStockLevel(c.Context(), db.GetStockLevelParams{
+		BusinessID: movement.BusinessID,
+		VariantID:  movement.VariantID,
+		LocationID: movement.LocationID,
+	})
+	if err != nil {
+		return err
+	}
+	c.Set("Idempotent-Replayed", "true")
+	return c.JSON(MovementCreatedResponse{
+		Movement:   MapStockMovement(movement),
+		StockLevel: MapStockLevel(level),
+	})
 }
 
 func (h Handler) listStockMovements(c *fiber.Ctx) error {
@@ -90,7 +132,11 @@ func (h Handler) listStockMovements(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(items)
+	out := make([]StockMovementResponse, 0, len(items))
+	for _, item := range items {
+		out = append(out, MapStockMovement(item))
+	}
+	return c.JSON(out)
 }
 
 func (h Handler) listStockLevels(c *fiber.Ctx) error {
@@ -109,5 +155,9 @@ func (h Handler) listStockLevels(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(items)
+	out := make([]StockLevelResponse, 0, len(items))
+	for _, item := range items {
+		out = append(out, MapStockLevel(item))
+	}
+	return c.JSON(out)
 }

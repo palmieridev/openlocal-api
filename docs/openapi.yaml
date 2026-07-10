@@ -558,12 +558,9 @@ components:
         - quantity
     StockMovement:
       type: object
-      additionalProperties: true
+      additionalProperties: false
       properties:
         id:
-          type: string
-          format: uuid
-        business_id:
           type: string
           format: uuid
         variant_id:
@@ -578,21 +575,22 @@ components:
           type: string
         unit_cost:
           type: string
+          nullable: true
+        reference_type:
+          type: string
+          nullable: true
+        reference_id:
+          type: string
+          nullable: true
         notes:
           type: string
-        created_by:
-          type: string
-          format: uuid
         created_at:
           type: string
           format: date-time
     StockLevel:
       type: object
-      additionalProperties: true
+      additionalProperties: false
       properties:
-        business_id:
-          type: string
-          format: uuid
         variant_id:
           type: string
           format: uuid
@@ -991,6 +989,16 @@ paths:
     post:
       tags:
         - Inventory
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Unique key for safely retrying this stock adjustment.
+          schema:
+            type: string
+            minLength: 8
+            maxLength: 128
+            pattern: '^[A-Za-z0-9._:-]+$'
       requestBody:
         required: true
         content:
@@ -1004,6 +1012,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StockMovementResult"
+        "200":
+          description: A matching movement with this idempotency key already exists.
+          headers:
+            Idempotent-Replayed:
+              schema:
+                type: string
+                enum: ["true"]
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockMovementResult"
+        "409":
+          description: The idempotency key was already used for different movement data.
   /api/v1/inventory/stock-levels:
     get:
       tags:
