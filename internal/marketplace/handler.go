@@ -57,6 +57,7 @@ func (h Handler) getPublicBusiness(c *fiber.Ctx) error {
 		Longitude:         api.DecimalPtr(row.Longitude),
 		PickupAvailable:   row.PickupAvailable,
 		DeliveryAvailable: row.DeliveryAvailable,
+		Timezone:          row.Timezone,
 	})
 }
 
@@ -130,6 +131,7 @@ func (h Handler) listPublicBusinesses(c *fiber.Ctx) error {
 			Longitude:         api.DecimalPtr(row.Longitude),
 			PickupAvailable:   row.PickupAvailable,
 			DeliveryAvailable: row.DeliveryAvailable,
+			Timezone:          row.Timezone,
 		})
 	}
 	return c.JSON(out)

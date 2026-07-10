@@ -2,9 +2,9 @@
 INSERT INTO businesses (
     clerk_org_id, name, slug, description, business_type, phone, whatsapp, email, website,
     logo_url, cover_image_url, status, address, neighborhood, city, state,
-    country, postal_code, latitude, longitude, pickup_available, delivery_available
+    country, postal_code, latitude, longitude, pickup_available, delivery_available, timezone
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
 )
 RETURNING *;
 
@@ -30,6 +30,7 @@ UPDATE businesses SET
     longitude = $20,
     pickup_available = $21,
     delivery_available = $22,
+    timezone = $23,
     updated_at = now()
 WHERE businesses.id = $1 AND EXISTS (
     SELECT 1 FROM business_members bm
@@ -37,6 +38,25 @@ WHERE businesses.id = $1 AND EXISTS (
       AND bm.user_id = $2
       AND bm.role IN ('owner', 'manager')
 )
+RETURNING *;
+
+-- name: ListBusinessHours :many
+SELECT *
+FROM business_hours
+WHERE business_id = $1
+ORDER BY day_of_week;
+
+-- name: DeleteBusinessHours :exec
+DELETE FROM business_hours
+WHERE business_id = $1;
+
+-- name: UpsertBusinessHour :one
+INSERT INTO business_hours (business_id, day_of_week, opens_at, closes_at, is_closed)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (business_id, day_of_week) DO UPDATE SET
+    opens_at = EXCLUDED.opens_at,
+    closes_at = EXCLUDED.closes_at,
+    is_closed = EXCLUDED.is_closed
 RETURNING *;
 
 -- name: GetBusinessForMember :one
@@ -86,7 +106,7 @@ WHERE businesses.clerk_org_id = $1::text
 
 -- name: ListPublicBusinesses :many
 SELECT id, name, slug, description, business_type, logo_url, cover_image_url,
-       city, state, country, latitude, longitude, pickup_available, delivery_available
+       city, state, country, latitude, longitude, pickup_available, delivery_available, timezone
 FROM businesses
 WHERE status = 'active'
   AND (sqlc.narg('city')::text IS NULL OR city = sqlc.narg('city')::text)
@@ -100,6 +120,6 @@ LIMIT sqlc.arg('limit_count') OFFSET sqlc.arg('offset_count');
 -- name: GetPublicBusinessBySlug :one
 SELECT id, name, slug, description, business_type, phone, whatsapp, email, website,
        logo_url, cover_image_url, address, neighborhood, city, state, country,
-       postal_code, latitude, longitude, pickup_available, delivery_available
+       postal_code, latitude, longitude, pickup_available, delivery_available, timezone
 FROM businesses
 WHERE slug = $1 AND status = 'active';

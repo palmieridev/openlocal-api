@@ -10,6 +10,7 @@ import (
 	"database/sql"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
 )
 
@@ -71,11 +72,11 @@ const createBusiness = `-- name: CreateBusiness :one
 INSERT INTO businesses (
     clerk_org_id, name, slug, description, business_type, phone, whatsapp, email, website,
     logo_url, cover_image_url, status, address, neighborhood, city, state,
-    country, postal_code, latitude, longitude, pickup_available, delivery_available
+    country, postal_code, latitude, longitude, pickup_available, delivery_available, timezone
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
 )
-RETURNING id, name, slug, description, business_type, phone, whatsapp, email, website, logo_url, cover_image_url, status, address, neighborhood, city, state, country, postal_code, latitude, longitude, pickup_available, delivery_available, created_at, updated_at, clerk_org_id
+RETURNING id, name, slug, description, business_type, phone, whatsapp, email, website, logo_url, cover_image_url, status, address, neighborhood, city, state, country, postal_code, latitude, longitude, pickup_available, delivery_available, created_at, updated_at, clerk_org_id, timezone
 `
 
 type CreateBusinessParams struct {
@@ -101,6 +102,7 @@ type CreateBusinessParams struct {
 	Longitude         decimal.NullDecimal `json:"longitude"`
 	PickupAvailable   bool                `json:"pickup_available"`
 	DeliveryAvailable bool                `json:"delivery_available"`
+	Timezone          string              `json:"timezone"`
 }
 
 func (q *Queries) CreateBusiness(ctx context.Context, arg CreateBusinessParams) (Business, error) {
@@ -127,6 +129,7 @@ func (q *Queries) CreateBusiness(ctx context.Context, arg CreateBusinessParams) 
 		arg.Longitude,
 		arg.PickupAvailable,
 		arg.DeliveryAvailable,
+		arg.Timezone,
 	)
 	var i Business
 	err := row.Scan(
@@ -155,8 +158,19 @@ func (q *Queries) CreateBusiness(ctx context.Context, arg CreateBusinessParams) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClerkOrgID,
+		&i.Timezone,
 	)
 	return i, err
+}
+
+const deleteBusinessHours = `-- name: DeleteBusinessHours :exec
+DELETE FROM business_hours
+WHERE business_id = $1
+`
+
+func (q *Queries) DeleteBusinessHours(ctx context.Context, businessID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteBusinessHours, businessID)
+	return err
 }
 
 const deleteBusinessMemberByClerkOrgAndUser = `-- name: DeleteBusinessMemberByClerkOrgAndUser :exec
@@ -175,7 +189,7 @@ func (q *Queries) DeleteBusinessMemberByClerkOrgAndUser(ctx context.Context, arg
 }
 
 const getBusinessForMember = `-- name: GetBusinessForMember :one
-SELECT b.id, b.name, b.slug, b.description, b.business_type, b.phone, b.whatsapp, b.email, b.website, b.logo_url, b.cover_image_url, b.status, b.address, b.neighborhood, b.city, b.state, b.country, b.postal_code, b.latitude, b.longitude, b.pickup_available, b.delivery_available, b.created_at, b.updated_at, b.clerk_org_id
+SELECT b.id, b.name, b.slug, b.description, b.business_type, b.phone, b.whatsapp, b.email, b.website, b.logo_url, b.cover_image_url, b.status, b.address, b.neighborhood, b.city, b.state, b.country, b.postal_code, b.latitude, b.longitude, b.pickup_available, b.delivery_available, b.created_at, b.updated_at, b.clerk_org_id, b.timezone
 FROM businesses b
 JOIN business_members bm ON bm.business_id = b.id
 WHERE b.id = $1 AND bm.user_id = $2
@@ -215,6 +229,7 @@ func (q *Queries) GetBusinessForMember(ctx context.Context, arg GetBusinessForMe
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClerkOrgID,
+		&i.Timezone,
 	)
 	return i, err
 }
@@ -259,7 +274,7 @@ func (q *Queries) GetBusinessMemberRole(ctx context.Context, arg GetBusinessMemb
 const getPublicBusinessBySlug = `-- name: GetPublicBusinessBySlug :one
 SELECT id, name, slug, description, business_type, phone, whatsapp, email, website,
        logo_url, cover_image_url, address, neighborhood, city, state, country,
-       postal_code, latitude, longitude, pickup_available, delivery_available
+       postal_code, latitude, longitude, pickup_available, delivery_available, timezone
 FROM businesses
 WHERE slug = $1 AND status = 'active'
 `
@@ -286,6 +301,7 @@ type GetPublicBusinessBySlugRow struct {
 	Longitude         decimal.NullDecimal `json:"longitude"`
 	PickupAvailable   bool                `json:"pickup_available"`
 	DeliveryAvailable bool                `json:"delivery_available"`
+	Timezone          string              `json:"timezone"`
 }
 
 func (q *Queries) GetPublicBusinessBySlug(ctx context.Context, slug string) (GetPublicBusinessBySlugRow, error) {
@@ -313,13 +329,48 @@ func (q *Queries) GetPublicBusinessBySlug(ctx context.Context, slug string) (Get
 		&i.Longitude,
 		&i.PickupAvailable,
 		&i.DeliveryAvailable,
+		&i.Timezone,
 	)
 	return i, err
 }
 
+const listBusinessHours = `-- name: ListBusinessHours :many
+SELECT id, business_id, day_of_week, opens_at, closes_at, is_closed
+FROM business_hours
+WHERE business_id = $1
+ORDER BY day_of_week
+`
+
+func (q *Queries) ListBusinessHours(ctx context.Context, businessID uuid.UUID) ([]BusinessHour, error) {
+	rows, err := q.db.Query(ctx, listBusinessHours, businessID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BusinessHour{}
+	for rows.Next() {
+		var i BusinessHour
+		if err := rows.Scan(
+			&i.ID,
+			&i.BusinessID,
+			&i.DayOfWeek,
+			&i.OpensAt,
+			&i.ClosesAt,
+			&i.IsClosed,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPublicBusinesses = `-- name: ListPublicBusinesses :many
 SELECT id, name, slug, description, business_type, logo_url, cover_image_url,
-       city, state, country, latitude, longitude, pickup_available, delivery_available
+       city, state, country, latitude, longitude, pickup_available, delivery_available, timezone
 FROM businesses
 WHERE status = 'active'
   AND ($1::text IS NULL OR city = $1::text)
@@ -356,6 +407,7 @@ type ListPublicBusinessesRow struct {
 	Longitude         decimal.NullDecimal `json:"longitude"`
 	PickupAvailable   bool                `json:"pickup_available"`
 	DeliveryAvailable bool                `json:"delivery_available"`
+	Timezone          string              `json:"timezone"`
 }
 
 func (q *Queries) ListPublicBusinesses(ctx context.Context, arg ListPublicBusinessesParams) ([]ListPublicBusinessesRow, error) {
@@ -390,6 +442,7 @@ func (q *Queries) ListPublicBusinesses(ctx context.Context, arg ListPublicBusine
 			&i.Longitude,
 			&i.PickupAvailable,
 			&i.DeliveryAvailable,
+			&i.Timezone,
 		); err != nil {
 			return nil, err
 		}
@@ -423,6 +476,7 @@ UPDATE businesses SET
     longitude = $20,
     pickup_available = $21,
     delivery_available = $22,
+    timezone = $23,
     updated_at = now()
 WHERE businesses.id = $1 AND EXISTS (
     SELECT 1 FROM business_members bm
@@ -430,7 +484,7 @@ WHERE businesses.id = $1 AND EXISTS (
       AND bm.user_id = $2
       AND bm.role IN ('owner', 'manager')
 )
-RETURNING id, name, slug, description, business_type, phone, whatsapp, email, website, logo_url, cover_image_url, status, address, neighborhood, city, state, country, postal_code, latitude, longitude, pickup_available, delivery_available, created_at, updated_at, clerk_org_id
+RETURNING id, name, slug, description, business_type, phone, whatsapp, email, website, logo_url, cover_image_url, status, address, neighborhood, city, state, country, postal_code, latitude, longitude, pickup_available, delivery_available, created_at, updated_at, clerk_org_id, timezone
 `
 
 type UpdateBusinessParams struct {
@@ -456,6 +510,7 @@ type UpdateBusinessParams struct {
 	Longitude         decimal.NullDecimal `json:"longitude"`
 	PickupAvailable   bool                `json:"pickup_available"`
 	DeliveryAvailable bool                `json:"delivery_available"`
+	Timezone          string              `json:"timezone"`
 }
 
 func (q *Queries) UpdateBusiness(ctx context.Context, arg UpdateBusinessParams) (Business, error) {
@@ -482,6 +537,7 @@ func (q *Queries) UpdateBusiness(ctx context.Context, arg UpdateBusinessParams) 
 		arg.Longitude,
 		arg.PickupAvailable,
 		arg.DeliveryAvailable,
+		arg.Timezone,
 	)
 	var i Business
 	err := row.Scan(
@@ -510,6 +566,45 @@ func (q *Queries) UpdateBusiness(ctx context.Context, arg UpdateBusinessParams) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClerkOrgID,
+		&i.Timezone,
+	)
+	return i, err
+}
+
+const upsertBusinessHour = `-- name: UpsertBusinessHour :one
+INSERT INTO business_hours (business_id, day_of_week, opens_at, closes_at, is_closed)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (business_id, day_of_week) DO UPDATE SET
+    opens_at = EXCLUDED.opens_at,
+    closes_at = EXCLUDED.closes_at,
+    is_closed = EXCLUDED.is_closed
+RETURNING id, business_id, day_of_week, opens_at, closes_at, is_closed
+`
+
+type UpsertBusinessHourParams struct {
+	BusinessID uuid.UUID   `json:"business_id"`
+	DayOfWeek  int32       `json:"day_of_week"`
+	OpensAt    pgtype.Time `json:"opens_at"`
+	ClosesAt   pgtype.Time `json:"closes_at"`
+	IsClosed   bool        `json:"is_closed"`
+}
+
+func (q *Queries) UpsertBusinessHour(ctx context.Context, arg UpsertBusinessHourParams) (BusinessHour, error) {
+	row := q.db.QueryRow(ctx, upsertBusinessHour,
+		arg.BusinessID,
+		arg.DayOfWeek,
+		arg.OpensAt,
+		arg.ClosesAt,
+		arg.IsClosed,
+	)
+	var i BusinessHour
+	err := row.Scan(
+		&i.ID,
+		&i.BusinessID,
+		&i.DayOfWeek,
+		&i.OpensAt,
+		&i.ClosesAt,
+		&i.IsClosed,
 	)
 	return i, err
 }

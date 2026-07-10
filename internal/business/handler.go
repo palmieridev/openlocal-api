@@ -24,6 +24,8 @@ func (h Handler) RegisterPrivateRoutes(private fiber.Router) {
 	private.Get("/businesses/me", h.getMe)
 	private.Get("/businesses/:id", h.get)
 	private.Patch("/businesses/:id", h.update)
+	private.Get("/businesses/:id/hours", h.getHours)
+	private.Put("/businesses/:id/hours", h.replaceHours)
 }
 
 func (h Handler) create(c *fiber.Ctx) error {
@@ -168,4 +170,73 @@ func (h Handler) update(c *fiber.Ctx) error {
 	}
 	_ = api.Audit(h.rt.Q, c.Context(), business.ID, user.ID, "business.update", "business", business.ID)
 	return c.JSON(Map(business, true))
+}
+
+func (h Handler) getHours(c *fiber.Ctx) error {
+	id, err := v.ParseUUID(c.Params("id"), "business id")
+	if err != nil {
+		return err
+	}
+	_, user, err := h.rt.RequireBusinessRole(c, id, "owner", "manager", "staff")
+	if err != nil {
+		return err
+	}
+	business, err := h.rt.Q.GetBusinessForMember(c.Context(), db.GetBusinessForMemberParams{ID: id, UserID: user.ID})
+	if err != nil {
+		return err
+	}
+	hours, err := h.rt.Q.ListBusinessHours(c.Context(), id)
+	if err != nil {
+		return err
+	}
+	return c.JSON(MapHours(business.Timezone, hours))
+}
+
+func (h Handler) replaceHours(c *fiber.Ctx) error {
+	id, err := v.ParseUUID(c.Params("id"), "business id")
+	if err != nil {
+		return err
+	}
+	_, user, err := h.rt.RequireBusinessRole(c, id, "owner", "manager")
+	if err != nil {
+		return err
+	}
+	var req HoursRequest
+	if err := v.DecodeStrict(c, &req); err != nil {
+		return err
+	}
+	params, err := HoursParams(id, req)
+	if err != nil {
+		return err
+	}
+
+	tx, err := h.rt.Pool.Begin(c.Context())
+	if err != nil {
+		return err
+	}
+	defer api.Rollback(c.Context(), tx)
+	qtx := h.rt.Q.WithTx(tx)
+	if err := qtx.DeleteBusinessHours(c.Context(), id); err != nil {
+		return err
+	}
+	for _, param := range params {
+		if _, err := qtx.UpsertBusinessHour(c.Context(), param); err != nil {
+			return err
+		}
+	}
+	if err := api.Audit(qtx, c.Context(), id, user.ID, "business.hours.update", "business", id); err != nil {
+		return err
+	}
+	hours, err := qtx.ListBusinessHours(c.Context(), id)
+	if err != nil {
+		return err
+	}
+	business, err := qtx.GetBusinessForMember(c.Context(), db.GetBusinessForMemberParams{ID: id, UserID: user.ID})
+	if err != nil {
+		return err
+	}
+	if err := tx.Commit(c.Context()); err != nil {
+		return err
+	}
+	return c.JSON(MapHours(business.Timezone, hours))
 }

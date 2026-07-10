@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
@@ -180,6 +181,52 @@ func TestStockMovementAndStockLevelCanBeAppliedTransactionally(t *testing.T) {
 	}
 }
 
+func TestBusinessHoursCanBeReplaced(t *testing.T) {
+	pool := integrationPool(t)
+	ctx := context.Background()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback(ctx) })
+	q := db.New(tx)
+	business := createBusiness(t, ctx, q)
+
+	_, err = q.UpsertBusinessHour(ctx, db.UpsertBusinessHourParams{
+		BusinessID: business.ID,
+		DayOfWeek:  1,
+		OpensAt:    pgtype.Time{Microseconds: 9 * 60 * 60 * 1_000_000, Valid: true},
+		ClosesAt:   pgtype.Time{Microseconds: 18 * 60 * 60 * 1_000_000, Valid: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.UpsertBusinessHour(ctx, db.UpsertBusinessHourParams{
+		BusinessID: business.ID,
+		DayOfWeek:  2,
+		IsClosed:   true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	hours, err := q.ListBusinessHours(ctx, business.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hours) != 2 || hours[0].DayOfWeek != 1 || !hours[1].IsClosed {
+		t.Fatalf("unexpected business hours: %#v", hours)
+	}
+	if err := q.DeleteBusinessHours(ctx, business.ID); err != nil {
+		t.Fatal(err)
+	}
+	hours, err = q.ListBusinessHours(ctx, business.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hours) != 0 {
+		t.Fatalf("expected no business hours, got %d", len(hours))
+	}
+}
+
 func createUser(t *testing.T, ctx context.Context, q *db.Queries) db.User {
 	t.Helper()
 	user, err := q.UpsertUserFromClerk(ctx, db.UpsertUserFromClerkParams{
@@ -206,6 +253,7 @@ func createBusiness(t *testing.T, ctx context.Context, q *db.Queries) db.Busines
 		Country:           "MX",
 		PickupAvailable:   true,
 		DeliveryAvailable: false,
+		Timezone:          "America/Mexico_City",
 	})
 	if err != nil {
 		t.Fatal(err)

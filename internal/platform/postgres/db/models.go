@@ -49,6 +49,7 @@ type Business struct {
 	CreatedAt         pgtype.Timestamptz  `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz  `json:"updated_at"`
 	ClerkOrgID        sql.NullString      `json:"clerk_org_id"`
+	Timezone          string              `json:"timezone"`
 }
 
 type BusinessCategory struct {

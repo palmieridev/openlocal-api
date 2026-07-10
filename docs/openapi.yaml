@@ -186,6 +186,13 @@ components:
         delivery_available:
           type: boolean
           default: false
+        timezone:
+          type: string
+          minLength: 1
+          maxLength: 100
+          default: America/Mexico_City
+          example: America/Mexico_City
+          description: IANA timezone used to interpret the business opening hours.
       required:
         - name
         - description
@@ -245,6 +252,10 @@ components:
           type: boolean
         delivery_available:
           type: boolean
+        timezone:
+          type: string
+          example: America/Mexico_City
+          description: IANA timezone used to interpret the business opening hours.
         created_at:
           type: string
           format: date-time
@@ -262,6 +273,86 @@ components:
         - country
         - pickup_available
         - delivery_available
+        - timezone
+    BusinessHourRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        day_of_week:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 6
+          description: Day of the week, where 0 is Sunday and 6 is Saturday.
+          example: 1
+        opens_at:
+          type: string
+          nullable: true
+          pattern: "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$"
+          example: "09:00"
+          description: Required in HH:MM format when the business is open; omit for closed days.
+        closes_at:
+          type: string
+          nullable: true
+          pattern: "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$"
+          example: "18:00"
+          description: Required in HH:MM format when the business is open; omit for closed days. May be earlier than opens_at for overnight hours.
+        is_closed:
+          type: boolean
+          default: false
+      required:
+        - day_of_week
+    BusinessHoursRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        hours:
+          type: array
+          maxItems: 7
+          uniqueItems: true
+          description: Complete replacement schedule. Send an empty array to remove all configured hours; each day may appear at most once.
+          items:
+            $ref: "#/components/schemas/BusinessHourRequest"
+      required:
+        - hours
+    BusinessHour:
+      type: object
+      additionalProperties: false
+      properties:
+        day_of_week:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 6
+          description: Day of the week, where 0 is Sunday and 6 is Saturday.
+        opens_at:
+          type: string
+          nullable: true
+          pattern: "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$"
+        closes_at:
+          type: string
+          nullable: true
+          pattern: "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$"
+        is_closed:
+          type: boolean
+      required:
+        - day_of_week
+        - is_closed
+    BusinessHours:
+      type: object
+      additionalProperties: false
+      properties:
+        timezone:
+          type: string
+          example: America/Mexico_City
+          description: IANA timezone used to interpret every time in the schedule.
+        hours:
+          type: array
+          items:
+            $ref: "#/components/schemas/BusinessHour"
+      required:
+        - timezone
+        - hours
     ProductRequest:
       type: object
       additionalProperties: false
@@ -781,6 +872,60 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Business"
+  /api/v1/businesses/{id}/hours:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Businesses
+      description: Returns the opening-hours schedule for an authorized business member.
+      responses:
+        "200":
+          description: Business opening hours ordered by day of week.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessHours"
+        "403":
+          description: Owner, manager, or staff membership is required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      tags:
+        - Businesses
+      description: Atomically replaces the complete opening-hours schedule. Overnight ranges are supported.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BusinessHoursRequest"
+      responses:
+        "200":
+          description: Updated business opening hours ordered by day of week.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessHours"
+        "400":
+          description: Invalid weekday, duplicate day, or invalid opening-hours combination.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Owner or manager membership is required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/products:
     get:
       tags:
