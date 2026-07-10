@@ -37,7 +37,7 @@ func Load() (Config, error) {
 
 	cfg := Config{
 		AppEnv:                 getenv("APP_ENV", "development"),
-		HTTPAddr:               getenv("HTTP_ADDR", ":8080"),
+		HTTPAddr:               portAddr(),
 		DatabaseURL:            getenv("DATABASE_URL", "postgres://openlocal:openlocal@localhost:5432/openlocal?sslmode=disable"),
 		ClerkSecretKey:         os.Getenv("CLERK_SECRET_KEY"),
 		ClerkAPIURL:            getenv("CLERK_API_URL", "https://api.clerk.com/v1"),
@@ -156,6 +156,13 @@ func getenv(key, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func portAddr() string {
+	if value := strings.TrimSpace(os.Getenv("PORT")); value != "" {
+		return ":" + strings.TrimPrefix(value, ":")
+	}
+	return ":8080"
 }
 
 func getbool(key string, fallback bool) bool {

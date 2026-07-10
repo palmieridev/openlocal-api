@@ -52,6 +52,30 @@ func TestValidateRejectsUnsafeProductionConfiguration(t *testing.T) {
 	}
 }
 
+func TestPortAddrUsesPort(t *testing.T) {
+	t.Setenv("PORT", "8080")
+
+	if got := portAddr(); got != ":8080" {
+		t.Fatalf("portAddr() = %q, want %q", got, ":8080")
+	}
+}
+
+func TestPortAddrAcceptsColonPrefixedPort(t *testing.T) {
+	t.Setenv("PORT", ":9000")
+
+	if got := portAddr(); got != ":9000" {
+		t.Fatalf("portAddr() = %q, want %q", got, ":9000")
+	}
+}
+
+func TestPortAddrDefaultsTo8080(t *testing.T) {
+	t.Setenv("PORT", "")
+
+	if got := portAddr(); got != ":8080" {
+		t.Fatalf("portAddr() = %q, want %q", got, ":8080")
+	}
+}
+
 func TestIssuerFromPublishableKeyAcceptsPaddedClerkKey(t *testing.T) {
 	host := "example.clerk.accounts.dev"
 	key := "pk_live_" + base64.StdEncoding.EncodeToString([]byte(host+"$"))

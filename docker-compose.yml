@@ -7,9 +7,9 @@ services:
       - .env.local
     environment:
       DATABASE_URL: postgres://${PGUSER:-openlocal}:${PGPASSWORD:-openlocal}@postgres:5432/${PGDATABASE:-openlocal}?sslmode=disable
-      HTTP_ADDR: ${HTTP_ADDR:-:8080}
+      PORT: ${PORT:-8080}
     ports:
-      - "${HTTP_PORT:-8080}:8080"
+      - "${HTTP_PORT:-8080}:${PORT:-8080}"
     command: sh -c "go install github.com/air-verse/air@latest && air -c .air.toml"
     depends_on:
       postgres:
