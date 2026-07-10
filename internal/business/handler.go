@@ -101,6 +101,9 @@ func (h Handler) getMe(c *fiber.Ctx) error {
 	if authCtx.ClerkOrgID == "" {
 		return fiber.NewError(fiber.StatusForbidden, "active Clerk organization is required")
 	}
+	if !api.RoleAllowed(authCtx.Role, "owner", "manager", "staff") {
+		return fiber.NewError(fiber.StatusForbidden, "role is not allowed")
+	}
 	businessID, err := h.rt.Q.GetBusinessIDByClerkOrgID(c.Context(), authCtx.ClerkOrgID)
 	if err != nil {
 		return err
@@ -116,9 +119,7 @@ func (h Handler) getMe(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	switch role {
-	case "owner", "manager", "staff":
-	default:
+	if !api.RoleAllowed(role, "owner", "manager", "staff") {
 		return fiber.NewError(fiber.StatusForbidden, "role is not allowed")
 	}
 	business, err := h.rt.Q.GetBusinessForMember(c.Context(), db.GetBusinessForMemberParams{ID: businessID, UserID: user.ID})

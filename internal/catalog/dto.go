@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 )
 
 type JSONObj map[string]any
+
+var currencyPattern = regexp.MustCompile(`^[A-Z]{3}$`)
 
 type ProductRequest struct {
 	BusinessID  string  `json:"business_id"`
@@ -132,12 +135,6 @@ func MapVariant(v db.ProductVariant, includePrivate bool) VariantResponse {
 	return out
 }
 
-// enumValue normalizes an enum-style field (lowercase, trimmed) while preserving
-// underscores, unlike v.Slug which would replace them with hyphens.
-func enumValue(value string) string {
-	return strings.ToLower(strings.TrimSpace(value))
-}
-
 func ProductParams(req ProductRequest) (db.CreateProductParams, uuid.UUID, error) {
 	businessID, err := v.ParseUUID(req.BusinessID, "business_id")
 	if err != nil {
@@ -149,26 +146,46 @@ func ProductParams(req ProductRequest) (db.CreateProductParams, uuid.UUID, error
 	}
 	name := v.Clean(req.Name)
 	slug := v.Slug(api.FirstNonEmpty(req.Slug, name))
-	if name == "" {
-		return db.CreateProductParams{}, uuid.Nil, fiber.NewError(fiber.StatusBadRequest, "name is required")
+	if err := v.StringLength(name, "name", 2, 180); err != nil {
+		return db.CreateProductParams{}, uuid.Nil, err
 	}
 	if err := v.ValidateSlug(slug); err != nil {
 		return db.CreateProductParams{}, uuid.Nil, fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	description := v.Clean(req.Description)
+	if err := v.StringLength(description, "description", 0, 5000); err != nil {
+		return db.CreateProductParams{}, uuid.Nil, err
+	}
+	brand := v.CleanOptional(req.Brand)
+	if brand != nil {
+		if err := v.StringLength(*brand, "brand", 1, 120); err != nil {
+			return db.CreateProductParams{}, uuid.Nil, err
+		}
+	}
+	unit := api.FirstNonEmpty(v.Clean(req.Unit), "piece")
+	if err := v.StringLength(unit, "unit", 1, 40); err != nil {
+		return db.CreateProductParams{}, uuid.Nil, err
+	}
+	productType, err := v.Enum(req.ProductType, "product_type", "stocked_product", "stocked_product", "made_to_order_product", "unique_item")
+	if err != nil {
+		return db.CreateProductParams{}, uuid.Nil, err
+	}
+	status, err := v.Enum(req.Status, "status", "draft", "draft", "active", "archived")
+	if err != nil {
+		return db.CreateProductParams{}, uuid.Nil, err
 	}
 	return db.CreateProductParams{
 		BusinessID:  businessID,
 		CategoryID:  categoryID,
 		Name:        name,
 		Slug:        slug,
-		Description: v.Clean(req.Description),
-		Brand:       api.NullString(v.CleanOptional(req.Brand)),
-		Unit:        api.FirstNonEmpty(v.Clean(req.Unit), "piece"),
-		// product_type and status are enums (underscored), not slugs — v.Slug would
-		// turn "stocked_product" into "stocked-product" and break the DB CHECK.
-		ProductType: api.FirstNonEmpty(enumValue(req.ProductType), "stocked_product"),
+		Description: description,
+		Brand:       api.NullString(brand),
+		Unit:        unit,
+		ProductType: productType,
 		IsHandmade:  req.IsHandmade,
 		IsPublic:    req.IsPublic,
-		Status:      api.FirstNonEmpty(enumValue(req.Status), "draft"),
+		Status:      status,
 	}, businessID, nil
 }
 
@@ -201,20 +218,34 @@ func VariantParams(req VariantRequest) (db.CreateVariantParams, uuid.UUID, error
 	if err != nil {
 		return db.CreateVariantParams{}, uuid.Nil, err
 	}
-	price, err := decimal.NewFromString(req.Price)
-	if err != nil || price.IsNegative() {
-		return db.CreateVariantParams{}, uuid.Nil, fiber.NewError(fiber.StatusBadRequest, "price must be >= 0")
+	price, err := v.ParseDecimal(req.Price, "price")
+	if err != nil {
+		return db.CreateVariantParams{}, uuid.Nil, err
+	}
+	if err := v.DecimalRange(price, "price", decimal.Zero, decimal.RequireFromString("9999999999.99"), 2); err != nil {
+		return db.CreateVariantParams{}, uuid.Nil, err
 	}
 	cost, err := api.NullDecimal(req.Cost)
 	if err != nil {
 		return db.CreateVariantParams{}, uuid.Nil, fiber.NewError(fiber.StatusBadRequest, "cost must be a decimal")
 	}
+	if cost.Valid {
+		if err := v.DecimalRange(cost.Decimal, "cost", decimal.Zero, decimal.RequireFromString("9999999999.99"), 2); err != nil {
+			return db.CreateVariantParams{}, uuid.Nil, err
+		}
+	}
 	reorderPoint := decimal.Zero
 	if req.ReorderPoint != "" {
-		reorderPoint, err = decimal.NewFromString(req.ReorderPoint)
-		if err != nil || reorderPoint.IsNegative() {
-			return db.CreateVariantParams{}, uuid.Nil, fiber.NewError(fiber.StatusBadRequest, "reorder_point must be >= 0")
+		reorderPoint, err = v.ParseDecimal(req.ReorderPoint, "reorder_point")
+		if err != nil {
+			return db.CreateVariantParams{}, uuid.Nil, err
 		}
+	}
+	if err := v.DecimalRange(reorderPoint, "reorder_point", decimal.Zero, decimal.RequireFromString("999999999.999"), 3); err != nil {
+		return db.CreateVariantParams{}, uuid.Nil, err
+	}
+	if req.Attributes == nil {
+		req.Attributes = JSONObj{}
 	}
 	attributes, err := json.Marshal(req.Attributes)
 	if err != nil {
@@ -222,26 +253,53 @@ func VariantParams(req VariantRequest) (db.CreateVariantParams, uuid.UUID, error
 	}
 	sku := strings.ToUpper(v.Clean(req.SKU))
 	internalCode := strings.ToUpper(v.Clean(api.FirstNonEmpty(req.InternalCode, sku)))
-	if sku == "" || internalCode == "" {
-		return db.CreateVariantParams{}, uuid.Nil, fiber.NewError(fiber.StatusBadRequest, "sku and internal_code are required")
+	if err := v.StringLength(sku, "sku", 2, 80); err != nil {
+		return db.CreateVariantParams{}, uuid.Nil, err
+	}
+	if err := v.StringLength(internalCode, "internal_code", 2, 80); err != nil {
+		return db.CreateVariantParams{}, uuid.Nil, err
+	}
+	name := v.Clean(req.Name)
+	if err := v.StringLength(name, "name", 0, 180); err != nil {
+		return db.CreateVariantParams{}, uuid.Nil, err
+	}
+	barcode := v.CleanOptional(req.Barcode)
+	if barcode != nil {
+		if err := v.StringLength(*barcode, "barcode", 1, 128); err != nil {
+			return db.CreateVariantParams{}, uuid.Nil, err
+		}
+	}
+	currency := strings.ToUpper(api.FirstNonEmpty(v.Clean(req.Currency), "MXN"))
+	if !currencyPattern.MatchString(currency) {
+		return db.CreateVariantParams{}, uuid.Nil, fiber.NewError(fiber.StatusBadRequest, "currency must be a three-letter code")
+	}
+	publicStockStatus, err := v.Enum(req.PublicStockStatus, "public_stock_status", "unknown", "available", "low_stock", "out_of_stock", "made_to_order", "unknown")
+	if err != nil {
+		return db.CreateVariantParams{}, uuid.Nil, err
+	}
+	status, err := v.Enum(req.Status, "status", "active", "active", "archived")
+	if err != nil {
+		return db.CreateVariantParams{}, uuid.Nil, err
+	}
+	if req.LeadTimeDays < 0 || req.LeadTimeDays > 3650 {
+		return db.CreateVariantParams{}, uuid.Nil, fiber.NewError(fiber.StatusBadRequest, "lead_time_days must be between 0 and 3650")
 	}
 	return db.CreateVariantParams{
-		ProductID:      productID,
-		BusinessID:     businessID,
-		Sku:            sku,
-		Barcode:        api.NullString(v.CleanOptional(req.Barcode)),
-		InternalCode:   internalCode,
-		Name:           v.Clean(req.Name),
-		Attributes:     attributes,
-		Price:          price,
-		Cost:           cost,
-		Currency:       strings.ToUpper(api.FirstNonEmpty(v.Clean(req.Currency), "MXN")),
-		TrackInventory: req.TrackInventory,
-		// Enums (underscored values like low_stock/out_of_stock) — not slugs.
-		PublicStockStatus: api.FirstNonEmpty(enumValue(req.PublicStockStatus), "unknown"),
+		ProductID:         productID,
+		BusinessID:        businessID,
+		Sku:               sku,
+		Barcode:           api.NullString(barcode),
+		InternalCode:      internalCode,
+		Name:              name,
+		Attributes:        attributes,
+		Price:             price,
+		Cost:              cost,
+		Currency:          currency,
+		TrackInventory:    req.TrackInventory,
+		PublicStockStatus: publicStockStatus,
 		ReorderPoint:      reorderPoint,
 		LeadTimeDays:      req.LeadTimeDays,
-		Status:            api.FirstNonEmpty(enumValue(req.Status), "active"),
+		Status:            status,
 	}, businessID, nil
 }
 

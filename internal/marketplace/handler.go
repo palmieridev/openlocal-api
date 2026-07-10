@@ -8,6 +8,7 @@ import (
 	"github.com/palmieridev/openlocal-api/internal/business"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	v "github.com/palmieridev/openlocal-api/internal/platform/validator"
+	"github.com/shopspring/decimal"
 )
 
 type Handler struct {
@@ -26,7 +27,11 @@ func (h Handler) RegisterPublicRoutes(apiGroup fiber.Router) {
 }
 
 func (h Handler) getPublicBusiness(c *fiber.Ctx) error {
-	row, err := h.rt.Q.GetPublicBusinessBySlug(c.Context(), v.Slug(c.Params("slug")))
+	slug := v.Slug(c.Params("slug"))
+	if err := v.ValidateSlug(slug); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	row, err := h.rt.Q.GetPublicBusinessBySlug(c.Context(), slug)
 	if err != nil {
 		return err
 	}
@@ -61,6 +66,9 @@ func (h Handler) listPublicBusinesses(c *fiber.Ctx) error {
 		return err
 	}
 	city := v.Clean(c.Query("city"))
+	if err := v.StringLength(city, "city", 0, 120); err != nil {
+		return err
+	}
 	params := db.ListPublicBusinessesParams{
 		City:        sql.NullString{String: city, Valid: city != ""},
 		OffsetCount: offset,
@@ -77,6 +85,29 @@ func (h Handler) listPublicBusinesses(c *fiber.Ctx) error {
 	}
 	if params.MaxLng, err = api.NullableDecimalQuery(c, "max_lng"); err != nil {
 		return err
+	}
+	for _, coordinate := range []struct {
+		value decimal.NullDecimal
+		name  string
+		min   decimal.Decimal
+		max   decimal.Decimal
+	}{
+		{params.MinLat, "min_lat", decimal.NewFromInt(-90), decimal.NewFromInt(90)},
+		{params.MaxLat, "max_lat", decimal.NewFromInt(-90), decimal.NewFromInt(90)},
+		{params.MinLng, "min_lng", decimal.NewFromInt(-180), decimal.NewFromInt(180)},
+		{params.MaxLng, "max_lng", decimal.NewFromInt(-180), decimal.NewFromInt(180)},
+	} {
+		if coordinate.value.Valid {
+			if err := v.DecimalRange(coordinate.value.Decimal, coordinate.name, coordinate.min, coordinate.max, 6); err != nil {
+				return err
+			}
+		}
+	}
+	if params.MinLat.Valid && params.MaxLat.Valid && params.MinLat.Decimal.GreaterThan(params.MaxLat.Decimal) {
+		return fiber.NewError(fiber.StatusBadRequest, "min_lat must be <= max_lat")
+	}
+	if params.MinLng.Valid && params.MaxLng.Valid && params.MinLng.Decimal.GreaterThan(params.MaxLng.Decimal) {
+		return fiber.NewError(fiber.StatusBadRequest, "min_lng must be <= max_lng")
 	}
 	rows, err := h.rt.Q.ListPublicBusinesses(c.Context(), params)
 	if err != nil {
@@ -109,13 +140,17 @@ func (h Handler) searchMarketplaceProducts(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	query := v.Clean(c.Query("q"))
+	if err := v.StringLength(query, "q", 0, 200); err != nil {
+		return err
+	}
 	rows, err := h.rt.Q.SearchMarketplaceProducts(c.Context(), db.SearchMarketplaceProductsParams{
-		Column1: v.Clean(c.Query("q")),
+		Column1: query,
 		Limit:   limit,
 		Offset:  offset,
 	})
 	if err != nil {
 		return err
 	}
-	return c.JSON(rows)
+	return c.JSON(MapProducts(rows))
 }

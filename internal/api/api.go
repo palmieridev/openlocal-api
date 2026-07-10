@@ -87,6 +87,9 @@ func (rt Runtime) RequireBusinessRole(c *fiber.Ctx, businessID uuid.UUID, allowe
 	if authCtx.ClerkOrgID == "" || authCtx.Role == "" {
 		return auth.Context{}, db.User{}, fiber.NewError(fiber.StatusForbidden, "active Clerk organization is required")
 	}
+	if !RoleAllowed(authCtx.Role, allowed...) {
+		return auth.Context{}, db.User{}, fiber.NewError(fiber.StatusForbidden, "role is not allowed")
+	}
 	role, err := rt.Q.GetBusinessMemberRole(c.Context(), db.GetBusinessMemberRoleParams{
 		BusinessID: businessID,
 		UserID:     user.ID,
@@ -98,12 +101,19 @@ func (rt Runtime) RequireBusinessRole(c *fiber.Ctx, businessID uuid.UUID, allowe
 	if err != nil {
 		return auth.Context{}, db.User{}, err
 	}
-	for _, allowedRole := range allowed {
-		if role == allowedRole {
-			return authCtx, user, nil
-		}
+	if RoleAllowed(role, allowed...) {
+		return authCtx, user, nil
 	}
 	return auth.Context{}, db.User{}, fiber.NewError(fiber.StatusForbidden, "role is not allowed")
+}
+
+func RoleAllowed(role string, allowed ...string) bool {
+	for _, allowedRole := range allowed {
+		if role == allowedRole {
+			return true
+		}
+	}
+	return false
 }
 
 func Audit(q *db.Queries, ctx context.Context, businessID, userID uuid.UUID, action, entityType string, entityID uuid.UUID) error {
@@ -143,9 +153,9 @@ func NullableDecimalQuery(c *fiber.Ctx, key string) (decimal.NullDecimal, error)
 	if value == "" {
 		return decimal.NullDecimal{}, nil
 	}
-	d, err := decimal.NewFromString(value)
+	d, err := v.ParseDecimal(value, key)
 	if err != nil {
-		return decimal.NullDecimal{}, fiber.NewError(fiber.StatusBadRequest, key+" must be a decimal")
+		return decimal.NullDecimal{}, err
 	}
 	return decimal.NullDecimal{Decimal: d, Valid: true}, nil
 }
@@ -165,10 +175,10 @@ func StringPtr(value sql.NullString) *string {
 }
 
 func NullDecimal(value *string) (decimal.NullDecimal, error) {
-	if value == nil || *value == "" {
+	if value == nil || strings.TrimSpace(*value) == "" {
 		return decimal.NullDecimal{}, nil
 	}
-	d, err := decimal.NewFromString(*value)
+	d, err := v.ParseDecimal(*value, "value")
 	if err != nil {
 		return decimal.NullDecimal{}, err
 	}

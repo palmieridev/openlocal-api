@@ -3,6 +3,7 @@ package server
 import (
 	"log/slog"
 	"strings"
+	"time"
 
 	fiberswagger "github.com/gofiber/contrib/swagger"
 	"github.com/gofiber/fiber/v2"
@@ -52,12 +53,18 @@ func New(deps Deps) *fiber.App {
 	app.Use(recover.New())
 	app.Use(requestid.New())
 	app.Use(helmet.New())
+	allowHeaders := "Origin, Content-Type, Accept, Authorization, Idempotency-Key"
+	if deps.Config.AuthTestBypass {
+		allowHeaders += ", X-Test-Clerk-User-ID, X-Test-Clerk-Org-ID, X-Test-Clerk-Org-Role, X-Test-Email, X-Test-First-Name, X-Test-Last-Name"
+	}
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: strings.Join(deps.Config.CORSAllowedOrigins, ","),
-		AllowHeaders: "Origin, Content-Type, Accept, Authorization, X-Test-Clerk-User-ID, X-Test-Clerk-Org-ID, X-Test-Clerk-Org-Role",
+		AllowHeaders: allowHeaders,
 		AllowMethods: "GET,POST,PATCH,DELETE,OPTIONS",
 	}))
-	app.Use(limiter.New(limiter.Config{Max: 120}))
+	app.Use(rateLimiter(deps.Config.GlobalRateLimitMax, deps.Config.RateLimitWindow, nil, func(c *fiber.Ctx) string {
+		return "ip:" + c.IP()
+	}))
 
 	app.Get("/healthz", s.health)
 	app.Use(fiberswagger.New(fiberswagger.Config{
@@ -70,11 +77,23 @@ func New(deps Deps) *fiber.App {
 	}))
 
 	apiGroup := app.Group("/api/v1")
-	webhooks.NewHandler(s.rt, deps.Config.ClerkWebhookSecret).RegisterRoutes(apiGroup)
-	marketplace.NewHandler(s.rt).RegisterPublicRoutes(apiGroup)
-	catalog.NewHandler(s.rt).RegisterPublicRoutes(apiGroup)
+	webhookAPI := apiGroup.Group("", rateLimiter(deps.Config.WebhookRateLimitMax, deps.Config.RateLimitWindow, func(c *fiber.Ctx) bool {
+		return !strings.HasPrefix(c.Path(), "/api/v1/webhooks/")
+	}, func(c *fiber.Ctx) string {
+		return "webhook:" + c.IP()
+	}))
+	webhooks.NewHandler(s.rt, deps.Config.ClerkWebhookSecret).RegisterRoutes(webhookAPI)
 
-	private := apiGroup.Group("", deps.Auth.RequireAuth())
+	publicAPI := apiGroup.Group("", rateLimiter(deps.Config.PublicRateLimitMax, deps.Config.RateLimitWindow, func(c *fiber.Ctx) bool {
+		path := c.Path()
+		return !strings.HasPrefix(path, "/api/v1/marketplace/") && !strings.HasPrefix(path, "/api/v1/public/")
+	}, func(c *fiber.Ctx) string {
+		return "public:" + c.IP()
+	}))
+	marketplace.NewHandler(s.rt).RegisterPublicRoutes(publicAPI)
+	catalog.NewHandler(s.rt).RegisterPublicRoutes(publicAPI)
+
+	private := apiGroup.Group("", deps.Auth.RequireAuth(), rateLimiter(deps.Config.PrivateRateLimitMax, deps.Config.RateLimitWindow, nil, authenticatedRateLimitKey))
 	users.NewHandler(s.rt).RegisterRoutes(private)
 	business.NewHandler(s.rt).RegisterPrivateRoutes(private)
 	catalog.NewHandler(s.rt).RegisterPrivateRoutes(private)
@@ -82,6 +101,26 @@ func New(deps Deps) *fiber.App {
 	analytics.NewHandler(s.rt).RegisterPrivateRoutes(private)
 
 	return app
+}
+
+func rateLimiter(maxRequests int, window time.Duration, next func(*fiber.Ctx) bool, keyGenerator func(*fiber.Ctx) string) fiber.Handler {
+	return limiter.New(limiter.Config{
+		Max:          maxRequests,
+		Expiration:   window,
+		Next:         next,
+		KeyGenerator: keyGenerator,
+		LimitReached: func(c *fiber.Ctx) error {
+			return fiber.NewError(fiber.StatusTooManyRequests, "rate limit exceeded")
+		},
+	})
+}
+
+func authenticatedRateLimitKey(c *fiber.Ctx) string {
+	authCtx, ok := auth.FromFiber(c)
+	if !ok {
+		return "private-ip:" + c.IP()
+	}
+	return "private:" + authCtx.ClerkOrgID + ":" + authCtx.ClerkUserID
 }
 
 func (s *Server) health(c *fiber.Ctx) error {

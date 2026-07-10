@@ -42,7 +42,7 @@ func (h Handler) getABC(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(items)
+	return c.JSON(MapABC(items))
 }
 
 func (h Handler) getLowStock(c *fiber.Ctx) error {
@@ -61,7 +61,7 @@ func (h Handler) getLowStock(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(items)
+	return c.JSON(MapLowStock(items))
 }
 
 func (h Handler) getEOQ(c *fiber.Ctx) error {
@@ -76,17 +76,23 @@ func (h Handler) getEOQ(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	periodDays := int32(c.QueryInt("period_days", 90))
-	if periodDays < 1 || periodDays > 730 {
-		return fiber.NewError(fiber.StatusBadRequest, "period_days must be between 1 and 730")
+	periodDays, err := v.QueryInt32(c, "period_days", 90, 1, 730)
+	if err != nil {
+		return err
 	}
-	orderCost, err := decimal.NewFromString(api.DefaultQuery(c, "estimated_order_cost", "100"))
-	if err != nil || orderCost.IsNegative() {
-		return fiber.NewError(fiber.StatusBadRequest, "estimated_order_cost must be >= 0")
+	orderCost, err := v.ParseDecimal(api.DefaultQuery(c, "estimated_order_cost", "100"), "estimated_order_cost")
+	if err != nil {
+		return err
 	}
-	holdingPercent, err := decimal.NewFromString(api.DefaultQuery(c, "estimated_holding_cost_percent", "20"))
-	if err != nil || holdingPercent.IsNegative() {
-		return fiber.NewError(fiber.StatusBadRequest, "estimated_holding_cost_percent must be >= 0")
+	if err := v.DecimalRange(orderCost, "estimated_order_cost", decimal.Zero, decimal.RequireFromString("9999999999.99"), 2); err != nil {
+		return err
+	}
+	holdingPercent, err := v.ParseDecimal(api.DefaultQuery(c, "estimated_holding_cost_percent", "20"), "estimated_holding_cost_percent")
+	if err != nil {
+		return err
+	}
+	if err := v.DecimalRange(holdingPercent, "estimated_holding_cost_percent", decimal.Zero, decimal.NewFromInt(1000), 4); err != nil {
+		return err
 	}
 	demand, err := h.rt.Q.GetDemandForEOQ(c.Context(), db.GetDemandForEOQParams{BusinessID: businessID, VariantID: variantID, Column3: periodDays})
 	if err != nil {

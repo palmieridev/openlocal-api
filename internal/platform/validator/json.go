@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -17,6 +18,7 @@ import (
 const MaxBodyBytes = 1 << 20
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+var idempotencyKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{8,128}$`)
 
 func DecodeStrict(c *fiber.Ctx, dst any) error {
 	body := c.Body()
@@ -84,21 +86,80 @@ func ParseUUID(value, field string) (uuid.UUID, error) {
 }
 
 func ParseDecimal(value, field string) (decimal.Decimal, error) {
-	d, err := decimal.NewFromString(strings.TrimSpace(value))
+	value = strings.TrimSpace(value)
+	if len(value) > 64 {
+		return decimal.Zero, fiber.NewError(fiber.StatusBadRequest, field+" must be a decimal with at most 64 characters")
+	}
+	d, err := decimal.NewFromString(value)
 	if err != nil {
 		return decimal.Zero, fiber.NewError(fiber.StatusBadRequest, field+" must be a decimal")
 	}
 	return d, nil
 }
 
-func Page(c *fiber.Ctx) (limit int32, offset int32, err error) {
-	limit = int32(c.QueryInt("limit", 25))
-	offset = int32(c.QueryInt("offset", 0))
-	if limit < 1 || limit > 100 {
-		return 0, 0, fiber.NewError(fiber.StatusBadRequest, "limit must be between 1 and 100")
+func Enum(value, field, fallback string, allowed ...string) (string, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		value = fallback
 	}
-	if offset < 0 {
-		return 0, 0, fiber.NewError(fiber.StatusBadRequest, "offset must be >= 0")
+	for _, candidate := range allowed {
+		if value == candidate {
+			return value, nil
+		}
+	}
+	return "", fiber.NewError(fiber.StatusBadRequest, field+" is invalid")
+}
+
+func StringLength(value, field string, minLength, maxLength int) error {
+	length := len([]rune(value))
+	if length < minLength || length > maxLength {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("%s must be between %d and %d characters", field, minLength, maxLength))
+	}
+	return nil
+}
+
+func DecimalRange(value decimal.Decimal, field string, min, max decimal.Decimal, maxScale int32) error {
+	if value.LessThan(min) || value.GreaterThan(max) {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("%s must be between %s and %s", field, min, max))
+	}
+	if value.Exponent() < -maxScale {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("%s must have at most %d decimal places", field, maxScale))
+	}
+	return nil
+}
+
+func IdempotencyKey(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if !idempotencyKeyPattern.MatchString(value) {
+		return "", fiber.NewError(fiber.StatusBadRequest, "Idempotency-Key must be 8-128 characters using letters, numbers, dot, underscore, colon, or dash")
+	}
+	return value, nil
+}
+
+func QueryInt32(c *fiber.Ctx, key string, fallback, minValue, maxValue int32) (int32, error) {
+	value := strings.TrimSpace(c.Query(key))
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseInt(value, 10, 32)
+	if err != nil {
+		return 0, fiber.NewError(fiber.StatusBadRequest, key+" must be an integer")
+	}
+	result := int32(parsed)
+	if result < minValue || result > maxValue {
+		return 0, fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("%s must be between %d and %d", key, minValue, maxValue))
+	}
+	return result, nil
+}
+
+func Page(c *fiber.Ctx) (limit int32, offset int32, err error) {
+	limit, err = QueryInt32(c, "limit", 25, 1, 100)
+	if err != nil {
+		return 0, 0, err
+	}
+	offset, err = QueryInt32(c, "offset", 0, 0, 2_000_000_000)
+	if err != nil {
+		return 0, 0, err
 	}
 	return limit, offset, nil
 }

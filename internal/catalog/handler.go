@@ -200,6 +200,9 @@ func (h Handler) getVariantByBarcode(c *fiber.Ctx) error {
 		return err
 	}
 	barcode := v.Clean(c.Params("barcode"))
+	if err := v.StringLength(barcode, "barcode", 1, 128); err != nil {
+		return err
+	}
 	variant, err := h.rt.Q.GetVariantByBarcode(c.Context(), db.GetVariantByBarcodeParams{
 		BusinessID: businessID,
 		Barcode:    sql.NullString{String: barcode, Valid: barcode != ""},
@@ -218,9 +221,13 @@ func (h Handler) getVariantBySKU(c *fiber.Ctx) error {
 	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager", "staff"); err != nil {
 		return err
 	}
+	sku := strings.ToUpper(v.Clean(c.Params("sku")))
+	if err := v.StringLength(sku, "sku", 2, 80); err != nil {
+		return err
+	}
 	variant, err := h.rt.Q.GetVariantBySKU(c.Context(), db.GetVariantBySKUParams{
 		BusinessID: businessID,
-		Sku:        strings.ToUpper(v.Clean(c.Params("sku"))),
+		Sku:        sku,
 	})
 	if err != nil {
 		return err
@@ -270,8 +277,12 @@ func (h Handler) listPublicProducts(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	slug := v.Slug(c.Params("slug"))
+	if err := v.ValidateSlug(slug); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
 	rows, err := h.rt.Q.ListPublicProductsByBusinessSlug(c.Context(), db.ListPublicProductsByBusinessSlugParams{
-		Slug:   v.Slug(c.Params("slug")),
+		Slug:   slug,
 		Limit:  limit,
 		Offset: offset,
 	})

@@ -1,6 +1,8 @@
 package business
 
 import (
+	"net/mail"
+	"net/url"
 	"strings"
 	"time"
 
@@ -9,6 +11,7 @@ import (
 	"github.com/palmieridev/openlocal-api/internal/api"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	v "github.com/palmieridev/openlocal-api/internal/platform/validator"
+	"github.com/shopspring/decimal"
 )
 
 type Request struct {
@@ -101,18 +104,87 @@ func Map(b db.Business, includePrivate bool) Response {
 func CreateParams(req Request) (db.CreateBusinessParams, error) {
 	req.Name = v.Clean(req.Name)
 	req.Slug = v.Slug(api.FirstNonEmpty(req.Slug, req.Name))
-	if req.Name == "" || len(req.Name) > 160 {
-		return db.CreateBusinessParams{}, fiber.NewError(fiber.StatusBadRequest, "name is required and must be <= 160 characters")
+	if err := v.StringLength(req.Name, "name", 2, 160); err != nil {
+		return db.CreateBusinessParams{}, err
 	}
 	if err := v.ValidateSlug(req.Slug); err != nil {
 		return db.CreateBusinessParams{}, fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
 	req.Description = v.Clean(req.Description)
+	if err := v.StringLength(req.Description, "description", 0, 4000); err != nil {
+		return db.CreateBusinessParams{}, err
+	}
 	req.BusinessType = api.FirstNonEmpty(v.Slug(req.BusinessType), "retail")
-	req.Status = api.FirstNonEmpty(v.Slug(req.Status), "draft")
+	if err := v.StringLength(req.BusinessType, "business_type", 2, 80); err != nil {
+		return db.CreateBusinessParams{}, err
+	}
+	status, err := v.Enum(req.Status, "status", "draft", "draft", "active", "suspended", "archived")
+	if err != nil {
+		return db.CreateBusinessParams{}, err
+	}
 	req.City = api.FirstNonEmpty(v.Clean(req.City), "CDMX")
 	req.State = api.FirstNonEmpty(v.Clean(req.State), "CDMX")
 	req.Country = strings.ToUpper(api.FirstNonEmpty(v.Clean(req.Country), "MX"))
+	if err := v.StringLength(req.City, "city", 1, 120); err != nil {
+		return db.CreateBusinessParams{}, err
+	}
+	if err := v.StringLength(req.State, "state", 1, 120); err != nil {
+		return db.CreateBusinessParams{}, err
+	}
+	if len(req.Country) != 2 || req.Country[0] < 'A' || req.Country[0] > 'Z' || req.Country[1] < 'A' || req.Country[1] > 'Z' {
+		return db.CreateBusinessParams{}, fiber.NewError(fiber.StatusBadRequest, "country must be a two-letter code")
+	}
+
+	phone := v.CleanOptional(req.Phone)
+	whatsapp := v.CleanOptional(req.Whatsapp)
+	email := v.CleanOptional(req.Email)
+	website := v.CleanOptional(req.Website)
+	logoURL := v.CleanOptional(req.LogoURL)
+	coverImageURL := v.CleanOptional(req.CoverImageURL)
+	address := v.CleanOptional(req.Address)
+	neighborhood := v.CleanOptional(req.Neighborhood)
+	postalCode := v.CleanOptional(req.PostalCode)
+	for _, field := range []struct {
+		value *string
+		name  string
+		max   int
+	}{
+		{phone, "phone", 40},
+		{whatsapp, "whatsapp", 40},
+		{address, "address", 300},
+		{neighborhood, "neighborhood", 120},
+		{postalCode, "postal_code", 20},
+	} {
+		if field.value != nil {
+			if err := v.StringLength(*field.value, field.name, 1, field.max); err != nil {
+				return db.CreateBusinessParams{}, err
+			}
+		}
+	}
+	if email != nil {
+		parsed, parseErr := mail.ParseAddress(*email)
+		if parseErr != nil || !strings.EqualFold(parsed.Address, *email) || len(*email) > 254 {
+			return db.CreateBusinessParams{}, fiber.NewError(fiber.StatusBadRequest, "email must be valid")
+		}
+		lower := strings.ToLower(*email)
+		email = &lower
+	}
+	for _, field := range []struct {
+		value *string
+		name  string
+	}{
+		{website, "website"},
+		{logoURL, "logo_url"},
+		{coverImageURL, "cover_image_url"},
+	} {
+		if field.value != nil {
+			parsed, parseErr := url.ParseRequestURI(*field.value)
+			if parseErr != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || len(*field.value) > 2048 {
+				return db.CreateBusinessParams{}, fiber.NewError(fiber.StatusBadRequest, field.name+" must be a valid http or https URL")
+			}
+		}
+	}
+
 	lat, err := api.NullDecimal(req.Latitude)
 	if err != nil {
 		return db.CreateBusinessParams{}, fiber.NewError(fiber.StatusBadRequest, "latitude must be a decimal")
@@ -121,24 +193,34 @@ func CreateParams(req Request) (db.CreateBusinessParams, error) {
 	if err != nil {
 		return db.CreateBusinessParams{}, fiber.NewError(fiber.StatusBadRequest, "longitude must be a decimal")
 	}
+	if lat.Valid {
+		if err := v.DecimalRange(lat.Decimal, "latitude", decimal.NewFromInt(-90), decimal.NewFromInt(90), 6); err != nil {
+			return db.CreateBusinessParams{}, err
+		}
+	}
+	if lng.Valid {
+		if err := v.DecimalRange(lng.Decimal, "longitude", decimal.NewFromInt(-180), decimal.NewFromInt(180), 6); err != nil {
+			return db.CreateBusinessParams{}, err
+		}
+	}
 	return db.CreateBusinessParams{
 		Name:              req.Name,
 		Slug:              req.Slug,
 		Description:       req.Description,
 		BusinessType:      req.BusinessType,
-		Phone:             api.NullString(v.CleanOptional(req.Phone)),
-		Whatsapp:          api.NullString(v.CleanOptional(req.Whatsapp)),
-		Email:             api.NullString(v.CleanOptional(req.Email)),
-		Website:           api.NullString(v.CleanOptional(req.Website)),
-		LogoUrl:           api.NullString(v.CleanOptional(req.LogoURL)),
-		CoverImageUrl:     api.NullString(v.CleanOptional(req.CoverImageURL)),
-		Status:            req.Status,
-		Address:           api.NullString(v.CleanOptional(req.Address)),
-		Neighborhood:      api.NullString(v.CleanOptional(req.Neighborhood)),
+		Phone:             api.NullString(phone),
+		Whatsapp:          api.NullString(whatsapp),
+		Email:             api.NullString(email),
+		Website:           api.NullString(website),
+		LogoUrl:           api.NullString(logoURL),
+		CoverImageUrl:     api.NullString(coverImageURL),
+		Status:            status,
+		Address:           api.NullString(address),
+		Neighborhood:      api.NullString(neighborhood),
 		City:              req.City,
 		State:             req.State,
 		Country:           req.Country,
-		PostalCode:        api.NullString(v.CleanOptional(req.PostalCode)),
+		PostalCode:        api.NullString(postalCode),
 		Latitude:          lat,
 		Longitude:         lng,
 		PickupAvailable:   req.PickupAvailable,
