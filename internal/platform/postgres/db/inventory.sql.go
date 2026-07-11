@@ -76,24 +76,26 @@ func (q *Queries) CreateInventoryLocation(ctx context.Context, arg CreateInvento
 const createStockMovement = `-- name: CreateStockMovement :one
 INSERT INTO stock_movements (
     business_id, variant_id, location_id, movement_type, quantity, unit_cost,
-    reference_type, reference_id, notes, created_by
+    reference_type, reference_id, notes, created_by, idempotency_key
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
 )
-RETURNING id, business_id, variant_id, location_id, movement_type, quantity, unit_cost, reference_type, reference_id, notes, created_by, created_at
+ON CONFLICT (business_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
+RETURNING id, business_id, variant_id, location_id, movement_type, quantity, unit_cost, reference_type, reference_id, notes, created_by, created_at, idempotency_key
 `
 
 type CreateStockMovementParams struct {
-	BusinessID    uuid.UUID           `json:"business_id"`
-	VariantID     uuid.UUID           `json:"variant_id"`
-	LocationID    uuid.UUID           `json:"location_id"`
-	MovementType  string              `json:"movement_type"`
-	Quantity      decimal.Decimal     `json:"quantity"`
-	UnitCost      decimal.NullDecimal `json:"unit_cost"`
-	ReferenceType sql.NullString      `json:"reference_type"`
-	ReferenceID   sql.NullString      `json:"reference_id"`
-	Notes         string              `json:"notes"`
-	CreatedBy     uuid.UUID           `json:"created_by"`
+	BusinessID     uuid.UUID           `json:"business_id"`
+	VariantID      uuid.UUID           `json:"variant_id"`
+	LocationID     uuid.UUID           `json:"location_id"`
+	MovementType   string              `json:"movement_type"`
+	Quantity       decimal.Decimal     `json:"quantity"`
+	UnitCost       decimal.NullDecimal `json:"unit_cost"`
+	ReferenceType  sql.NullString      `json:"reference_type"`
+	ReferenceID    sql.NullString      `json:"reference_id"`
+	Notes          string              `json:"notes"`
+	CreatedBy      uuid.NullUUID       `json:"created_by"`
+	IdempotencyKey sql.NullString      `json:"idempotency_key"`
 }
 
 func (q *Queries) CreateStockMovement(ctx context.Context, arg CreateStockMovementParams) (StockMovement, error) {
@@ -108,6 +110,7 @@ func (q *Queries) CreateStockMovement(ctx context.Context, arg CreateStockMoveme
 		arg.ReferenceID,
 		arg.Notes,
 		arg.CreatedBy,
+		arg.IdempotencyKey,
 	)
 	var i StockMovement
 	err := row.Scan(
@@ -123,6 +126,7 @@ func (q *Queries) CreateStockMovement(ctx context.Context, arg CreateStockMoveme
 		&i.Notes,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.IdempotencyKey,
 	)
 	return i, err
 }
@@ -142,6 +146,64 @@ func (q *Queries) GetDefaultInventoryLocation(ctx context.Context, businessID uu
 		&i.Name,
 		&i.IsDefault,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getStockLevel = `-- name: GetStockLevel :one
+SELECT business_id, variant_id, location_id, quantity_on_hand, quantity_reserved, updated_at
+FROM stock_levels
+WHERE business_id = $1 AND variant_id = $2 AND location_id = $3
+`
+
+type GetStockLevelParams struct {
+	BusinessID uuid.UUID `json:"business_id"`
+	VariantID  uuid.UUID `json:"variant_id"`
+	LocationID uuid.UUID `json:"location_id"`
+}
+
+func (q *Queries) GetStockLevel(ctx context.Context, arg GetStockLevelParams) (StockLevel, error) {
+	row := q.db.QueryRow(ctx, getStockLevel, arg.BusinessID, arg.VariantID, arg.LocationID)
+	var i StockLevel
+	err := row.Scan(
+		&i.BusinessID,
+		&i.VariantID,
+		&i.LocationID,
+		&i.QuantityOnHand,
+		&i.QuantityReserved,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getStockMovementByIdempotencyKey = `-- name: GetStockMovementByIdempotencyKey :one
+SELECT id, business_id, variant_id, location_id, movement_type, quantity, unit_cost, reference_type, reference_id, notes, created_by, created_at, idempotency_key
+FROM stock_movements
+WHERE business_id = $1 AND idempotency_key = $2
+`
+
+type GetStockMovementByIdempotencyKeyParams struct {
+	BusinessID     uuid.UUID      `json:"business_id"`
+	IdempotencyKey sql.NullString `json:"idempotency_key"`
+}
+
+func (q *Queries) GetStockMovementByIdempotencyKey(ctx context.Context, arg GetStockMovementByIdempotencyKeyParams) (StockMovement, error) {
+	row := q.db.QueryRow(ctx, getStockMovementByIdempotencyKey, arg.BusinessID, arg.IdempotencyKey)
+	var i StockMovement
+	err := row.Scan(
+		&i.ID,
+		&i.BusinessID,
+		&i.VariantID,
+		&i.LocationID,
+		&i.MovementType,
+		&i.Quantity,
+		&i.UnitCost,
+		&i.ReferenceType,
+		&i.ReferenceID,
+		&i.Notes,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.IdempotencyKey,
 	)
 	return i, err
 }
@@ -188,7 +250,7 @@ func (q *Queries) ListStockLevels(ctx context.Context, arg ListStockLevelsParams
 }
 
 const listStockMovements = `-- name: ListStockMovements :many
-SELECT id, business_id, variant_id, location_id, movement_type, quantity, unit_cost, reference_type, reference_id, notes, created_by, created_at
+SELECT id, business_id, variant_id, location_id, movement_type, quantity, unit_cost, reference_type, reference_id, notes, created_by, created_at, idempotency_key
 FROM stock_movements
 WHERE business_id = $1
 ORDER BY created_at DESC
@@ -223,6 +285,7 @@ func (q *Queries) ListStockMovements(ctx context.Context, arg ListStockMovements
 			&i.Notes,
 			&i.CreatedBy,
 			&i.CreatedAt,
+			&i.IdempotencyKey,
 		); err != nil {
 			return nil, err
 		}

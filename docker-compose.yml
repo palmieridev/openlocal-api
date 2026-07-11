@@ -1,14 +1,36 @@
 services:
+  api:
+    image: golang:1.26-alpine
+    working_dir: /app
+    env_file:
+      - .env
+      - .env.local
+    environment:
+      DATABASE_URL: postgres://${PGUSER:-openlocal}:${PGPASSWORD:-openlocal}@postgres:5432/${PGDATABASE:-openlocal}?sslmode=disable
+      PORT: ${PORT:-8080}
+    ports:
+      - "${HTTP_PORT:-8080}:${PORT:-8080}"
+    command: sh -c "go install github.com/air-verse/air@latest && air -c .air.toml"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - openlocal-go-build:/root/.cache/go-build
+      - openlocal-go-mod:/go/pkg/mod
+
   postgres:
     image: postgres:17-alpine
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: openlocal
-      POSTGRES_PASSWORD: openlocal
-      POSTGRES_DB: openlocal
+      POSTGRES_USER: ${PGUSER:-openlocal}
+      POSTGRES_PASSWORD: ${PGPASSWORD:-openlocal}
+      POSTGRES_DB: ${PGDATABASE:-openlocal}
     ports:
-      - "5432:5432"
+      - "${PGPORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U openlocal -d openlocal"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -16,5 +38,6 @@ services:
       - openlocal-postgres:/var/lib/postgresql/data
 
 volumes:
+  openlocal-go-build:
+  openlocal-go-mod:
   openlocal-postgres:
-

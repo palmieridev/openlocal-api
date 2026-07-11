@@ -15,3 +15,6 @@ SELECT * FROM users WHERE clerk_user_id = $1;
 -- name: GetUserByID :one
 SELECT * FROM users WHERE id = $1;
 
+-- name: DeleteUserByClerkID :exec
+DELETE FROM users
+WHERE clerk_user_id = $1;

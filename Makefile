@@ -1,6 +1,8 @@
-.PHONY: test sqlc migrate-up migrate-down run
+include .env
 
-DATABASE_URL ?= postgres://openlocal:openlocal@localhost:5432/openlocal?sslmode=disable
+.PHONY: test start sqlc migrate-up migrate-down seed run api db-up stop db-down db-logs db-ps db-reset
+
+COMPOSE ?= podman-compose
 
 test:
 	go test ./...
@@ -9,11 +11,32 @@ sqlc:
 	sqlc generate
 
 migrate-up:
-	migrate -path db/migrations -database "$(DATABASE_URL)" up
+	migrate -path db/migrations -database "${DATABASE_URL}" up
 
 migrate-down:
-	migrate -path db/migrations -database "$(DATABASE_URL)" down 1
+	migrate -path db/migrations -database "${DATABASE_URL}" down 1
+
+seed:
+	$(COMPOSE) exec -T postgres psql -U "$(PGUSER)" -d "$(PGDATABASE)" < db/seeds/marketplace.sql
 
 run:
 	go run ./cmd/api
 
+start:
+	$(COMPOSE) start
+
+stop:
+	$(COMPOSE) stop
+
+api:
+	$(COMPOSE) up -d api
+
+db-up:
+	$(COMPOSE) up -d postgres
+
+db-logs:
+	$(COMPOSE) logs -f postgres
+
+db-reset:
+	$(COMPOSE) down -v
+	$(COMPOSE) up -d postgres

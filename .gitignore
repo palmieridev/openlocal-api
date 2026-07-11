@@ -10,9 +10,6 @@
 *.log
 
 
-# Go build artifacts
-go.sum
-
 # AI
 .agents/
 skills-lock.json

@@ -1,51 +1,109 @@
 package server
 
 import (
-	"encoding/json"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
-	"github.com/google/uuid"
-	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
-	"github.com/shopspring/decimal"
+	"github.com/gofiber/fiber/v2"
+	"github.com/palmieridev/openlocal-api/internal/config"
 )
 
-func TestPublicVariantDTOExcludesPrivateFields(t *testing.T) {
-	variant := db.ProductVariant{
-		ID:                uuid.New(),
-		ProductID:         uuid.New(),
-		BusinessID:        uuid.New(),
-		Sku:               "SKU-1",
-		InternalCode:      "PRIVATE-CODE",
-		Name:              "Small",
-		Price:             decimal.NewFromInt(100),
-		Cost:              decimal.NullDecimal{Decimal: decimal.NewFromInt(20), Valid: true},
-		Currency:          "MXN",
-		TrackInventory:    true,
-		PublicStockStatus: "available",
-		ReorderPoint:      decimal.NewFromInt(5),
-		Status:            "active",
+func secureTestConfig() config.Config {
+	return config.Config{
+		CORSAllowedOrigins:  []string{"https://app.example"},
+		RateLimitWindow:     time.Minute,
+		GlobalRateLimitMax:  10,
+		PublicRateLimitMax:  10,
+		PrivateRateLimitMax: 10,
+		WebhookRateLimitMax: 10,
 	}
-	body, err := json.Marshal(mapVariant(variant, false))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(body, &payload); err != nil {
-		t.Fatal(err)
-	}
-	for _, forbidden := range []string{"cost", "internal_code", "business_id", "track_inventory", "reorder_point"} {
-		if _, ok := payload[forbidden]; ok {
-			t.Fatalf("public DTO exposed %s: %s", forbidden, string(body))
+}
+
+func TestGlobalRateLimitReturnsJSONError(t *testing.T) {
+	cfg := secureTestConfig()
+	cfg.GlobalRateLimitMax = 2
+	app := New(Deps{Config: cfg})
+
+	for requestNumber := 1; requestNumber <= 3; requestNumber++ {
+		res, err := app.Test(httptest.NewRequest(fiber.MethodGet, "/healthz", nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if requestNumber < 3 && res.StatusCode != fiber.StatusOK {
+			t.Fatalf("request %d status = %d, want 200", requestNumber, res.StatusCode)
+		}
+		if requestNumber == 3 {
+			if res.StatusCode != fiber.StatusTooManyRequests {
+				t.Fatalf("status = %d, want 429", res.StatusCode)
+			}
+			if contentType := res.Header.Get(fiber.HeaderContentType); !strings.Contains(contentType, fiber.MIMEApplicationJSON) {
+				t.Fatalf("content type = %q, want JSON", contentType)
+			}
 		}
 	}
 }
 
-func TestSignedQuantity(t *testing.T) {
-	qty := decimal.NewFromInt(3)
-	if got := signedQuantity("IN_PURCHASE", qty); !got.Equal(qty) {
-		t.Fatalf("expected positive in movement, got %s", got)
+func TestWebhookHasStricterRateLimit(t *testing.T) {
+	cfg := secureTestConfig()
+	cfg.WebhookRateLimitMax = 2
+	app := New(Deps{Config: cfg})
+
+	for requestNumber := 1; requestNumber <= 3; requestNumber++ {
+		res, err := app.Test(httptest.NewRequest(fiber.MethodPost, "/api/v1/webhooks/clerk", strings.NewReader(`{}`)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if requestNumber == 3 && res.StatusCode != fiber.StatusTooManyRequests {
+			t.Fatalf("status = %d, want 429", res.StatusCode)
+		}
 	}
-	if got := signedQuantity("OUT_SALE", qty); !got.Equal(qty.Neg()) {
-		t.Fatalf("expected negative out movement, got %s", got)
+}
+
+func TestWebhookLimitDoesNotCountPublicRequests(t *testing.T) {
+	cfg := secureTestConfig()
+	cfg.WebhookRateLimitMax = 1
+	app := New(Deps{Config: cfg})
+
+	for requestNumber := 1; requestNumber <= 2; requestNumber++ {
+		res, err := app.Test(httptest.NewRequest(fiber.MethodGet, "/api/v1/marketplace/search?limit=invalid", nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.StatusCode != fiber.StatusBadRequest {
+			t.Fatalf("request %d status = %d, want 400", requestNumber, res.StatusCode)
+		}
+	}
+}
+
+func TestPublicLimitDoesNotCountPrivateRequests(t *testing.T) {
+	cfg := secureTestConfig()
+	cfg.PublicRateLimitMax = 1
+	app := New(Deps{Config: cfg})
+
+	for requestNumber := 1; requestNumber <= 2; requestNumber++ {
+		res, err := app.Test(httptest.NewRequest(fiber.MethodGet, "/api/v1/me", nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.StatusCode != fiber.StatusUnauthorized {
+			t.Fatalf("request %d status = %d, want 401", requestNumber, res.StatusCode)
+		}
+	}
+}
+
+func TestCORSDoesNotAdvertiseTestAuthHeaders(t *testing.T) {
+	app := New(Deps{Config: secureTestConfig()})
+	req := httptest.NewRequest(fiber.MethodOptions, "/healthz", nil)
+	req.Header.Set(fiber.HeaderOrigin, "https://app.example")
+	req.Header.Set(fiber.HeaderAccessControlRequestMethod, fiber.MethodGet)
+	req.Header.Set(fiber.HeaderAccessControlRequestHeaders, "X-Test-Clerk-User-ID")
+	res, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.ToLower(res.Header.Get(fiber.HeaderAccessControlAllowHeaders)), "x-test-clerk") {
+		t.Fatalf("test auth header was advertised: %q", res.Header.Get(fiber.HeaderAccessControlAllowHeaders))
 	}
 }

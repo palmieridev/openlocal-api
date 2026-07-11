@@ -5,6 +5,25 @@ info:
   description: API for Openlocal local commerce inventory, storefronts, marketplace discovery, and analytics.
 servers:
   - url: http://localhost:8080
+tags:
+  - name: Health
+    description: Service health and database readiness.
+  - name: Users
+    description: Current authenticated user projection.
+  - name: Businesses
+    description: Business onboarding and private business profile management.
+  - name: Catalog
+    description: Private products, variants, SKU lookup, and barcode lookup.
+  - name: Inventory
+    description: Stock movements and stock levels.
+  - name: Analytics
+    description: Inventory analytics and recommendations.
+  - name: Public Storefront
+    description: Public storefront profile and product data.
+  - name: Marketplace
+    description: Public marketplace discovery.
+  - name: Webhooks
+    description: Clerk webhook receiver.
 security:
   - clerkBearer: []
 components:
@@ -13,155 +32,1359 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  parameters:
+    BusinessIDQuery:
+      name: business_id
+      in: query
+      required: true
+      schema:
+        type: string
+        format: uuid
+    LimitQuery:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        format: int32
+        default: 25
+        minimum: 1
+        maximum: 100
+    OffsetQuery:
+      name: offset
+      in: query
+      required: false
+      schema:
+        type: integer
+        format: int32
+        default: 0
+        minimum: 0
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+      required:
+        - error
+    Health:
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          example: ok
+        database:
+          type: string
+          example: ok
+      required:
+        - status
+        - database
+    Me:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        first_name:
+          type: string
+        last_name:
+          type: string
+        image_url:
+          type: string
+          format: uri
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - created_at
+        - updated_at
+    BusinessRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 160
+          example: Casa Pan Local
+        slug:
+          type: string
+          pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          example: casa-pan-local
+        description:
+          type: string
+          example: Small-batch sourdough, pastries, and pantry goods baked every morning.
+        business_type:
+          type: string
+          example: bakery
+        phone:
+          type: string
+          nullable: true
+        whatsapp:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+          nullable: true
+        website:
+          type: string
+          format: uri
+          nullable: true
+        logo_url:
+          type: string
+          format: uri
+          nullable: true
+        cover_image_url:
+          type: string
+          format: uri
+          nullable: true
+        status:
+          type: string
+          enum: [draft, active, suspended, archived]
+          default: draft
+        address:
+          type: string
+          nullable: true
+        neighborhood:
+          type: string
+          nullable: true
+          example: Condesa
+        city:
+          type: string
+          default: CDMX
+        state:
+          type: string
+          default: CDMX
+        country:
+          type: string
+          default: MX
+        postal_code:
+          type: string
+          nullable: true
+        latitude:
+          type: string
+          nullable: true
+          example: "19.411700"
+        longitude:
+          type: string
+          nullable: true
+          example: "-99.171800"
+        pickup_available:
+          type: boolean
+          default: true
+        delivery_available:
+          type: boolean
+          default: false
+        timezone:
+          type: string
+          minLength: 1
+          maxLength: 100
+          default: America/Mexico_City
+          example: America/Mexico_City
+          description: IANA timezone used to interpret the business opening hours.
+      required:
+        - name
+        - description
+    Business:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        clerk_org_id:
+          type: string
+          description: Only returned on authenticated private business responses.
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        business_type:
+          type: string
+        phone:
+          type: string
+        whatsapp:
+          type: string
+        email:
+          type: string
+          format: email
+        website:
+          type: string
+          format: uri
+        logo_url:
+          type: string
+          format: uri
+        cover_image_url:
+          type: string
+          format: uri
+        status:
+          type: string
+        address:
+          type: string
+        neighborhood:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        country:
+          type: string
+        postal_code:
+          type: string
+        latitude:
+          type: string
+        longitude:
+          type: string
+        pickup_available:
+          type: boolean
+        delivery_available:
+          type: boolean
+        timezone:
+          type: string
+          example: America/Mexico_City
+          description: IANA timezone used to interpret the business opening hours.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - slug
+        - description
+        - business_type
+        - city
+        - state
+        - country
+        - pickup_available
+        - delivery_available
+        - timezone
+    BusinessHourRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        day_of_week:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 6
+          description: Day of the week, where 0 is Sunday and 6 is Saturday.
+          example: 1
+        opens_at:
+          type: string
+          nullable: true
+          pattern: "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$"
+          example: "09:00"
+          description: Required in HH:MM format when the business is open; omit for closed days.
+        closes_at:
+          type: string
+          nullable: true
+          pattern: "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$"
+          example: "18:00"
+          description: Required in HH:MM format when the business is open; omit for closed days. May be earlier than opens_at for overnight hours.
+        is_closed:
+          type: boolean
+          default: false
+      required:
+        - day_of_week
+    BusinessHoursRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        hours:
+          type: array
+          maxItems: 7
+          uniqueItems: true
+          description: Complete replacement schedule. Send an empty array to remove all configured hours; each day may appear at most once.
+          items:
+            $ref: "#/components/schemas/BusinessHourRequest"
+      required:
+        - hours
+    BusinessHour:
+      type: object
+      additionalProperties: false
+      properties:
+        day_of_week:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 6
+          description: Day of the week, where 0 is Sunday and 6 is Saturday.
+        opens_at:
+          type: string
+          nullable: true
+          pattern: "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$"
+        closes_at:
+          type: string
+          nullable: true
+          pattern: "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$"
+        is_closed:
+          type: boolean
+      required:
+        - day_of_week
+        - is_closed
+    BusinessHours:
+      type: object
+      additionalProperties: false
+      properties:
+        timezone:
+          type: string
+          example: America/Mexico_City
+          description: IANA timezone used to interpret every time in the schedule.
+        hours:
+          type: array
+          items:
+            $ref: "#/components/schemas/BusinessHour"
+      required:
+        - timezone
+        - hours
+    ProductRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        business_id:
+          type: string
+          format: uuid
+        category_id:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+          example: Country Sourdough
+        slug:
+          type: string
+          pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        description:
+          type: string
+        brand:
+          type: string
+          nullable: true
+        unit:
+          type: string
+          default: piece
+        product_type:
+          type: string
+          enum: [stocked_product, made_to_order_product, unique_item]
+          default: stocked_product
+        is_handmade:
+          type: boolean
+        is_public:
+          type: boolean
+        status:
+          type: string
+          enum: [draft, active, archived]
+          default: draft
+      required:
+        - business_id
+        - name
+        - description
+    Product:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        business_id:
+          type: string
+          format: uuid
+        category_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        brand:
+          type: string
+        unit:
+          type: string
+        product_type:
+          type: string
+        is_handmade:
+          type: boolean
+        is_public:
+          type: boolean
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - slug
+        - description
+        - unit
+        - product_type
+    VariantRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        business_id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+        sku:
+          type: string
+        barcode:
+          type: string
+          nullable: true
+        internal_code:
+          type: string
+        name:
+          type: string
+        attributes:
+          type: object
+          additionalProperties: true
+        price:
+          type: string
+          example: "120.00"
+        cost:
+          type: string
+          nullable: true
+          description: Private cost, only available to authorized business users.
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+          default: MXN
+        track_inventory:
+          type: boolean
+          default: true
+        public_stock_status:
+          type: string
+          enum: [available, low_stock, out_of_stock, made_to_order, unknown]
+        reorder_point:
+          type: string
+          default: "0"
+        lead_time_days:
+          type: integer
+          format: int32
+          minimum: 0
+        status:
+          type: string
+          enum: [active, archived]
+          default: active
+      required:
+        - business_id
+        - product_id
+        - sku
+        - name
+        - attributes
+        - price
+    Variant:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+        business_id:
+          type: string
+          format: uuid
+        sku:
+          type: string
+        barcode:
+          type: string
+        internal_code:
+          type: string
+        name:
+          type: string
+        attributes:
+          type: object
+          additionalProperties: true
+        price:
+          type: string
+        cost:
+          type: string
+        currency:
+          type: string
+        track_inventory:
+          type: boolean
+        public_stock_status:
+          type: string
+        reorder_point:
+          type: string
+        lead_time_days:
+          type: integer
+          format: int32
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - product_id
+        - sku
+        - name
+        - price
+        - currency
+        - public_stock_status
+    PublicProduct:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        brand:
+          type: string
+        unit:
+          type: string
+        product_type:
+          type: string
+        variant_id:
+          type: string
+          format: uuid
+        sku:
+          type: string
+        variant_name:
+          type: string
+        price:
+          type: string
+        currency:
+          type: string
+        public_stock_status:
+          type: string
+        image_url:
+          type: string
+          format: uri
+      required:
+        - id
+        - name
+        - slug
+        - description
+        - unit
+        - product_type
+        - variant_id
+        - sku
+        - variant_name
+        - price
+        - currency
+        - public_stock_status
+    MarketplaceProduct:
+      allOf:
+        - $ref: "#/components/schemas/PublicProduct"
+        - type: object
+          additionalProperties: false
+          properties:
+            business_slug:
+              type: string
+            business_name:
+              type: string
+          required:
+            - business_slug
+            - business_name
+    StockMovementRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        business_id:
+          type: string
+          format: uuid
+        variant_id:
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+          nullable: true
+        movement_type:
+          type: string
+          enum: [IN_PURCHASE, IN_PRODUCTION, OUT_SALE, OUT_ADJUSTMENT, IN_ADJUSTMENT, OUT_LOSS]
+        quantity:
+          type: string
+          example: "5"
+        unit_cost:
+          type: string
+          nullable: true
+        reference_type:
+          type: string
+          nullable: true
+        reference_id:
+          type: string
+          nullable: true
+        notes:
+          type: string
+      required:
+        - business_id
+        - variant_id
+        - movement_type
+        - quantity
+    StockMovement:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        variant_id:
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+        movement_type:
+          type: string
+        quantity:
+          type: string
+        unit_cost:
+          type: string
+          nullable: true
+        reference_type:
+          type: string
+          nullable: true
+        reference_id:
+          type: string
+          nullable: true
+        notes:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    StockLevel:
+      type: object
+      additionalProperties: false
+      properties:
+        variant_id:
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+        quantity_on_hand:
+          type: string
+        quantity_reserved:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+    StockMovementResult:
+      type: object
+      additionalProperties: false
+      properties:
+        movement:
+          $ref: "#/components/schemas/StockMovement"
+        stock_level:
+          $ref: "#/components/schemas/StockLevel"
+      required:
+        - movement
+        - stock_level
+    EOQ:
+      type: object
+      additionalProperties: false
+      properties:
+        variant_id:
+          type: string
+          format: uuid
+        period_days:
+          type: integer
+          format: int32
+        demand:
+          type: string
+        estimated_eoq:
+          type: string
+        order_cost:
+          type: string
+        holding_cost_rate:
+          type: string
+    ClerkWebhookEvent:
+      type: object
+      additionalProperties: true
+      properties:
+        type:
+          type: string
+          example: user.created
+        data:
+          type: object
+          additionalProperties: true
+      required:
+        - type
+        - data
 paths:
   /healthz:
     get:
+      tags:
+        - Health
       security: []
       responses:
         "200":
           description: Service health.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
   /api/v1/me:
     get:
+      tags:
+        - Users
       responses:
         "200":
           description: Current local user projection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Me"
         "401":
           description: Missing or invalid Clerk token.
   /api/v1/businesses:
     post:
+      tags:
+        - Businesses
+      description: Creates a Clerk organization and the matching Openlocal business.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BusinessRequest"
       responses:
         "201":
-          description: Business created for active Clerk organization.
-        "403":
-          description: Active Clerk organization is required.
-  /api/v1/businesses/{id}:
+          description: Business created. Response includes clerk_org_id for frontend org activation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Business"
+        "502":
+          description: Clerk organization creation failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/businesses/me:
     get:
+      tags:
+        - Businesses
+      description: Resolves the current Openlocal business from the active Clerk organization claim.
+      responses:
+        "200":
+          description: Private business profile for the active Clerk organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Business"
+        "403":
+          description: Active Clerk organization or local business membership is required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No Openlocal business is linked to the active Clerk organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/webhooks/clerk:
+    post:
+      tags:
+        - Webhooks
+      security: []
+      description: Clerk webhook receiver for user, organization, and membership sync. Requires valid Svix signature headers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClerkWebhookEvent"
+      responses:
+        "204":
+          description: Webhook accepted.
+        "400":
+          description: Invalid signature or payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Webhook signing secret is not configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/businesses/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Businesses
       responses:
         "200":
           description: Private business profile for an authorized member.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Business"
     patch:
+      tags:
+        - Businesses
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BusinessRequest"
       responses:
         "200":
           description: Updated private business profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Business"
+  /api/v1/businesses/{id}/hours:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Businesses
+      description: Returns the opening-hours schedule for an authorized business member.
+      responses:
+        "200":
+          description: Business opening hours ordered by day of week.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessHours"
+        "403":
+          description: Owner, manager, or staff membership is required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      tags:
+        - Businesses
+      description: Atomically replaces the complete opening-hours schedule. Overnight ranges are supported.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BusinessHoursRequest"
+      responses:
+        "200":
+          description: Updated business opening hours ordered by day of week.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessHours"
+        "400":
+          description: Invalid weekday, duplicate day, or invalid opening-hours combination.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Owner or manager membership is required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/products:
     get:
+      tags:
+        - Catalog
       parameters:
-        - name: business_id
-          in: query
-          required: true
-          schema:
-            type: string
-            format: uuid
+        - $ref: "#/components/parameters/BusinessIDQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/OffsetQuery"
       responses:
         "200":
           description: Private product list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Product"
     post:
+      tags:
+        - Catalog
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductRequest"
       responses:
         "201":
           description: Product created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
   /api/v1/products/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
     get:
+      tags:
+        - Catalog
       responses:
         "200":
           description: Private product.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
     patch:
+      tags:
+        - Catalog
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductRequest"
       responses:
         "200":
           description: Product updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
     delete:
+      tags:
+        - Catalog
       responses:
         "204":
           description: Product archived.
+  /api/v1/products/{id}/variants:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: "#/components/parameters/BusinessIDQuery"
+    get:
+      tags:
+        - Catalog
+      description: Lists all variants for a product scoped to the caller's business.
+      responses:
+        "200":
+          description: Private variants for the product.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Variant"
   /api/v1/variants:
     post:
+      tags:
+        - Catalog
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VariantRequest"
       responses:
         "201":
           description: Variant created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Variant"
   /api/v1/variants/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
     get:
+      tags:
+        - Catalog
       responses:
         "200":
           description: Private variant, including cost for authorized users.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Variant"
     patch:
+      tags:
+        - Catalog
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VariantRequest"
       responses:
         "200":
           description: Variant updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Variant"
     delete:
+      tags:
+        - Catalog
       responses:
         "204":
           description: Variant archived.
   /api/v1/variants/by-barcode/{barcode}:
     get:
+      tags:
+        - Catalog
+      parameters:
+        - name: barcode
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/BusinessIDQuery"
       responses:
         "200":
           description: Business-scoped barcode lookup.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Variant"
   /api/v1/variants/by-sku/{sku}:
     get:
+      tags:
+        - Catalog
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/BusinessIDQuery"
       responses:
         "200":
           description: Business-scoped SKU lookup.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Variant"
   /api/v1/inventory/movements:
     get:
+      tags:
+        - Inventory
+      parameters:
+        - $ref: "#/components/parameters/BusinessIDQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/OffsetQuery"
       responses:
         "200":
           description: Private movement ledger.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StockMovement"
     post:
+      tags:
+        - Inventory
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Unique key for safely retrying this stock adjustment.
+          schema:
+            type: string
+            minLength: 8
+            maxLength: 128
+            pattern: '^[A-Za-z0-9._:-]+$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StockMovementRequest"
       responses:
         "201":
           description: Movement inserted and stock level updated transactionally.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockMovementResult"
+        "200":
+          description: A matching movement with this idempotency key already exists.
+          headers:
+            Idempotent-Replayed:
+              schema:
+                type: string
+                enum: ["true"]
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockMovementResult"
+        "409":
+          description: The idempotency key was already used for different movement data.
   /api/v1/inventory/stock-levels:
     get:
+      tags:
+        - Inventory
+      parameters:
+        - $ref: "#/components/parameters/BusinessIDQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/OffsetQuery"
       responses:
         "200":
           description: Private stock levels.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StockLevel"
   /api/v1/analytics/abc:
     get:
+      tags:
+        - Analytics
+      parameters:
+        - $ref: "#/components/parameters/BusinessIDQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/OffsetQuery"
       responses:
         "200":
           description: ABC classification.
   /api/v1/analytics/pareto:
     get:
+      tags:
+        - Analytics
+      parameters:
+        - $ref: "#/components/parameters/BusinessIDQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/OffsetQuery"
       responses:
         "200":
           description: Pareto data from the ABC calculation.
   /api/v1/analytics/eoq:
     get:
+      tags:
+        - Analytics
+      parameters:
+        - $ref: "#/components/parameters/BusinessIDQuery"
+        - name: variant_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: period_days
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 90
+            minimum: 1
+            maximum: 730
+        - name: estimated_order_cost
+          in: query
+          required: false
+          schema:
+            type: string
+            default: "100"
+        - name: estimated_holding_cost_percent
+          in: query
+          required: false
+          schema:
+            type: string
+            default: "20"
       responses:
         "200":
           description: EOQ recommendation from demand and manual cost assumptions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EOQ"
   /api/v1/analytics/low-stock:
     get:
+      tags:
+        - Analytics
+      parameters:
+        - $ref: "#/components/parameters/BusinessIDQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/OffsetQuery"
       responses:
         "200":
           description: Low-stock variants.
   /api/v1/public/businesses/{slug}:
     get:
+      tags:
+        - Public Storefront
       security: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
       responses:
         "200":
           description: Public business profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Business"
   /api/v1/public/businesses/{slug}/products:
     get:
+      tags:
+        - Public Storefront
       security: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/OffsetQuery"
       responses:
         "200":
           description: Public products without private cost or stock data.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PublicProduct"
   /api/v1/marketplace/search:
     get:
+      tags:
+        - Marketplace
       security: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/OffsetQuery"
       responses:
         "200":
           description: Public marketplace product search.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MarketplaceProduct"
   /api/v1/marketplace/businesses:
     get:
+      tags:
+        - Marketplace
       security: []
+      parameters:
+        - name: city
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: min_lat
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: max_lat
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: min_lng
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: max_lng
+          in: query
+          required: false
+          schema:
+            type: string
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/OffsetQuery"
       responses:
         "200":
           description: Public marketplace business search.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Business"
   /api/v1/marketplace/products:
     get:
+      tags:
+        - Marketplace
       security: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/OffsetQuery"
       responses:
         "200":
           description: Public marketplace product search.
-
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MarketplaceProduct"

@@ -1,0 +1,14 @@
+.git
+.agents
+tmp
+bin
+dist
+coverage.out
+*.log
+
+.env
+.env.*
+
+Dockerfile
+docker-compose.yml
+.air.toml
