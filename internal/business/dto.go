@@ -342,7 +342,23 @@ func HoursParams(businessID uuid.UUID, req HoursRequest) ([]db.UpsertBusinessHou
 	return params, nil
 }
 
-func MapHours(timezone string, rows []db.BusinessHour) HoursResponse {
+// PublicResponse is the public projection of a business. It embeds Response so
+// public payloads keep exactly the same field names, and adds the weekly
+// opening hours that shoppers need to work out whether a business is open.
+//
+// Open/closed is deliberately NOT computed here: a cached or server-rendered
+// answer goes stale the moment a business opens or closes, so clients compute
+// it from these hours plus the business timezone.
+type PublicResponse struct {
+	Response
+	Hours []HourResponse `json:"hours"`
+}
+
+// MapHourResponses projects hour rows. It always returns a non-nil slice so a
+// business with no hours set serialises as `[]` rather than `null`.
+//
+// day_of_week is 0=Monday .. 6=Sunday.
+func MapHourResponses(rows []db.BusinessHour) []HourResponse {
 	hours := make([]HourResponse, 0, len(rows))
 	for _, row := range rows {
 		hours = append(hours, HourResponse{
@@ -352,7 +368,26 @@ func MapHours(timezone string, rows []db.BusinessHour) HoursResponse {
 			IsClosed:  row.IsClosed,
 		})
 	}
-	return HoursResponse{Timezone: timezone, Hours: hours}
+	return hours
+}
+
+// GroupHoursByBusiness buckets batch-fetched hour rows by business id, for
+// listings that load every business's hours in one query.
+func GroupHoursByBusiness(rows []db.BusinessHour) map[uuid.UUID][]HourResponse {
+	grouped := make(map[uuid.UUID][]HourResponse)
+	for _, row := range rows {
+		grouped[row.BusinessID] = append(grouped[row.BusinessID], HourResponse{
+			DayOfWeek: row.DayOfWeek,
+			OpensAt:   formatBusinessTime(row.OpensAt),
+			ClosesAt:  formatBusinessTime(row.ClosesAt),
+			IsClosed:  row.IsClosed,
+		})
+	}
+	return grouped
+}
+
+func MapHours(timezone string, rows []db.BusinessHour) HoursResponse {
+	return HoursResponse{Timezone: timezone, Hours: MapHourResponses(rows)}
 }
 
 func parseBusinessTime(value *string, field string) (pgtype.Time, error) {

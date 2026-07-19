@@ -4,6 +4,7 @@ import (
 	"database/sql"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 	"github.com/palmieridev/openlocal-api/internal/api"
 	"github.com/palmieridev/openlocal-api/internal/business"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
@@ -35,29 +36,36 @@ func (h Handler) getPublicBusiness(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(business.Response{
-		ID:                row.ID,
-		Name:              row.Name,
-		Slug:              row.Slug,
-		Description:       row.Description,
-		BusinessType:      row.BusinessType,
-		Phone:             api.StringPtr(row.Phone),
-		Whatsapp:          api.StringPtr(row.Whatsapp),
-		Email:             api.StringPtr(row.Email),
-		Website:           api.StringPtr(row.Website),
-		LogoURL:           api.StringPtr(row.LogoUrl),
-		CoverImageURL:     api.StringPtr(row.CoverImageUrl),
-		Address:           api.StringPtr(row.Address),
-		Neighborhood:      api.StringPtr(row.Neighborhood),
-		City:              row.City,
-		State:             row.State,
-		Country:           row.Country,
-		PostalCode:        api.StringPtr(row.PostalCode),
-		Latitude:          api.DecimalPtr(row.Latitude),
-		Longitude:         api.DecimalPtr(row.Longitude),
-		PickupAvailable:   row.PickupAvailable,
-		DeliveryAvailable: row.DeliveryAvailable,
-		Timezone:          row.Timezone,
+	hourRows, err := h.rt.Q.ListBusinessHours(c.Context(), row.ID)
+	if err != nil {
+		return err
+	}
+	return c.JSON(business.PublicResponse{
+		Response: business.Response{
+			ID:                row.ID,
+			Name:              row.Name,
+			Slug:              row.Slug,
+			Description:       row.Description,
+			BusinessType:      row.BusinessType,
+			Phone:             api.StringPtr(row.Phone),
+			Whatsapp:          api.StringPtr(row.Whatsapp),
+			Email:             api.StringPtr(row.Email),
+			Website:           api.StringPtr(row.Website),
+			LogoURL:           api.StringPtr(row.LogoUrl),
+			CoverImageURL:     api.StringPtr(row.CoverImageUrl),
+			Address:           api.StringPtr(row.Address),
+			Neighborhood:      api.StringPtr(row.Neighborhood),
+			City:              row.City,
+			State:             row.State,
+			Country:           row.Country,
+			PostalCode:        api.StringPtr(row.PostalCode),
+			Latitude:          api.DecimalPtr(row.Latitude),
+			Longitude:         api.DecimalPtr(row.Longitude),
+			PickupAvailable:   row.PickupAvailable,
+			DeliveryAvailable: row.DeliveryAvailable,
+			Timezone:          row.Timezone,
+		},
+		Hours: business.MapHourResponses(hourRows),
 	})
 }
 
@@ -114,24 +122,46 @@ func (h Handler) listPublicBusinesses(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	out := make([]business.Response, 0, len(rows))
+
+	// Single batch query for every business on the page — avoids an N+1.
+	businessIDs := make([]uuid.UUID, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, business.Response{
-			ID:                row.ID,
-			Name:              row.Name,
-			Slug:              row.Slug,
-			Description:       row.Description,
-			BusinessType:      row.BusinessType,
-			LogoURL:           api.StringPtr(row.LogoUrl),
-			CoverImageURL:     api.StringPtr(row.CoverImageUrl),
-			City:              row.City,
-			State:             row.State,
-			Country:           row.Country,
-			Latitude:          api.DecimalPtr(row.Latitude),
-			Longitude:         api.DecimalPtr(row.Longitude),
-			PickupAvailable:   row.PickupAvailable,
-			DeliveryAvailable: row.DeliveryAvailable,
-			Timezone:          row.Timezone,
+		businessIDs = append(businessIDs, row.ID)
+	}
+	hoursByBusiness := map[uuid.UUID][]business.HourResponse{}
+	if len(businessIDs) > 0 {
+		hourRows, err := h.rt.Q.ListBusinessHoursForBusinesses(c.Context(), businessIDs)
+		if err != nil {
+			return err
+		}
+		hoursByBusiness = business.GroupHoursByBusiness(hourRows)
+	}
+
+	out := make([]business.PublicResponse, 0, len(rows))
+	for _, row := range rows {
+		hours := hoursByBusiness[row.ID]
+		if hours == nil {
+			hours = []business.HourResponse{}
+		}
+		out = append(out, business.PublicResponse{
+			Response: business.Response{
+				ID:                row.ID,
+				Name:              row.Name,
+				Slug:              row.Slug,
+				Description:       row.Description,
+				BusinessType:      row.BusinessType,
+				LogoURL:           api.StringPtr(row.LogoUrl),
+				CoverImageURL:     api.StringPtr(row.CoverImageUrl),
+				City:              row.City,
+				State:             row.State,
+				Country:           row.Country,
+				Latitude:          api.DecimalPtr(row.Latitude),
+				Longitude:         api.DecimalPtr(row.Longitude),
+				PickupAvailable:   row.PickupAvailable,
+				DeliveryAvailable: row.DeliveryAvailable,
+				Timezone:          row.Timezone,
+			},
+			Hours: hours,
 		})
 	}
 	return c.JSON(out)

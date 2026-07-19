@@ -41,10 +41,19 @@ WHERE businesses.id = $1 AND EXISTS (
 RETURNING *;
 
 -- name: ListBusinessHours :many
+-- day_of_week is 0=Monday .. 6=Sunday.
 SELECT *
 FROM business_hours
 WHERE business_id = $1
 ORDER BY day_of_week;
+
+-- name: ListBusinessHoursForBusinesses :many
+-- Batch variant so marketplace listings fetch every business's hours in one
+-- round trip instead of one query per business.
+SELECT *
+FROM business_hours
+WHERE business_id = ANY(@business_ids::uuid[])
+ORDER BY business_id, day_of_week;
 
 -- name: DeleteBusinessHours :exec
 DELETE FROM business_hours
