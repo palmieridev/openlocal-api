@@ -341,8 +341,45 @@ WHERE business_id = $1
 ORDER BY day_of_week
 `
 
+// day_of_week is 0=Monday .. 6=Sunday.
 func (q *Queries) ListBusinessHours(ctx context.Context, businessID uuid.UUID) ([]BusinessHour, error) {
 	rows, err := q.db.Query(ctx, listBusinessHours, businessID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BusinessHour{}
+	for rows.Next() {
+		var i BusinessHour
+		if err := rows.Scan(
+			&i.ID,
+			&i.BusinessID,
+			&i.DayOfWeek,
+			&i.OpensAt,
+			&i.ClosesAt,
+			&i.IsClosed,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBusinessHoursForBusinesses = `-- name: ListBusinessHoursForBusinesses :many
+SELECT id, business_id, day_of_week, opens_at, closes_at, is_closed
+FROM business_hours
+WHERE business_id = ANY($1::uuid[])
+ORDER BY business_id, day_of_week
+`
+
+// Batch variant so marketplace listings fetch every business's hours in one
+// round trip instead of one query per business.
+func (q *Queries) ListBusinessHoursForBusinesses(ctx context.Context, businessIds []uuid.UUID) ([]BusinessHour, error) {
+	rows, err := q.db.Query(ctx, listBusinessHoursForBusinesses, businessIds)
 	if err != nil {
 		return nil, err
 	}
