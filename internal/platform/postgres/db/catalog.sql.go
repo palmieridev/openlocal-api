@@ -10,6 +10,7 @@ import (
 	"database/sql"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
 )
 
@@ -313,10 +314,18 @@ func (q *Queries) GetVariantForBusiness(ctx context.Context, arg GetVariantForBu
 }
 
 const listProducts = `-- name: ListProducts :many
-SELECT id, business_id, category_id, name, slug, description, brand, unit, product_type, is_handmade, is_public, status, created_at, updated_at
-FROM products
-WHERE business_id = $1
-ORDER BY created_at DESC
+SELECT p.id, p.business_id, p.category_id, p.name, p.slug, p.description, p.brand, p.unit, p.product_type, p.is_handmade, p.is_public, p.status, p.created_at, p.updated_at,
+       COALESCE(pi.url, '') AS image_url
+FROM products p
+LEFT JOIN LATERAL (
+    SELECT url
+    FROM product_images
+    WHERE product_id = p.id
+    ORDER BY position ASC, created_at ASC
+    LIMIT 1
+) pi ON true
+WHERE p.business_id = $1
+ORDER BY p.created_at DESC
 LIMIT $2 OFFSET $3
 `
 
@@ -326,15 +335,33 @@ type ListProductsParams struct {
 	Offset     int32     `json:"offset"`
 }
 
-func (q *Queries) ListProducts(ctx context.Context, arg ListProductsParams) ([]Product, error) {
+type ListProductsRow struct {
+	ID          uuid.UUID          `json:"id"`
+	BusinessID  uuid.UUID          `json:"business_id"`
+	CategoryID  uuid.NullUUID      `json:"category_id"`
+	Name        string             `json:"name"`
+	Slug        string             `json:"slug"`
+	Description string             `json:"description"`
+	Brand       sql.NullString     `json:"brand"`
+	Unit        string             `json:"unit"`
+	ProductType string             `json:"product_type"`
+	IsHandmade  bool               `json:"is_handmade"`
+	IsPublic    bool               `json:"is_public"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ImageUrl    string             `json:"image_url"`
+}
+
+func (q *Queries) ListProducts(ctx context.Context, arg ListProductsParams) ([]ListProductsRow, error) {
 	rows, err := q.db.Query(ctx, listProducts, arg.BusinessID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Product{}
+	items := []ListProductsRow{}
 	for rows.Next() {
-		var i Product
+		var i ListProductsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.BusinessID,
@@ -350,6 +377,7 @@ func (q *Queries) ListProducts(ctx context.Context, arg ListProductsParams) ([]P
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ImageUrl,
 		); err != nil {
 			return nil, err
 		}

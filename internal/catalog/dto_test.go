@@ -54,6 +54,19 @@ func TestProductParamsRejectsInvalidEnumsAndLengths(t *testing.T) {
 	}
 }
 
+func TestMapProductListRowMapsOptionalImageURL(t *testing.T) {
+	row := db.ListProductsRow{ImageUrl: " https://cdn.example.com/product.jpg "}
+	product := MapProductListRow(row)
+	if product.ImageURL == nil || *product.ImageURL != "https://cdn.example.com/product.jpg" {
+		t.Fatalf("image_url = %v, want trimmed URL", product.ImageURL)
+	}
+
+	row.ImageUrl = ""
+	if imageURL := MapProductListRow(row).ImageURL; imageURL != nil {
+		t.Fatalf("image_url = %q, want nil", *imageURL)
+	}
+}
+
 func TestVariantParamsRejectsUnsafeNumericAndEnumValues(t *testing.T) {
 	base := VariantRequest{
 		BusinessID: uuid.New().String(),

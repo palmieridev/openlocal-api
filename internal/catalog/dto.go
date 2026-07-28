@@ -40,6 +40,7 @@ type ProductResponse struct {
 	Slug        string     `json:"slug"`
 	Description string     `json:"description"`
 	Brand       *string    `json:"brand,omitempty"`
+	ImageURL    *string    `json:"image_url,omitempty"`
 	Unit        string     `json:"unit"`
 	ProductType string     `json:"product_type"`
 	IsHandmade  bool       `json:"is_handmade,omitempty"`
@@ -107,6 +108,27 @@ func MapProduct(p db.Product, includePrivate bool) ProductResponse {
 		out.CreatedAt = api.TSP(p.CreatedAt)
 		out.UpdatedAt = api.TSP(p.UpdatedAt)
 	}
+	return out
+}
+
+func MapProductListRow(p db.ListProductsRow) ProductResponse {
+	out := MapProduct(db.Product{
+		ID:          p.ID,
+		BusinessID:  p.BusinessID,
+		CategoryID:  p.CategoryID,
+		Name:        p.Name,
+		Slug:        p.Slug,
+		Description: p.Description,
+		Brand:       p.Brand,
+		Unit:        p.Unit,
+		ProductType: p.ProductType,
+		IsHandmade:  p.IsHandmade,
+		IsPublic:    p.IsPublic,
+		Status:      p.Status,
+		CreatedAt:   p.CreatedAt,
+		UpdatedAt:   p.UpdatedAt,
+	}, true)
+	out.ImageURL = stringPtr(p.ImageUrl)
 	return out
 }
 

@@ -415,6 +415,9 @@ components:
           type: string
         brand:
           type: string
+        image_url:
+          type: string
+          format: uri
         unit:
           type: string
         product_type:

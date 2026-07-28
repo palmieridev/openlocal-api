@@ -75,7 +75,7 @@ func (h Handler) listProducts(c *fiber.Ctx) error {
 	}
 	out := make([]ProductResponse, 0, len(products))
 	for _, product := range products {
-		out = append(out, MapProduct(product, true))
+		out = append(out, MapProductListRow(product))
 	}
 	return c.JSON(out)
 }

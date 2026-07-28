@@ -4,10 +4,18 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING *;
 
 -- name: ListProducts :many
-SELECT *
-FROM products
-WHERE business_id = $1
-ORDER BY created_at DESC
+SELECT p.*,
+       COALESCE(pi.url, '') AS image_url
+FROM products p
+LEFT JOIN LATERAL (
+    SELECT url
+    FROM product_images
+    WHERE product_id = p.id
+    ORDER BY position ASC, created_at ASC
+    LIMIT 1
+) pi ON true
+WHERE p.business_id = $1
+ORDER BY p.created_at DESC
 LIMIT $2 OFFSET $3;
 
 -- name: GetProductForBusiness :one
