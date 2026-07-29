@@ -260,3 +260,84 @@ func createBusiness(t *testing.T, ctx context.Context, q *db.Queries) db.Busines
 	}
 	return business
 }
+
+func TestProductImageCanBeSetReplacedAndCleared(t *testing.T) {
+	pool := integrationPool(t)
+	ctx := context.Background()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback(ctx) })
+	q := db.New(tx)
+
+	business := createBusiness(t, ctx, q)
+	product, err := q.CreateProduct(ctx, db.CreateProductParams{
+		BusinessID:  business.ID,
+		Name:        "Image Product",
+		Slug:        "image-product-" + uuid.NewString()[:8],
+		Description: "",
+		Unit:        "piece",
+		ProductType: "stocked_product",
+		IsPublic:    true,
+		Status:      "active",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// No image yet: the read must yield "" rather than ErrNoRows.
+	current, err := q.GetProductImage(ctx, product.ID)
+	if err != nil {
+		t.Fatalf("GetProductImage on an imageless product: %v", err)
+	}
+	if current != "" {
+		t.Fatalf("got %q, want empty string", current)
+	}
+
+	first := "https://example.com/first.jpg"
+	if err := q.CreateProductImage(ctx, db.CreateProductImageParams{ProductID: product.ID, Url: first}); err != nil {
+		t.Fatal(err)
+	}
+	if current, err = q.GetProductImage(ctx, product.ID); err != nil || current != first {
+		t.Fatalf("got (%q, %v), want %q", current, err, first)
+	}
+
+	// Replace: delete-then-insert must leave exactly one image.
+	second := "https://example.com/second.jpg"
+	if err := q.DeleteProductImages(ctx, product.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := q.CreateProductImage(ctx, db.CreateProductImageParams{ProductID: product.ID, Url: second}); err != nil {
+		t.Fatal(err)
+	}
+	if current, err = q.GetProductImage(ctx, product.ID); err != nil || current != second {
+		t.Fatalf("got (%q, %v), want %q", current, err, second)
+	}
+
+	// The list endpoint's LATERAL join must surface the same URL.
+	rows, err := q.ListProducts(ctx, db.ListProductsParams{BusinessID: business.ID, Limit: 10, Offset: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, row := range rows {
+		if row.ID == product.ID {
+			found = true
+			if row.ImageUrl != second {
+				t.Fatalf("ListProducts image_url = %q, want %q", row.ImageUrl, second)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("product missing from ListProducts")
+	}
+
+	// Clear.
+	if err := q.DeleteProductImages(ctx, product.ID); err != nil {
+		t.Fatal(err)
+	}
+	if current, err = q.GetProductImage(ctx, product.ID); err != nil || current != "" {
+		t.Fatalf("got (%q, %v), want empty string", current, err)
+	}
+}

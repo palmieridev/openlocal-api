@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"encoding/json"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -25,6 +26,10 @@ type ProductRequest struct {
 	Slug        string  `json:"slug"`
 	Description string  `json:"description"`
 	Brand       *string `json:"brand"`
+	// ImageURL is the product's storefront image. Omitted or null leaves the
+	// current image untouched — an empty string removes it. Callers that never
+	// send the field therefore can't wipe an image by accident.
+	ImageURL    *string `json:"image_url"`
 	Unit        string  `json:"unit"`
 	ProductType string  `json:"product_type"`
 	IsHandmade  bool    `json:"is_handmade"`
@@ -378,4 +383,28 @@ func stringPtr(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+// ProductImageURL validates the image_url field of a product request.
+//
+// Returns (nil, nil) when the field was omitted or null — meaning "leave the
+// current image alone". A present-but-empty value yields ("", nil): an explicit
+// request to remove the image. Anything else must be an absolute http(s) URL.
+func ProductImageURL(raw *string) (*string, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	value := strings.TrimSpace(*raw)
+	if value == "" {
+		empty := ""
+		return &empty, nil
+	}
+	if err := v.StringLength(value, "image_url", 1, 2048); err != nil {
+		return nil, err
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return nil, fiber.NewError(fiber.StatusBadRequest, "image_url must be an absolute http(s) url")
+	}
+	return &value, nil
 }

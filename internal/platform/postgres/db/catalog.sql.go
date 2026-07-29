@@ -98,6 +98,20 @@ func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) (P
 	return i, err
 }
 
+const createProductImage = `-- name: CreateProductImage :exec
+INSERT INTO product_images (product_id, url, position) VALUES ($1, $2, 0)
+`
+
+type CreateProductImageParams struct {
+	ProductID uuid.UUID `json:"product_id"`
+	Url       string    `json:"url"`
+}
+
+func (q *Queries) CreateProductImage(ctx context.Context, arg CreateProductImageParams) error {
+	_, err := q.db.Exec(ctx, createProductImage, arg.ProductID, arg.Url)
+	return err
+}
+
 const createVariant = `-- name: CreateVariant :one
 INSERT INTO product_variants (
     product_id, business_id, sku, barcode, internal_code, name, attributes,
@@ -169,6 +183,15 @@ func (q *Queries) CreateVariant(ctx context.Context, arg CreateVariantParams) (P
 	return i, err
 }
 
+const deleteProductImages = `-- name: DeleteProductImages :exec
+DELETE FROM product_images WHERE product_id = $1
+`
+
+func (q *Queries) DeleteProductImages(ctx context.Context, productID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteProductImages, productID)
+	return err
+}
+
 const getProductForBusiness = `-- name: GetProductForBusiness :one
 SELECT id, business_id, category_id, name, slug, description, brand, unit, product_type, is_handmade, is_public, status, created_at, updated_at
 FROM products
@@ -200,6 +223,26 @@ func (q *Queries) GetProductForBusiness(ctx context.Context, arg GetProductForBu
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getProductImage = `-- name: GetProductImage :one
+SELECT COALESCE(
+    (SELECT url
+     FROM product_images
+     WHERE product_id = $1
+     ORDER BY position ASC, created_at ASC
+     LIMIT 1),
+    ''
+)::text AS url
+`
+
+// Storefront image. Products carry at most one today, so writes replace the
+// whole set; the scalar subquery keeps the read row-safe (no ErrNoRows).
+func (q *Queries) GetProductImage(ctx context.Context, productID uuid.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getProductImage, productID)
+	var url string
+	err := row.Scan(&url)
+	return url, err
 }
 
 const getVariantByBarcode = `-- name: GetVariantByBarcode :one

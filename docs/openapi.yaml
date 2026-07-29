@@ -375,6 +375,15 @@ components:
         brand:
           type: string
           nullable: true
+        image_url:
+          type: string
+          format: uri
+          nullable: true
+          description: >-
+            Storefront image. Omit or send null to leave the current image
+            unchanged; send an empty string to remove it. Must be an absolute
+            http(s) URL.
+          example: https://xyz.public.blob.vercel-storage.com/products/abc.jpg
         unit:
           type: string
           default: piece
