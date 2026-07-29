@@ -42,6 +42,24 @@ RETURNING *;
 UPDATE products SET status = 'archived', updated_at = now()
 WHERE id = $1 AND business_id = $2;
 
+-- Storefront image. Products carry at most one today, so writes replace the
+-- whole set; the scalar subquery keeps the read row-safe (no ErrNoRows).
+-- name: GetProductImage :one
+SELECT COALESCE(
+    (SELECT url
+     FROM product_images
+     WHERE product_id = $1
+     ORDER BY position ASC, created_at ASC
+     LIMIT 1),
+    ''
+)::text AS url;
+
+-- name: DeleteProductImages :exec
+DELETE FROM product_images WHERE product_id = $1;
+
+-- name: CreateProductImage :exec
+INSERT INTO product_images (product_id, url, position) VALUES ($1, $2, 0);
+
 -- name: CreateVariant :one
 INSERT INTO product_variants (
     product_id, business_id, sku, barcode, internal_code, name, attributes,

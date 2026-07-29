@@ -110,3 +110,68 @@ func TestVariantParamsDefaultsAttributesToObject(t *testing.T) {
 		t.Fatalf("attributes = %s, want {}", params.Attributes)
 	}
 }
+
+func TestProductImageURLOmittedLeavesImageUnchanged(t *testing.T) {
+	got, err := ProductImageURL(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Fatalf("got %v, want nil (leave unchanged)", *got)
+	}
+}
+
+func TestProductImageURLEmptyRemovesImage(t *testing.T) {
+	for _, raw := range []string{"", "   "} {
+		got, err := ProductImageURL(&raw)
+		if err != nil {
+			t.Fatalf("%q: %v", raw, err)
+		}
+		if got == nil || *got != "" {
+			t.Fatalf("%q: got %v, want empty string (remove)", raw, got)
+		}
+	}
+}
+
+func TestProductImageURLAcceptsAbsoluteHTTPURLs(t *testing.T) {
+	raw := "  https://xyz.public.blob.vercel-storage.com/products/abc.jpg  "
+	got, err := ProductImageURL(&raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || *got != strings.TrimSpace(raw) {
+		t.Fatalf("got %v, want the trimmed url", got)
+	}
+}
+
+func TestProductImageURLRejectsNonHTTPValues(t *testing.T) {
+	for _, raw := range []string{
+		"javascript:alert(1)",
+		"/products/abc.jpg",
+		"ftp://example.com/a.jpg",
+		"data:image/png;base64,AAAA",
+		"https://",
+	} {
+		if _, err := ProductImageURL(&raw); err == nil {
+			t.Fatalf("%q was accepted, want rejection", raw)
+		}
+	}
+}
+
+func TestProductImageURLRejectsOverlongValues(t *testing.T) {
+	raw := "https://example.com/" + strings.Repeat("a", 2100)
+	if _, err := ProductImageURL(&raw); err == nil {
+		t.Fatal("overlong url was accepted, want rejection")
+	}
+}
+
+func TestProductRequestAcceptsImageURL(t *testing.T) {
+	var req ProductRequest
+	body := `{"business_id":"b","name":"n","description":"d","image_url":"https://example.com/a.jpg"}`
+	if err := json.Unmarshal([]byte(body), &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.ImageURL == nil || *req.ImageURL != "https://example.com/a.jpg" {
+		t.Fatalf("image_url did not decode: %v", req.ImageURL)
+	}
+}

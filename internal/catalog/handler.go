@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 	"github.com/palmieridev/openlocal-api/internal/api"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	v "github.com/palmieridev/openlocal-api/internal/platform/validator"
@@ -50,11 +51,56 @@ func (h Handler) createProduct(c *fiber.Ctx) error {
 	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager"); err != nil {
 		return err
 	}
-	product, err := h.rt.Q.CreateProduct(c.Context(), params)
+	image, err := ProductImageURL(req.ImageURL)
 	if err != nil {
 		return err
 	}
-	return c.Status(fiber.StatusCreated).JSON(MapProduct(product, true))
+	tx, err := h.rt.Pool.Begin(c.Context())
+	if err != nil {
+		return err
+	}
+	defer api.Rollback(c.Context(), tx)
+	qtx := h.rt.Q.WithTx(tx)
+	product, err := qtx.CreateProduct(c.Context(), params)
+	if err != nil {
+		return err
+	}
+	imageURL, err := applyProductImage(c, qtx, product.ID, image)
+	if err != nil {
+		return err
+	}
+	if err := tx.Commit(c.Context()); err != nil {
+		return err
+	}
+	out := MapProduct(product, true)
+	out.ImageURL = imageURL
+	return c.Status(fiber.StatusCreated).JSON(out)
+}
+
+// applyProductImage persists the product's single storefront image and reports
+// the URL to echo back. A nil target leaves the stored image as-is; an empty
+// string clears it. Products hold at most one image, so a write replaces the set.
+func applyProductImage(c *fiber.Ctx, q *db.Queries, productID uuid.UUID, target *string) (*string, error) {
+	if target == nil {
+		current, err := q.GetProductImage(c.Context(), productID)
+		if err != nil {
+			return nil, err
+		}
+		return stringPtr(current), nil
+	}
+	if err := q.DeleteProductImages(c.Context(), productID); err != nil {
+		return nil, err
+	}
+	if *target == "" {
+		return nil, nil
+	}
+	if err := q.CreateProductImage(c.Context(), db.CreateProductImageParams{
+		ProductID: productID,
+		Url:       *target,
+	}); err != nil {
+		return nil, err
+	}
+	return target, nil
 }
 
 func (h Handler) listProducts(c *fiber.Ctx) error {
@@ -92,7 +138,13 @@ func (h Handler) getProduct(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(MapProduct(product, true))
+	imageURL, err := h.rt.Q.GetProductImage(c.Context(), product.ID)
+	if err != nil {
+		return err
+	}
+	out := MapProduct(product, true)
+	out.ImageURL = stringPtr(imageURL)
+	return c.JSON(out)
 }
 
 func (h Handler) listVariantsByProduct(c *fiber.Ctx) error {
@@ -133,11 +185,30 @@ func (h Handler) updateProduct(c *fiber.Ctx) error {
 	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager"); err != nil {
 		return err
 	}
-	product, err := h.rt.Q.UpdateProduct(c.Context(), params)
+	image, err := ProductImageURL(req.ImageURL)
 	if err != nil {
 		return err
 	}
-	return c.JSON(MapProduct(product, true))
+	tx, err := h.rt.Pool.Begin(c.Context())
+	if err != nil {
+		return err
+	}
+	defer api.Rollback(c.Context(), tx)
+	qtx := h.rt.Q.WithTx(tx)
+	product, err := qtx.UpdateProduct(c.Context(), params)
+	if err != nil {
+		return err
+	}
+	imageURL, err := applyProductImage(c, qtx, product.ID, image)
+	if err != nil {
+		return err
+	}
+	if err := tx.Commit(c.Context()); err != nil {
+		return err
+	}
+	out := MapProduct(product, true)
+	out.ImageURL = imageURL
+	return c.JSON(out)
 }
 
 func (h Handler) archiveProduct(c *fiber.Ctx) error {
