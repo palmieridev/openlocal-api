@@ -10,6 +10,10 @@ SET variant_id = (
     LIMIT 1
 );
 
+-- Images for products without variants cannot be assigned a variant owner.
+DELETE FROM product_images
+WHERE variant_id IS NULL;
+
 ALTER TABLE product_images
     ALTER COLUMN variant_id SET NOT NULL,
     DROP COLUMN product_id;
