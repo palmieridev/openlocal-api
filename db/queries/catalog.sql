@@ -4,16 +4,8 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING *;
 
 -- name: ListProducts :many
-SELECT p.*,
-       COALESCE(pi.url, '') AS image_url
+SELECT p.*
 FROM products p
-LEFT JOIN LATERAL (
-    SELECT url
-    FROM product_images
-    WHERE product_id = p.id
-    ORDER BY position ASC, created_at ASC
-    LIMIT 1
-) pi ON true
 WHERE p.business_id = $1
 ORDER BY p.created_at DESC
 LIMIT $2 OFFSET $3;
@@ -42,23 +34,23 @@ RETURNING *;
 UPDATE products SET status = 'archived', updated_at = now()
 WHERE id = $1 AND business_id = $2;
 
--- Storefront image. Products carry at most one today, so writes replace the
+-- Storefront image. Variants carry at most one today, so writes replace the
 -- whole set; the scalar subquery keeps the read row-safe (no ErrNoRows).
--- name: GetProductImage :one
+-- name: GetVariantImage :one
 SELECT COALESCE(
     (SELECT url
      FROM product_images
-     WHERE product_id = $1
+     WHERE variant_id = $1
      ORDER BY position ASC, created_at ASC
      LIMIT 1),
     ''
 )::text AS url;
 
--- name: DeleteProductImages :exec
-DELETE FROM product_images WHERE product_id = $1;
+-- name: DeleteVariantImages :exec
+DELETE FROM product_images WHERE variant_id = $1;
 
--- name: CreateProductImage :exec
-INSERT INTO product_images (product_id, url, position) VALUES ($1, $2, 0);
+-- name: CreateVariantImage :exec
+INSERT INTO product_images (variant_id, url, position) VALUES ($1, $2, 0);
 
 -- name: CreateVariant :one
 INSERT INTO product_variants (
@@ -71,25 +63,57 @@ INSERT INTO product_variants (
 RETURNING *;
 
 -- name: ListVariantsByProduct :many
-SELECT *
-FROM product_variants
-WHERE product_id = $1 AND business_id = $2
-ORDER BY created_at ASC;
+SELECT sqlc.embed(pv),
+       COALESCE(pi.url, '') AS image_url
+FROM product_variants pv
+LEFT JOIN LATERAL (
+    SELECT url
+    FROM product_images
+    WHERE variant_id = pv.id
+    ORDER BY position ASC, created_at ASC
+    LIMIT 1
+) pi ON true
+WHERE pv.product_id = $1 AND pv.business_id = $2
+ORDER BY pv.created_at ASC;
 
 -- name: GetVariantForBusiness :one
-SELECT *
-FROM product_variants
-WHERE id = $1 AND business_id = $2;
+SELECT sqlc.embed(pv),
+       COALESCE(pi.url, '') AS image_url
+FROM product_variants pv
+LEFT JOIN LATERAL (
+    SELECT url
+    FROM product_images
+    WHERE variant_id = pv.id
+    ORDER BY position ASC, created_at ASC
+    LIMIT 1
+) pi ON true
+WHERE pv.id = $1 AND pv.business_id = $2;
 
 -- name: GetVariantByBarcode :one
-SELECT *
-FROM product_variants
-WHERE business_id = $1 AND barcode = $2 AND status = 'active';
+SELECT sqlc.embed(pv),
+       COALESCE(pi.url, '') AS image_url
+FROM product_variants pv
+LEFT JOIN LATERAL (
+    SELECT url
+    FROM product_images
+    WHERE variant_id = pv.id
+    ORDER BY position ASC, created_at ASC
+    LIMIT 1
+) pi ON true
+WHERE pv.business_id = $1 AND pv.barcode = $2 AND pv.status = 'active';
 
 -- name: GetVariantBySKU :one
-SELECT *
-FROM product_variants
-WHERE business_id = $1 AND sku = $2 AND status = 'active';
+SELECT sqlc.embed(pv),
+       COALESCE(pi.url, '') AS image_url
+FROM product_variants pv
+LEFT JOIN LATERAL (
+    SELECT url
+    FROM product_images
+    WHERE variant_id = pv.id
+    ORDER BY position ASC, created_at ASC
+    LIMIT 1
+) pi ON true
+WHERE pv.business_id = $1 AND pv.sku = $2 AND pv.status = 'active';
 
 -- name: UpdateVariant :one
 UPDATE product_variants SET
@@ -125,7 +149,7 @@ JOIN product_variants pv ON pv.product_id = p.id
 LEFT JOIN LATERAL (
     SELECT url
     FROM product_images
-    WHERE product_id = p.id
+    WHERE variant_id = pv.id
     ORDER BY position ASC, created_at ASC
     LIMIT 1
 ) pi ON true
@@ -149,7 +173,7 @@ JOIN product_variants pv ON pv.product_id = p.id
 LEFT JOIN LATERAL (
     SELECT url
     FROM product_images
-    WHERE product_id = p.id
+    WHERE variant_id = pv.id
     ORDER BY position ASC, created_at ASC
     LIMIT 1
 ) pi ON true

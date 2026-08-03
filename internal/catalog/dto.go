@@ -26,10 +26,6 @@ type ProductRequest struct {
 	Slug        string  `json:"slug"`
 	Description string  `json:"description"`
 	Brand       *string `json:"brand"`
-	// ImageURL is the product's storefront image. Omitted or null leaves the
-	// current image untouched — an empty string removes it. Callers that never
-	// send the field therefore can't wipe an image by accident.
-	ImageURL    *string `json:"image_url"`
 	Unit        string  `json:"unit"`
 	ProductType string  `json:"product_type"`
 	IsHandmade  bool    `json:"is_handmade"`
@@ -45,7 +41,6 @@ type ProductResponse struct {
 	Slug        string     `json:"slug"`
 	Description string     `json:"description"`
 	Brand       *string    `json:"brand,omitempty"`
-	ImageURL    *string    `json:"image_url,omitempty"`
 	Unit        string     `json:"unit"`
 	ProductType string     `json:"product_type"`
 	IsHandmade  bool       `json:"is_handmade,omitempty"`
@@ -56,13 +51,17 @@ type ProductResponse struct {
 }
 
 type VariantRequest struct {
-	BusinessID        string  `json:"business_id"`
-	ProductID         string  `json:"product_id"`
-	SKU               string  `json:"sku"`
-	Barcode           *string `json:"barcode"`
-	InternalCode      string  `json:"internal_code"`
-	Name              string  `json:"name"`
-	Attributes        JSONObj `json:"attributes"`
+	BusinessID   string  `json:"business_id"`
+	ProductID    string  `json:"product_id"`
+	SKU          string  `json:"sku"`
+	Barcode      *string `json:"barcode"`
+	InternalCode string  `json:"internal_code"`
+	Name         string  `json:"name"`
+	Attributes   JSONObj `json:"attributes"`
+	// ImageURL is the variant's storefront image. Omitted or null leaves the
+	// current image untouched — an empty string removes it. Callers that never
+	// send the field therefore can't wipe an image by accident.
+	ImageURL          *string `json:"image_url"`
 	Price             string  `json:"price"`
 	Cost              *string `json:"cost"`
 	Currency          string  `json:"currency"`
@@ -82,6 +81,7 @@ type VariantResponse struct {
 	InternalCode      string     `json:"internal_code,omitempty"`
 	Name              string     `json:"name"`
 	Attributes        JSONObj    `json:"attributes,omitempty"`
+	ImageURL          *string    `json:"image_url,omitempty"`
 	Price             string     `json:"price"`
 	Cost              *string    `json:"cost,omitempty"`
 	Currency          string     `json:"currency"`
@@ -116,33 +116,13 @@ func MapProduct(p db.Product, includePrivate bool) ProductResponse {
 	return out
 }
 
-func MapProductListRow(p db.ListProductsRow) ProductResponse {
-	out := MapProduct(db.Product{
-		ID:          p.ID,
-		BusinessID:  p.BusinessID,
-		CategoryID:  p.CategoryID,
-		Name:        p.Name,
-		Slug:        p.Slug,
-		Description: p.Description,
-		Brand:       p.Brand,
-		Unit:        p.Unit,
-		ProductType: p.ProductType,
-		IsHandmade:  p.IsHandmade,
-		IsPublic:    p.IsPublic,
-		Status:      p.Status,
-		CreatedAt:   p.CreatedAt,
-		UpdatedAt:   p.UpdatedAt,
-	}, true)
-	out.ImageURL = stringPtr(p.ImageUrl)
-	return out
-}
-
-func MapVariant(v db.ProductVariant, includePrivate bool) VariantResponse {
+func MapVariant(v db.ProductVariant, imageURL string, includePrivate bool) VariantResponse {
 	out := VariantResponse{
 		ID:                v.ID,
 		ProductID:         v.ProductID,
 		SKU:               v.Sku,
 		Name:              v.Name,
+		ImageURL:          stringPtr(imageURL),
 		Price:             v.Price.StringFixed(2),
 		Currency:          v.Currency,
 		PublicStockStatus: v.PublicStockStatus,
@@ -385,12 +365,12 @@ func stringPtr(value string) *string {
 	return &value
 }
 
-// ProductImageURL validates the image_url field of a product request.
+// VariantImageURL validates the image_url field of a variant request.
 //
 // Returns (nil, nil) when the field was omitted or null — meaning "leave the
 // current image alone". A present-but-empty value yields ("", nil): an explicit
 // request to remove the image. Anything else must be an absolute http(s) URL.
-func ProductImageURL(raw *string) (*string, error) {
+func VariantImageURL(raw *string) (*string, error) {
 	if raw == nil {
 		return nil, nil
 	}

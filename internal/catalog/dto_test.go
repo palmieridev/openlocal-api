@@ -26,7 +26,7 @@ func TestPublicVariantDTOExcludesPrivateFields(t *testing.T) {
 		ReorderPoint:      decimal.NewFromInt(5),
 		Status:            "active",
 	}
-	body, err := json.Marshal(MapVariant(variant, false))
+	body, err := json.Marshal(MapVariant(variant, "", false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,15 +54,13 @@ func TestProductParamsRejectsInvalidEnumsAndLengths(t *testing.T) {
 	}
 }
 
-func TestMapProductListRowMapsOptionalImageURL(t *testing.T) {
-	row := db.ListProductsRow{ImageUrl: " https://cdn.example.com/product.jpg "}
-	product := MapProductListRow(row)
-	if product.ImageURL == nil || *product.ImageURL != "https://cdn.example.com/product.jpg" {
-		t.Fatalf("image_url = %v, want trimmed URL", product.ImageURL)
+func TestMapVariantMapsOptionalImageURL(t *testing.T) {
+	variant := MapVariant(db.ProductVariant{}, " https://cdn.example.com/variant.jpg ", true)
+	if variant.ImageURL == nil || *variant.ImageURL != "https://cdn.example.com/variant.jpg" {
+		t.Fatalf("image_url = %v, want trimmed URL", variant.ImageURL)
 	}
 
-	row.ImageUrl = ""
-	if imageURL := MapProductListRow(row).ImageURL; imageURL != nil {
+	if imageURL := MapVariant(db.ProductVariant{}, "", true).ImageURL; imageURL != nil {
 		t.Fatalf("image_url = %q, want nil", *imageURL)
 	}
 }
@@ -111,8 +109,8 @@ func TestVariantParamsDefaultsAttributesToObject(t *testing.T) {
 	}
 }
 
-func TestProductImageURLOmittedLeavesImageUnchanged(t *testing.T) {
-	got, err := ProductImageURL(nil)
+func TestVariantImageURLOmittedLeavesImageUnchanged(t *testing.T) {
+	got, err := VariantImageURL(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,9 +119,9 @@ func TestProductImageURLOmittedLeavesImageUnchanged(t *testing.T) {
 	}
 }
 
-func TestProductImageURLEmptyRemovesImage(t *testing.T) {
+func TestVariantImageURLEmptyRemovesImage(t *testing.T) {
 	for _, raw := range []string{"", "   "} {
-		got, err := ProductImageURL(&raw)
+		got, err := VariantImageURL(&raw)
 		if err != nil {
 			t.Fatalf("%q: %v", raw, err)
 		}
@@ -133,9 +131,9 @@ func TestProductImageURLEmptyRemovesImage(t *testing.T) {
 	}
 }
 
-func TestProductImageURLAcceptsAbsoluteHTTPURLs(t *testing.T) {
+func TestVariantImageURLAcceptsAbsoluteHTTPURLs(t *testing.T) {
 	raw := "  https://xyz.public.blob.vercel-storage.com/products/abc.jpg  "
-	got, err := ProductImageURL(&raw)
+	got, err := VariantImageURL(&raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +142,7 @@ func TestProductImageURLAcceptsAbsoluteHTTPURLs(t *testing.T) {
 	}
 }
 
-func TestProductImageURLRejectsNonHTTPValues(t *testing.T) {
+func TestVariantImageURLRejectsNonHTTPValues(t *testing.T) {
 	for _, raw := range []string{
 		"javascript:alert(1)",
 		"/products/abc.jpg",
@@ -152,22 +150,22 @@ func TestProductImageURLRejectsNonHTTPValues(t *testing.T) {
 		"data:image/png;base64,AAAA",
 		"https://",
 	} {
-		if _, err := ProductImageURL(&raw); err == nil {
+		if _, err := VariantImageURL(&raw); err == nil {
 			t.Fatalf("%q was accepted, want rejection", raw)
 		}
 	}
 }
 
-func TestProductImageURLRejectsOverlongValues(t *testing.T) {
+func TestVariantImageURLRejectsOverlongValues(t *testing.T) {
 	raw := "https://example.com/" + strings.Repeat("a", 2100)
-	if _, err := ProductImageURL(&raw); err == nil {
+	if _, err := VariantImageURL(&raw); err == nil {
 		t.Fatal("overlong url was accepted, want rejection")
 	}
 }
 
-func TestProductRequestAcceptsImageURL(t *testing.T) {
-	var req ProductRequest
-	body := `{"business_id":"b","name":"n","description":"d","image_url":"https://example.com/a.jpg"}`
+func TestVariantRequestAcceptsImageURL(t *testing.T) {
+	var req VariantRequest
+	body := `{"business_id":"b","product_id":"p","sku":"s","image_url":"https://example.com/a.jpg"}`
 	if err := json.Unmarshal([]byte(body), &req); err != nil {
 		t.Fatal(err)
 	}

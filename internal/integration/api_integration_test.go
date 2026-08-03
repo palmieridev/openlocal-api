@@ -261,7 +261,7 @@ func createBusiness(t *testing.T, ctx context.Context, q *db.Queries) db.Busines
 	return business
 }
 
-func TestProductImageCanBeSetReplacedAndCleared(t *testing.T) {
+func TestVariantImageCanBeSetReplacedAndCleared(t *testing.T) {
 	pool := integrationPool(t)
 	ctx := context.Background()
 	tx, err := pool.Begin(ctx)
@@ -285,59 +285,107 @@ func TestProductImageCanBeSetReplacedAndCleared(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	barcode := uuid.NewString()
+	variant, err := q.CreateVariant(ctx, db.CreateVariantParams{
+		ProductID:         product.ID,
+		BusinessID:        business.ID,
+		Sku:               "IMG-" + uuid.NewString()[:8],
+		Barcode:           sql.NullString{String: barcode, Valid: true},
+		InternalCode:      "IMG-" + uuid.NewString()[:8],
+		Name:              "Image Variant",
+		Attributes:        []byte(`{}`),
+		Price:             decimal.NewFromInt(100),
+		Currency:          "MXN",
+		TrackInventory:    true,
+		PublicStockStatus: "available",
+		ReorderPoint:      decimal.Zero,
+		Status:            "active",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// No image yet: the read must yield "" rather than ErrNoRows.
-	current, err := q.GetProductImage(ctx, product.ID)
+	current, err := q.GetVariantImage(ctx, variant.ID)
 	if err != nil {
-		t.Fatalf("GetProductImage on an imageless product: %v", err)
+		t.Fatalf("GetVariantImage on an imageless variant: %v", err)
 	}
 	if current != "" {
 		t.Fatalf("got %q, want empty string", current)
 	}
 
 	first := "https://example.com/first.jpg"
-	if err := q.CreateProductImage(ctx, db.CreateProductImageParams{ProductID: product.ID, Url: first}); err != nil {
+	if err := q.CreateVariantImage(ctx, db.CreateVariantImageParams{VariantID: variant.ID, Url: first}); err != nil {
 		t.Fatal(err)
 	}
-	if current, err = q.GetProductImage(ctx, product.ID); err != nil || current != first {
+	if current, err = q.GetVariantImage(ctx, variant.ID); err != nil || current != first {
 		t.Fatalf("got (%q, %v), want %q", current, err, first)
 	}
 
 	// Replace: delete-then-insert must leave exactly one image.
 	second := "https://example.com/second.jpg"
-	if err := q.DeleteProductImages(ctx, product.ID); err != nil {
+	if err := q.DeleteVariantImages(ctx, variant.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := q.CreateProductImage(ctx, db.CreateProductImageParams{ProductID: product.ID, Url: second}); err != nil {
+	if err := q.CreateVariantImage(ctx, db.CreateVariantImageParams{VariantID: variant.ID, Url: second}); err != nil {
 		t.Fatal(err)
 	}
-	if current, err = q.GetProductImage(ctx, product.ID); err != nil || current != second {
+	if current, err = q.GetVariantImage(ctx, variant.ID); err != nil || current != second {
 		t.Fatalf("got (%q, %v), want %q", current, err, second)
 	}
 
-	// The list endpoint's LATERAL join must surface the same URL.
-	rows, err := q.ListProducts(ctx, db.ListProductsParams{BusinessID: business.ID, Limit: 10, Offset: 0})
+	byID, err := q.GetVariantForBusiness(ctx, db.GetVariantForBusinessParams{ID: variant.ID, BusinessID: business.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var found bool
-	for _, row := range rows {
-		if row.ID == product.ID {
-			found = true
-			if row.ImageUrl != second {
-				t.Fatalf("ListProducts image_url = %q, want %q", row.ImageUrl, second)
-			}
+	if byID.ImageUrl != second {
+		t.Fatalf("GetVariantForBusiness image_url = %q, want %q", byID.ImageUrl, second)
+	}
+
+	bySKU, err := q.GetVariantBySKU(ctx, db.GetVariantBySKUParams{BusinessID: business.ID, Sku: variant.Sku})
+	if err != nil || bySKU.ImageUrl != second {
+		t.Fatalf("GetVariantBySKU image_url = %q, err = %v", bySKU.ImageUrl, err)
+	}
+	byBarcode, err := q.GetVariantByBarcode(ctx, db.GetVariantByBarcodeParams{BusinessID: business.ID, Barcode: variant.Barcode})
+	if err != nil || byBarcode.ImageUrl != second {
+		t.Fatalf("GetVariantByBarcode image_url = %q, err = %v", byBarcode.ImageUrl, err)
+	}
+
+	rows, err := q.ListVariantsByProduct(ctx, db.ListVariantsByProductParams{ProductID: product.ID, BusinessID: business.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].ImageUrl != second {
+		t.Fatalf("ListVariantsByProduct rows = %#v, want image_url %q", rows, second)
+	}
+
+	publicRows, err := q.ListPublicProductsByBusinessSlug(ctx, db.ListPublicProductsByBusinessSlugParams{Slug: business.Slug, Limit: 10, Offset: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(publicRows) != 1 || publicRows[0].ImageUrl != second {
+		t.Fatalf("ListPublicProductsByBusinessSlug rows = %#v, want image_url %q", publicRows, second)
+	}
+
+	marketplaceRows, err := q.SearchMarketplaceProducts(ctx, db.SearchMarketplaceProductsParams{Column1: "", Limit: 10, Offset: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var marketplaceImage string
+	for _, row := range marketplaceRows {
+		if row.VariantID == variant.ID {
+			marketplaceImage = row.ImageUrl
 		}
 	}
-	if !found {
-		t.Fatal("product missing from ListProducts")
+	if marketplaceImage != second {
+		t.Fatalf("SearchMarketplaceProducts image_url = %q, want %q", marketplaceImage, second)
 	}
 
 	// Clear.
-	if err := q.DeleteProductImages(ctx, product.ID); err != nil {
+	if err := q.DeleteVariantImages(ctx, variant.ID); err != nil {
 		t.Fatal(err)
 	}
-	if current, err = q.GetProductImage(ctx, product.ID); err != nil || current != "" {
+	if current, err = q.GetVariantImage(ctx, variant.ID); err != nil || current != "" {
 		t.Fatalf("got (%q, %v), want empty string", current, err)
 	}
 }

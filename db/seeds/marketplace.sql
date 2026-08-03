@@ -167,13 +167,13 @@ ON CONFLICT (business_id, sku) DO UPDATE SET
     status = EXCLUDED.status,
     updated_at = now();
 
-INSERT INTO product_images (id, product_id, url, alt_text, position) VALUES
-('eeeeeeee-1111-4111-8111-111111111111', 'cccccccc-1111-4111-8111-111111111111', 'https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=900&q=80', 'Heirloom tomatoes in a produce box', 0),
-('eeeeeeee-1112-4112-8112-111111111112', 'cccccccc-1112-4112-8112-111111111112', 'https://images.unsplash.com/photo-1626200419199-391ae4be7a41?auto=format&fit=crop&w=900&q=80', 'Jar of green salsa with tomatillos', 0),
-('eeeeeeee-2222-4222-8222-222222222222', 'cccccccc-2222-4222-8222-222222222222', 'https://images.unsplash.com/photo-1585478259715-4d3f01d2954f?auto=format&fit=crop&w=900&q=80', 'Country sourdough loaf on a bakery table', 0),
-('eeeeeeee-2223-4223-8223-222222222223', 'cccccccc-2223-4223-8223-222222222223', 'https://images.unsplash.com/photo-1509365465985-25d11c17e812?auto=format&fit=crop&w=900&q=80', 'Sweet pastry on a tray', 0),
-('eeeeeeee-3333-4333-8333-333333333333', 'cccccccc-3333-4333-8333-333333333333', 'https://images.unsplash.com/photo-1614594975525-e45190c55d0b?auto=format&fit=crop&w=900&q=80', 'Monstera plant in a pot', 0),
-('eeeeeeee-3334-4334-8334-333333333334', 'cccccccc-3334-4334-8334-333333333334', 'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?auto=format&fit=crop&w=900&q=80', 'Plant care tools and soil on a table', 0)
+INSERT INTO product_images (id, variant_id, url, alt_text, position) VALUES
+('eeeeeeee-1111-4111-8111-111111111111', 'dddddddd-1111-4111-8111-111111111111', 'https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=900&q=80', 'Heirloom tomatoes in a produce box', 0),
+('eeeeeeee-1112-4112-8112-111111111112', 'dddddddd-1112-4112-8112-111111111112', 'https://images.unsplash.com/photo-1626200419199-391ae4be7a41?auto=format&fit=crop&w=900&q=80', 'Jar of green salsa with tomatillos', 0),
+('eeeeeeee-2222-4222-8222-222222222222', 'dddddddd-2222-4222-8222-222222222222', 'https://images.unsplash.com/photo-1585478259715-4d3f01d2954f?auto=format&fit=crop&w=900&q=80', 'Country sourdough loaf on a bakery table', 0),
+('eeeeeeee-2223-4223-8223-222222222223', 'dddddddd-2223-4223-8223-222222222223', 'https://images.unsplash.com/photo-1509365465985-25d11c17e812?auto=format&fit=crop&w=900&q=80', 'Sweet pastry on a tray', 0),
+('eeeeeeee-3333-4333-8333-333333333333', 'dddddddd-3333-4333-8333-333333333333', 'https://images.unsplash.com/photo-1614594975525-e45190c55d0b?auto=format&fit=crop&w=900&q=80', 'Monstera plant in a pot', 0),
+('eeeeeeee-3334-4334-8334-333333333334', 'dddddddd-3334-4334-8334-333333333334', 'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?auto=format&fit=crop&w=900&q=80', 'Plant care tools and soil on a table', 0)
 ON CONFLICT (id) DO UPDATE SET
     url = EXCLUDED.url,
     alt_text = EXCLUDED.alt_text,
