@@ -51,56 +51,11 @@ func (h Handler) createProduct(c *fiber.Ctx) error {
 	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager"); err != nil {
 		return err
 	}
-	image, err := ProductImageURL(req.ImageURL)
+	product, err := h.rt.Q.CreateProduct(c.Context(), params)
 	if err != nil {
 		return err
 	}
-	tx, err := h.rt.Pool.Begin(c.Context())
-	if err != nil {
-		return err
-	}
-	defer api.Rollback(c.Context(), tx)
-	qtx := h.rt.Q.WithTx(tx)
-	product, err := qtx.CreateProduct(c.Context(), params)
-	if err != nil {
-		return err
-	}
-	imageURL, err := applyProductImage(c, qtx, product.ID, image)
-	if err != nil {
-		return err
-	}
-	if err := tx.Commit(c.Context()); err != nil {
-		return err
-	}
-	out := MapProduct(product, true)
-	out.ImageURL = imageURL
-	return c.Status(fiber.StatusCreated).JSON(out)
-}
-
-// applyProductImage persists the product's single storefront image and reports
-// the URL to echo back. A nil target leaves the stored image as-is; an empty
-// string clears it. Products hold at most one image, so a write replaces the set.
-func applyProductImage(c *fiber.Ctx, q *db.Queries, productID uuid.UUID, target *string) (*string, error) {
-	if target == nil {
-		current, err := q.GetProductImage(c.Context(), productID)
-		if err != nil {
-			return nil, err
-		}
-		return stringPtr(current), nil
-	}
-	if err := q.DeleteProductImages(c.Context(), productID); err != nil {
-		return nil, err
-	}
-	if *target == "" {
-		return nil, nil
-	}
-	if err := q.CreateProductImage(c.Context(), db.CreateProductImageParams{
-		ProductID: productID,
-		Url:       *target,
-	}); err != nil {
-		return nil, err
-	}
-	return target, nil
+	return c.Status(fiber.StatusCreated).JSON(MapProduct(product, true))
 }
 
 func (h Handler) listProducts(c *fiber.Ctx) error {
@@ -121,7 +76,7 @@ func (h Handler) listProducts(c *fiber.Ctx) error {
 	}
 	out := make([]ProductResponse, 0, len(products))
 	for _, product := range products {
-		out = append(out, MapProductListRow(product))
+		out = append(out, MapProduct(product, true))
 	}
 	return c.JSON(out)
 }
@@ -138,13 +93,7 @@ func (h Handler) getProduct(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	imageURL, err := h.rt.Q.GetProductImage(c.Context(), product.ID)
-	if err != nil {
-		return err
-	}
-	out := MapProduct(product, true)
-	out.ImageURL = stringPtr(imageURL)
-	return c.JSON(out)
+	return c.JSON(MapProduct(product, true))
 }
 
 func (h Handler) listVariantsByProduct(c *fiber.Ctx) error {
@@ -164,7 +113,7 @@ func (h Handler) listVariantsByProduct(c *fiber.Ctx) error {
 	}
 	out := make([]VariantResponse, 0, len(variants))
 	for _, variant := range variants {
-		out = append(out, MapVariant(variant, true))
+		out = append(out, MapVariant(variant.ProductVariant, variant.ImageUrl, true))
 	}
 	return c.JSON(out)
 }
@@ -185,30 +134,11 @@ func (h Handler) updateProduct(c *fiber.Ctx) error {
 	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager"); err != nil {
 		return err
 	}
-	image, err := ProductImageURL(req.ImageURL)
+	product, err := h.rt.Q.UpdateProduct(c.Context(), params)
 	if err != nil {
 		return err
 	}
-	tx, err := h.rt.Pool.Begin(c.Context())
-	if err != nil {
-		return err
-	}
-	defer api.Rollback(c.Context(), tx)
-	qtx := h.rt.Q.WithTx(tx)
-	product, err := qtx.UpdateProduct(c.Context(), params)
-	if err != nil {
-		return err
-	}
-	imageURL, err := applyProductImage(c, qtx, product.ID, image)
-	if err != nil {
-		return err
-	}
-	if err := tx.Commit(c.Context()); err != nil {
-		return err
-	}
-	out := MapProduct(product, true)
-	out.ImageURL = imageURL
-	return c.JSON(out)
+	return c.JSON(MapProduct(product, true))
 }
 
 func (h Handler) archiveProduct(c *fiber.Ctx) error {
@@ -237,14 +167,59 @@ func (h Handler) createVariant(c *fiber.Ctx) error {
 	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager"); err != nil {
 		return err
 	}
-	if _, err := h.rt.Q.GetProductForBusiness(c.Context(), db.GetProductForBusinessParams{ID: params.ProductID, BusinessID: businessID}); err != nil {
-		return err
-	}
-	variant, err := h.rt.Q.CreateVariant(c.Context(), params)
+	image, err := VariantImageURL(req.ImageURL)
 	if err != nil {
 		return err
 	}
-	return c.Status(fiber.StatusCreated).JSON(MapVariant(variant, true))
+	tx, err := h.rt.Pool.Begin(c.Context())
+	if err != nil {
+		return err
+	}
+	defer api.Rollback(c.Context(), tx)
+	qtx := h.rt.Q.WithTx(tx)
+	if _, err := qtx.GetProductForBusiness(c.Context(), db.GetProductForBusinessParams{ID: params.ProductID, BusinessID: businessID}); err != nil {
+		return err
+	}
+	variant, err := qtx.CreateVariant(c.Context(), params)
+	if err != nil {
+		return err
+	}
+	imageURL, err := applyVariantImage(c, qtx, variant.ID, image)
+	if err != nil {
+		return err
+	}
+	if err := tx.Commit(c.Context()); err != nil {
+		return err
+	}
+	out := MapVariant(variant, "", true)
+	out.ImageURL = imageURL
+	return c.Status(fiber.StatusCreated).JSON(out)
+}
+
+// applyVariantImage persists the variant's single storefront image and reports
+// the URL to echo back. A nil target leaves the stored image as-is; an empty
+// string clears it. Variants hold at most one image, so a write replaces the set.
+func applyVariantImage(c *fiber.Ctx, q *db.Queries, variantID uuid.UUID, target *string) (*string, error) {
+	if target == nil {
+		current, err := q.GetVariantImage(c.Context(), variantID)
+		if err != nil {
+			return nil, err
+		}
+		return stringPtr(current), nil
+	}
+	if err := q.DeleteVariantImages(c.Context(), variantID); err != nil {
+		return nil, err
+	}
+	if *target == "" {
+		return nil, nil
+	}
+	if err := q.CreateVariantImage(c.Context(), db.CreateVariantImageParams{
+		VariantID: variantID,
+		Url:       *target,
+	}); err != nil {
+		return nil, err
+	}
+	return target, nil
 }
 
 func (h Handler) getVariant(c *fiber.Ctx) error {
@@ -259,7 +234,7 @@ func (h Handler) getVariant(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(MapVariant(variant, true))
+	return c.JSON(MapVariant(variant.ProductVariant, variant.ImageUrl, true))
 }
 
 func (h Handler) getVariantByBarcode(c *fiber.Ctx) error {
@@ -281,7 +256,7 @@ func (h Handler) getVariantByBarcode(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(MapVariant(variant, true))
+	return c.JSON(MapVariant(variant.ProductVariant, variant.ImageUrl, true))
 }
 
 func (h Handler) getVariantBySKU(c *fiber.Ctx) error {
@@ -303,7 +278,7 @@ func (h Handler) getVariantBySKU(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(MapVariant(variant, true))
+	return c.JSON(MapVariant(variant.ProductVariant, variant.ImageUrl, true))
 }
 
 func (h Handler) updateVariant(c *fiber.Ctx) error {
@@ -322,11 +297,30 @@ func (h Handler) updateVariant(c *fiber.Ctx) error {
 	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager"); err != nil {
 		return err
 	}
-	variant, err := h.rt.Q.UpdateVariant(c.Context(), params)
+	image, err := VariantImageURL(req.ImageURL)
 	if err != nil {
 		return err
 	}
-	return c.JSON(MapVariant(variant, true))
+	tx, err := h.rt.Pool.Begin(c.Context())
+	if err != nil {
+		return err
+	}
+	defer api.Rollback(c.Context(), tx)
+	qtx := h.rt.Q.WithTx(tx)
+	variant, err := qtx.UpdateVariant(c.Context(), params)
+	if err != nil {
+		return err
+	}
+	imageURL, err := applyVariantImage(c, qtx, variant.ID, image)
+	if err != nil {
+		return err
+	}
+	if err := tx.Commit(c.Context()); err != nil {
+		return err
+	}
+	out := MapVariant(variant, "", true)
+	out.ImageURL = imageURL
+	return c.JSON(out)
 }
 
 func (h Handler) archiveVariant(c *fiber.Ctx) error {
