@@ -113,11 +113,11 @@ type Product struct {
 
 type ProductImage struct {
 	ID        uuid.UUID          `json:"id"`
-	ProductID uuid.UUID          `json:"product_id"`
 	Url       string             `json:"url"`
 	AltText   string             `json:"alt_text"`
 	Position  int32              `json:"position"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	VariantID uuid.UUID          `json:"variant_id"`
 }
 
 type ProductSalesSummary struct {
