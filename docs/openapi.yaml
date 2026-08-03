@@ -375,15 +375,6 @@ components:
         brand:
           type: string
           nullable: true
-        image_url:
-          type: string
-          format: uri
-          nullable: true
-          description: >-
-            Storefront image. Omit or send null to leave the current image
-            unchanged; send an empty string to remove it. Must be an absolute
-            http(s) URL.
-          example: https://xyz.public.blob.vercel-storage.com/products/abc.jpg
         unit:
           type: string
           default: piece
@@ -424,9 +415,6 @@ components:
           type: string
         brand:
           type: string
-        image_url:
-          type: string
-          format: uri
         unit:
           type: string
         product_type:
@@ -472,6 +460,15 @@ components:
         attributes:
           type: object
           additionalProperties: true
+        image_url:
+          type: string
+          format: uri
+          nullable: true
+          description: >-
+            Storefront image. Omit or send null to leave the current image
+            unchanged; send an empty string to remove it. Must be an absolute
+            http(s) URL.
+          example: https://xyz.public.blob.vercel-storage.com/variants/abc.jpg
         price:
           type: string
           example: "120.00"
@@ -531,6 +528,13 @@ components:
         attributes:
           type: object
           additionalProperties: true
+        image_url:
+          type: string
+          format: uri
+          description: >-
+            Storefront image. On variant writes, omit or send null to leave the
+            current image unchanged; send an empty string to remove it. Any
+            non-empty value must be an absolute http(s) URL.
         price:
           type: string
         cost:
