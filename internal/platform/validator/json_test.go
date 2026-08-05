@@ -69,6 +69,18 @@ func TestPageRejectsMalformedIntegers(t *testing.T) {
 	}
 }
 
+func TestGeographicKeysNormalizeAccentsAndFormatting(t *testing.T) {
+	if got := SearchKey("  Coyoacán, CDMX  "); got != "coyoacan-cdmx" {
+		t.Fatalf("SearchKey() = %q", got)
+	}
+	if SearchKey("México") != SearchKey("Mexico") {
+		t.Fatal("accent variants should have the same key")
+	}
+	if got := PostalKey(" 06 700 "); got != "06700" {
+		t.Fatalf("PostalKey() = %q", got)
+	}
+}
+
 func TestIdempotencyKeyValidation(t *testing.T) {
 	if _, err := IdempotencyKey("movement:01HZY8Q8Q4N7ZB7M2D92VFPD3T"); err != nil {
 		t.Fatalf("expected key to pass: %v", err)

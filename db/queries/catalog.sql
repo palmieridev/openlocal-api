@@ -181,6 +181,43 @@ WHERE b.status = 'active'
   AND p.is_public = true
   AND p.status = 'active'
   AND pv.status = 'active'
-  AND ($1::text = '' OR to_tsvector('simple', p.name || ' ' || p.description) @@ plainto_tsquery('simple', $1))
+  AND (sqlc.arg('search_query')::text = '' OR to_tsvector('simple', p.name || ' ' || p.description) @@ plainto_tsquery('simple', sqlc.arg('search_query')::text))
+  AND (
+    (NOT sqlc.arg('has_bbox')::boolean AND NOT sqlc.arg('has_area_filter')::boolean)
+    OR (
+      b.location_mode IN ('fixed', 'hybrid')
+      AND (
+        (sqlc.arg('has_bbox')::boolean
+          AND (sqlc.narg('min_lat')::numeric IS NULL OR b.latitude >= sqlc.narg('min_lat')::numeric)
+          AND (sqlc.narg('max_lat')::numeric IS NULL OR b.latitude <= sqlc.narg('max_lat')::numeric)
+          AND (sqlc.narg('min_lng')::numeric IS NULL OR b.longitude >= sqlc.narg('min_lng')::numeric)
+          AND (sqlc.narg('max_lng')::numeric IS NULL OR b.longitude <= sqlc.narg('max_lng')::numeric)
+        )
+        OR (sqlc.arg('has_area_filter')::boolean
+          AND (sqlc.narg('country')::text IS NULL OR lower(b.country) = lower(sqlc.narg('country')::text))
+          AND (sqlc.narg('state')::text IS NULL OR lower(b.state) = lower(sqlc.narg('state')::text))
+          AND (sqlc.narg('municipality')::text IS NULL OR lower(b.city) = lower(sqlc.narg('municipality')::text) OR lower(b.neighborhood) = lower(sqlc.narg('municipality')::text))
+          AND (sqlc.narg('city')::text IS NULL OR lower(b.city) = lower(sqlc.narg('city')::text))
+          AND (sqlc.narg('neighborhood')::text IS NULL OR lower(b.neighborhood) = lower(sqlc.narg('neighborhood')::text))
+          AND (sqlc.narg('postal_code')::text IS NULL OR b.postal_code = sqlc.narg('postal_code')::text)
+        )
+      )
+    )
+    OR (
+      sqlc.arg('has_area_filter')::boolean
+      AND b.location_mode IN ('mobile', 'hybrid')
+      AND EXISTS (
+        SELECT 1
+        FROM business_service_areas sa
+        WHERE sa.business_id = b.id
+          AND (sqlc.narg('country_key')::text IS NULL OR sa.country_key = sqlc.narg('country_key')::text)
+          AND (sqlc.narg('state_key')::text IS NULL OR sa.state_key = sqlc.narg('state_key')::text)
+          AND (sqlc.narg('municipality_key')::text IS NULL OR sa.municipality_key IS NULL OR sa.municipality_key = sqlc.narg('municipality_key')::text)
+          AND (sqlc.narg('city_key')::text IS NULL OR sa.city_key IS NULL OR sa.city_key = sqlc.narg('city_key')::text)
+          AND (sqlc.narg('neighborhood_key')::text IS NULL OR sa.neighborhood_key IS NULL OR sa.neighborhood_key = sqlc.narg('neighborhood_key')::text)
+          AND (sqlc.narg('postal_code_key')::text IS NULL OR sa.postal_code_key IS NULL OR sa.postal_code_key = sqlc.narg('postal_code_key')::text)
+      )
+    )
+  )
 ORDER BY p.name ASC
-LIMIT $2 OFFSET $3;
+LIMIT sqlc.arg('limit_count') OFFSET sqlc.arg('offset_count');

@@ -31,6 +31,13 @@ go run ./cmd/api
 - Global, public, private, and webhook rate limits are configurable through `.env.example`. The built-in limiter is per process; use a shared edge or Redis-backed limiter before running multiple API replicas.
 - Stock movement writes require an `Idempotency-Key` header and update the movement ledger and stock level in one transaction.
 
+## Business location and category tables
+
+- `businesses.location_mode` distinguishes fixed, mobile, and hybrid operations.
+- `business_service_areas` stores structured public coverage for mobile and hybrid businesses. It is used by marketplace reach filtering and is replaced atomically with the business profile.
+- `business_categories` is reserved for business-level taxonomy and is not a geographic table. It is currently unused.
+- `categories` contains each business's product catalogue categories; the marketplace seed populates this table, which is why it may have rows while `business_categories` does not.
+
 ## Tests
 
 - Keep pure validation and mapping tests beside their domain package (`internal/catalog`, `internal/inventory`, and similar).

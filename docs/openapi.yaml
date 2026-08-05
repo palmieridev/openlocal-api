@@ -59,6 +59,73 @@ components:
         format: int32
         default: 0
         minimum: 0
+    CountryQuery:
+      name: country
+      in: query
+      required: false
+      schema:
+        type: string
+        minLength: 2
+        maxLength: 2
+    StateQuery:
+      name: state
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 120
+    MunicipalityQuery:
+      name: municipality
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 120
+    CityQuery:
+      name: city
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 120
+    NeighborhoodQuery:
+      name: neighborhood
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 120
+    PostalCodeQuery:
+      name: postal_code
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 20
+    MinLatQuery:
+      name: min_lat
+      in: query
+      required: false
+      schema:
+        type: string
+    MaxLatQuery:
+      name: max_lat
+      in: query
+      required: false
+      schema:
+        type: string
+    MinLngQuery:
+      name: min_lng
+      in: query
+      required: false
+      schema:
+        type: string
+    MaxLngQuery:
+      name: max_lng
+      in: query
+      required: false
+      schema:
+        type: string
   schemas:
     Error:
       type: object
@@ -162,13 +229,13 @@ components:
           example: Condesa
         city:
           type: string
-          default: CDMX
+          nullable: true
         state:
           type: string
-          default: CDMX
+          nullable: true
         country:
           type: string
-          default: MX
+          nullable: true
         postal_code:
           type: string
           nullable: true
@@ -193,6 +260,15 @@ components:
           default: America/Mexico_City
           example: America/Mexico_City
           description: IANA timezone used to interpret the business opening hours.
+        location_mode:
+          type: string
+          enum: [fixed, mobile, hybrid]
+          default: fixed
+        service_areas:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/BusinessServiceAreaRequest"
       required:
         - name
         - description
@@ -238,10 +314,13 @@ components:
           type: string
         city:
           type: string
+          nullable: true
         state:
           type: string
+          nullable: true
         country:
           type: string
+          nullable: true
         postal_code:
           type: string
         latitude:
@@ -256,6 +335,13 @@ components:
           type: string
           example: America/Mexico_City
           description: IANA timezone used to interpret the business opening hours.
+        location_mode:
+          type: string
+          enum: [fixed, mobile, hybrid]
+        service_areas:
+          type: array
+          items:
+            $ref: "#/components/schemas/BusinessServiceArea"
         created_at:
           type: string
           format: date-time
@@ -268,12 +354,50 @@ components:
         - slug
         - description
         - business_type
-        - city
-        - state
-        - country
         - pickup_available
         - delivery_available
         - timezone
+        - location_mode
+        - service_areas
+    BusinessServiceAreaRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 120
+        country:
+          type: string
+          minLength: 2
+          maxLength: 2
+          default: MX
+        state:
+          type: string
+          minLength: 1
+          maxLength: 120
+        municipality:
+          type: string
+          nullable: true
+          maxLength: 120
+        city:
+          type: string
+          nullable: true
+          maxLength: 120
+        neighborhood:
+          type: string
+          nullable: true
+          maxLength: 120
+        postal_code:
+          type: string
+          nullable: true
+          maxLength: 20
+      required:
+        - name
+        - state
+    BusinessServiceArea:
+      allOf:
+        - $ref: "#/components/schemas/BusinessServiceAreaRequest"
     BusinessHourRequest:
       type: object
       additionalProperties: false
@@ -283,7 +407,7 @@ components:
           format: int32
           minimum: 0
           maximum: 6
-          description: Day of the week, where 0 is Sunday and 6 is Saturday.
+          description: Day of the week, where 0 is Monday and 6 is Sunday.
           example: 1
         opens_at:
           type: string
@@ -1329,6 +1453,16 @@ paths:
           required: false
           schema:
             type: string
+        - $ref: "#/components/parameters/CountryQuery"
+        - $ref: "#/components/parameters/StateQuery"
+        - $ref: "#/components/parameters/MunicipalityQuery"
+        - $ref: "#/components/parameters/CityQuery"
+        - $ref: "#/components/parameters/NeighborhoodQuery"
+        - $ref: "#/components/parameters/PostalCodeQuery"
+        - $ref: "#/components/parameters/MinLatQuery"
+        - $ref: "#/components/parameters/MaxLatQuery"
+        - $ref: "#/components/parameters/MinLngQuery"
+        - $ref: "#/components/parameters/MaxLngQuery"
         - $ref: "#/components/parameters/LimitQuery"
         - $ref: "#/components/parameters/OffsetQuery"
       responses:
@@ -1346,31 +1480,16 @@ paths:
         - Marketplace
       security: []
       parameters:
-        - name: city
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: min_lat
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: max_lat
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: min_lng
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: max_lng
-          in: query
-          required: false
-          schema:
-            type: string
+        - $ref: "#/components/parameters/CountryQuery"
+        - $ref: "#/components/parameters/StateQuery"
+        - $ref: "#/components/parameters/MunicipalityQuery"
+        - $ref: "#/components/parameters/CityQuery"
+        - $ref: "#/components/parameters/NeighborhoodQuery"
+        - $ref: "#/components/parameters/PostalCodeQuery"
+        - $ref: "#/components/parameters/MinLatQuery"
+        - $ref: "#/components/parameters/MaxLatQuery"
+        - $ref: "#/components/parameters/MinLngQuery"
+        - $ref: "#/components/parameters/MaxLngQuery"
         - $ref: "#/components/parameters/LimitQuery"
         - $ref: "#/components/parameters/OffsetQuery"
       responses:
@@ -1393,6 +1512,16 @@ paths:
           required: false
           schema:
             type: string
+        - $ref: "#/components/parameters/CountryQuery"
+        - $ref: "#/components/parameters/StateQuery"
+        - $ref: "#/components/parameters/MunicipalityQuery"
+        - $ref: "#/components/parameters/CityQuery"
+        - $ref: "#/components/parameters/NeighborhoodQuery"
+        - $ref: "#/components/parameters/PostalCodeQuery"
+        - $ref: "#/components/parameters/MinLatQuery"
+        - $ref: "#/components/parameters/MaxLatQuery"
+        - $ref: "#/components/parameters/MinLngQuery"
+        - $ref: "#/components/parameters/MaxLngQuery"
         - $ref: "#/components/parameters/LimitQuery"
         - $ref: "#/components/parameters/OffsetQuery"
       responses:

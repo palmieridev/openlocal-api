@@ -41,6 +41,14 @@ func (h Handler) create(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	areaRequests := []ServiceAreaRequest{}
+	if req.ServiceAreas != nil {
+		areaRequests = *req.ServiceAreas
+	}
+	areaInputs, err := NormalizeServiceAreas(areaRequests)
+	if err != nil {
+		return err
+	}
 	if h.rt.Clerk == nil {
 		return fiber.NewError(fiber.StatusServiceUnavailable, "clerk organization client is not configured")
 	}
@@ -64,6 +72,15 @@ func (h Handler) create(c *fiber.Ctx) error {
 	if err != nil {
 		_ = h.rt.Clerk.DeleteOrganization(c.Context(), org.ID)
 		return err
+	}
+	areaRows := make([]db.BusinessServiceArea, 0, len(areaInputs))
+	for _, areaParam := range ServiceAreaParams(business.ID, areaInputs) {
+		area, err := qtx.CreateBusinessServiceArea(c.Context(), areaParam)
+		if err != nil {
+			_ = h.rt.Clerk.DeleteOrganization(c.Context(), org.ID)
+			return err
+		}
+		areaRows = append(areaRows, area)
 	}
 	if _, err := qtx.AddBusinessMember(c.Context(), db.AddBusinessMemberParams{
 		BusinessID: business.ID,
@@ -90,7 +107,7 @@ func (h Handler) create(c *fiber.Ctx) error {
 		_ = h.rt.Clerk.DeleteOrganization(c.Context(), org.ID)
 		return err
 	}
-	response := Map(business, true)
+	response := Map(business, true, areaRows)
 	response.ClerkOrgID = org.ID
 	return c.Status(fiber.StatusCreated).JSON(response)
 }
@@ -128,7 +145,11 @@ func (h Handler) getMe(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(Map(business, true))
+	areas, err := h.rt.Q.ListBusinessServiceAreas(c.Context(), business.ID)
+	if err != nil {
+		return err
+	}
+	return c.JSON(Map(business, true, areas))
 }
 
 func (h Handler) get(c *fiber.Ctx) error {
@@ -144,7 +165,11 @@ func (h Handler) get(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(Map(business, true))
+	areas, err := h.rt.Q.ListBusinessServiceAreas(c.Context(), business.ID)
+	if err != nil {
+		return err
+	}
+	return c.JSON(Map(business, true, areas))
 }
 
 func (h Handler) update(c *fiber.Ctx) error {
@@ -160,16 +185,69 @@ func (h Handler) update(c *fiber.Ctx) error {
 	if err := v.DecodeStrict(c, &req); err != nil {
 		return err
 	}
+	current, err := h.rt.Q.GetBusinessForMember(c.Context(), db.GetBusinessForMemberParams{ID: id, UserID: user.ID})
+	if err != nil {
+		return err
+	}
+	currentAreas, err := h.rt.Q.ListBusinessServiceAreas(c.Context(), id)
+	if err != nil {
+		return err
+	}
+	replaceAreas := req.ServiceAreas != nil
+	if req.LocationMode == nil {
+		mode := current.LocationMode
+		req.LocationMode = &mode
+	}
+	if req.ServiceAreas == nil {
+		preserved := make([]ServiceAreaRequest, 0, len(currentAreas))
+		for _, area := range MapServiceAreas(currentAreas) {
+			preserved = append(preserved, ServiceAreaRequest{
+				Name: area.Name, Country: area.Country, State: area.State,
+				Municipality: area.Municipality, City: area.City,
+				Neighborhood: area.Neighborhood, PostalCode: area.PostalCode,
+			})
+		}
+		req.ServiceAreas = &preserved
+	}
 	params, err := UpdateParams(id, user.ID, req)
 	if err != nil {
 		return err
 	}
-	business, err := h.rt.Q.UpdateBusiness(c.Context(), params)
+	areaInputs, err := NormalizeServiceAreas(*req.ServiceAreas)
 	if err != nil {
 		return err
 	}
-	_ = api.Audit(h.rt.Q, c.Context(), business.ID, user.ID, "business.update", "business", business.ID)
-	return c.JSON(Map(business, true))
+	tx, err := h.rt.Pool.Begin(c.Context())
+	if err != nil {
+		return err
+	}
+	defer api.Rollback(c.Context(), tx)
+	qtx := h.rt.Q.WithTx(tx)
+	business, err := qtx.UpdateBusiness(c.Context(), params)
+	if err != nil {
+		return err
+	}
+	areaRows := currentAreas
+	if replaceAreas {
+		if err := qtx.DeleteBusinessServiceAreas(c.Context(), id); err != nil {
+			return err
+		}
+		areaRows = make([]db.BusinessServiceArea, 0, len(areaInputs))
+		for _, areaParam := range ServiceAreaParams(id, areaInputs) {
+			area, err := qtx.CreateBusinessServiceArea(c.Context(), areaParam)
+			if err != nil {
+				return err
+			}
+			areaRows = append(areaRows, area)
+		}
+	}
+	if err := api.Audit(qtx, c.Context(), business.ID, user.ID, "business.update", "business", business.ID); err != nil {
+		return err
+	}
+	if err := tx.Commit(c.Context()); err != nil {
+		return err
+	}
+	return c.JSON(Map(business, true, areaRows))
 }
 
 func (h Handler) getHours(c *fiber.Ctx) error {

@@ -38,9 +38,9 @@ type Business struct {
 	Status            string              `json:"status"`
 	Address           sql.NullString      `json:"address"`
 	Neighborhood      sql.NullString      `json:"neighborhood"`
-	City              string              `json:"city"`
-	State             string              `json:"state"`
-	Country           string              `json:"country"`
+	City              sql.NullString      `json:"city"`
+	State             sql.NullString      `json:"state"`
+	Country           sql.NullString      `json:"country"`
 	PostalCode        sql.NullString      `json:"postal_code"`
 	Latitude          decimal.NullDecimal `json:"latitude"`
 	Longitude         decimal.NullDecimal `json:"longitude"`
@@ -50,6 +50,7 @@ type Business struct {
 	UpdatedAt         pgtype.Timestamptz  `json:"updated_at"`
 	ClerkOrgID        sql.NullString      `json:"clerk_org_id"`
 	Timezone          string              `json:"timezone"`
+	LocationMode      string              `json:"location_mode"`
 }
 
 type BusinessCategory struct {
@@ -76,6 +77,28 @@ type BusinessMember struct {
 	Role       string             `json:"role"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Structured public coverage for mobile and hybrid businesses; unrelated to business_categories taxonomy.
+type BusinessServiceArea struct {
+	ID              uuid.UUID          `json:"id"`
+	BusinessID      uuid.UUID          `json:"business_id"`
+	Name            string             `json:"name"`
+	Country         string             `json:"country"`
+	State           string             `json:"state"`
+	Municipality    sql.NullString     `json:"municipality"`
+	City            sql.NullString     `json:"city"`
+	Neighborhood    sql.NullString     `json:"neighborhood"`
+	PostalCode      sql.NullString     `json:"postal_code"`
+	CountryKey      string             `json:"country_key"`
+	StateKey        string             `json:"state_key"`
+	MunicipalityKey sql.NullString     `json:"municipality_key"`
+	CityKey         sql.NullString     `json:"city_key"`
+	NeighborhoodKey sql.NullString     `json:"neighborhood_key"`
+	PostalCodeKey   sql.NullString     `json:"postal_code_key"`
+	NormalizedKey   string             `json:"normalized_key"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Category struct {
