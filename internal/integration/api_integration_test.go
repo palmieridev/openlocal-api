@@ -248,17 +248,115 @@ func createBusiness(t *testing.T, ctx context.Context, q *db.Queries) db.Busines
 		Description:       "",
 		BusinessType:      "retail",
 		Status:            "active",
-		City:              "CDMX",
-		State:             "CDMX",
-		Country:           "MX",
+		City:              sql.NullString{String: "CDMX", Valid: true},
+		State:             sql.NullString{String: "CDMX", Valid: true},
+		Country:           sql.NullString{String: "MX", Valid: true},
 		PickupAvailable:   true,
 		DeliveryAvailable: false,
 		Timezone:          "America/Mexico_City",
+		LocationMode:      "fixed",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return business
+}
+
+func TestMobileBusinessReachFiltersBusinessesAndProducts(t *testing.T) {
+	pool := integrationPool(t)
+	ctx := context.Background()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback(ctx) })
+	q := db.New(tx)
+
+	suffix := uuid.NewString()[:8]
+	mobile, err := q.CreateBusiness(ctx, db.CreateBusinessParams{
+		Name: "Mobile Integration", Slug: "mobile-integration-" + suffix,
+		Description: "", BusinessType: "servicios", Status: "active",
+		Timezone: "America/Mexico_City", LocationMode: "mobile",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = q.CreateBusinessServiceArea(ctx, db.CreateBusinessServiceAreaParams{
+		BusinessID: mobile.ID, Name: "Coyoacán", Country: "MX", State: "Ciudad de México",
+		Municipality: sql.NullString{String: "Coyoacán", Valid: true},
+		CountryKey:   "mx", StateKey: "ciudad-de-mexico",
+		MunicipalityKey: sql.NullString{String: "coyoacan", Valid: true},
+		NormalizedKey:   "mx|ciudad-de-mexico|coyoacan|||",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	product, err := q.CreateProduct(ctx, db.CreateProductParams{
+		BusinessID: mobile.ID, Name: "Mueble móvil", Slug: "mobile-furniture-" + suffix,
+		Description: "", Unit: "proyecto", ProductType: "made_to_order_product",
+		IsPublic: true, Status: "active",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	variant, err := q.CreateVariant(ctx, db.CreateVariantParams{
+		ProductID: product.ID, BusinessID: mobile.ID, Sku: "MOBILE-" + suffix,
+		InternalCode: "MOBILE-" + suffix, Name: "Cotización", Attributes: []byte(`{}`),
+		Price: decimal.NewFromInt(1000), Currency: "MXN", PublicStockStatus: "made_to_order",
+		Status: "active",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	matching := db.ListPublicBusinessesParams{
+		HasAreaFilter:   true,
+		State:           sql.NullString{String: "Ciudad de México", Valid: true},
+		Municipality:    sql.NullString{String: "Coyoacán", Valid: true},
+		StateKey:        sql.NullString{String: "ciudad-de-mexico", Valid: true},
+		MunicipalityKey: sql.NullString{String: "coyoacan", Valid: true},
+		LimitCount:      100,
+	}
+	businessRows, err := q.ListPublicBusinesses(ctx, matching)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundBusiness := false
+	for _, row := range businessRows {
+		foundBusiness = foundBusiness || row.ID == mobile.ID
+	}
+	if !foundBusiness {
+		t.Fatal("mobile business did not match its service area")
+	}
+
+	productRows, err := q.SearchMarketplaceProducts(ctx, db.SearchMarketplaceProductsParams{
+		SearchQuery: "", HasAreaFilter: true,
+		State: matching.State, Municipality: matching.Municipality,
+		StateKey: matching.StateKey, MunicipalityKey: matching.MunicipalityKey,
+		LimitCount: 100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundVariant := false
+	for _, row := range productRows {
+		foundVariant = foundVariant || row.VariantID == variant.ID
+	}
+	if !foundVariant {
+		t.Fatal("mobile product did not match its service area")
+	}
+
+	matching.Municipality = sql.NullString{String: "Tlalpan", Valid: true}
+	matching.MunicipalityKey = sql.NullString{String: "tlalpan", Valid: true}
+	businessRows, err = q.ListPublicBusinesses(ctx, matching)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range businessRows {
+		if row.ID == mobile.ID {
+			t.Fatal("mobile business matched an unrelated service area")
+		}
+	}
 }
 
 func TestVariantImageCanBeSetReplacedAndCleared(t *testing.T) {
@@ -367,7 +465,7 @@ func TestVariantImageCanBeSetReplacedAndCleared(t *testing.T) {
 		t.Fatalf("ListPublicProductsByBusinessSlug rows = %#v, want image_url %q", publicRows, second)
 	}
 
-	marketplaceRows, err := q.SearchMarketplaceProducts(ctx, db.SearchMarketplaceProductsParams{Column1: "", Limit: 10, Offset: 0})
+	marketplaceRows, err := q.SearchMarketplaceProducts(ctx, db.SearchMarketplaceProductsParams{SearchQuery: "", LimitCount: 10, OffsetCount: 0})
 	if err != nil {
 		t.Fatal(err)
 	}

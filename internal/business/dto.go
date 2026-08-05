@@ -17,60 +17,92 @@ import (
 )
 
 type Request struct {
-	Name              string  `json:"name"`
-	Slug              string  `json:"slug"`
-	Description       string  `json:"description"`
-	BusinessType      string  `json:"business_type"`
-	Phone             *string `json:"phone"`
-	Whatsapp          *string `json:"whatsapp"`
-	Email             *string `json:"email"`
-	Website           *string `json:"website"`
-	LogoURL           *string `json:"logo_url"`
-	CoverImageURL     *string `json:"cover_image_url"`
-	Status            string  `json:"status"`
-	Address           *string `json:"address"`
-	Neighborhood      *string `json:"neighborhood"`
-	City              string  `json:"city"`
-	State             string  `json:"state"`
-	Country           string  `json:"country"`
-	PostalCode        *string `json:"postal_code"`
-	Latitude          *string `json:"latitude"`
-	Longitude         *string `json:"longitude"`
-	PickupAvailable   bool    `json:"pickup_available"`
-	DeliveryAvailable bool    `json:"delivery_available"`
-	Timezone          string  `json:"timezone"`
+	Name              string                `json:"name"`
+	Slug              string                `json:"slug"`
+	Description       string                `json:"description"`
+	BusinessType      string                `json:"business_type"`
+	Phone             *string               `json:"phone"`
+	Whatsapp          *string               `json:"whatsapp"`
+	Email             *string               `json:"email"`
+	Website           *string               `json:"website"`
+	LogoURL           *string               `json:"logo_url"`
+	CoverImageURL     *string               `json:"cover_image_url"`
+	Status            string                `json:"status"`
+	Address           *string               `json:"address"`
+	Neighborhood      *string               `json:"neighborhood"`
+	City              string                `json:"city"`
+	State             string                `json:"state"`
+	Country           string                `json:"country"`
+	PostalCode        *string               `json:"postal_code"`
+	Latitude          *string               `json:"latitude"`
+	Longitude         *string               `json:"longitude"`
+	PickupAvailable   bool                  `json:"pickup_available"`
+	DeliveryAvailable bool                  `json:"delivery_available"`
+	Timezone          string                `json:"timezone"`
+	LocationMode      *string               `json:"location_mode"`
+	ServiceAreas      *[]ServiceAreaRequest `json:"service_areas"`
+}
+
+type ServiceAreaRequest struct {
+	Name         string  `json:"name"`
+	Country      string  `json:"country"`
+	State        string  `json:"state"`
+	Municipality *string `json:"municipality"`
+	City         *string `json:"city"`
+	Neighborhood *string `json:"neighborhood"`
+	PostalCode   *string `json:"postal_code"`
+}
+
+type ServiceAreaResponse struct {
+	Name         string  `json:"name"`
+	Country      string  `json:"country"`
+	State        string  `json:"state"`
+	Municipality *string `json:"municipality,omitempty"`
+	City         *string `json:"city,omitempty"`
+	Neighborhood *string `json:"neighborhood,omitempty"`
+	PostalCode   *string `json:"postal_code,omitempty"`
+}
+
+type ServiceAreaInput struct {
+	Name, Country, State                         string
+	Municipality, City, Neighborhood, PostalCode *string
+	CountryKey, StateKey                         string
+	MunicipalityKey, CityKey, NeighborhoodKey    *string
+	PostalCodeKey, NormalizedKey                 string
 }
 
 type Response struct {
-	ID                uuid.UUID `json:"id"`
-	ClerkOrgID        string    `json:"clerk_org_id,omitempty"`
-	Name              string    `json:"name"`
-	Slug              string    `json:"slug"`
-	Description       string    `json:"description"`
-	BusinessType      string    `json:"business_type"`
-	Phone             *string   `json:"phone,omitempty"`
-	Whatsapp          *string   `json:"whatsapp,omitempty"`
-	Email             *string   `json:"email,omitempty"`
-	Website           *string   `json:"website,omitempty"`
-	LogoURL           *string   `json:"logo_url,omitempty"`
-	CoverImageURL     *string   `json:"cover_image_url,omitempty"`
-	Status            string    `json:"status,omitempty"`
-	Address           *string   `json:"address,omitempty"`
-	Neighborhood      *string   `json:"neighborhood,omitempty"`
-	City              string    `json:"city"`
-	State             string    `json:"state"`
-	Country           string    `json:"country"`
-	PostalCode        *string   `json:"postal_code,omitempty"`
-	Latitude          *string   `json:"latitude,omitempty"`
-	Longitude         *string   `json:"longitude,omitempty"`
-	PickupAvailable   bool      `json:"pickup_available"`
-	DeliveryAvailable bool      `json:"delivery_available"`
-	Timezone          string    `json:"timezone"`
-	CreatedAt         time.Time `json:"created_at,omitempty"`
-	UpdatedAt         time.Time `json:"updated_at,omitempty"`
+	ID                uuid.UUID             `json:"id"`
+	ClerkOrgID        string                `json:"clerk_org_id,omitempty"`
+	Name              string                `json:"name"`
+	Slug              string                `json:"slug"`
+	Description       string                `json:"description"`
+	BusinessType      string                `json:"business_type"`
+	Phone             *string               `json:"phone,omitempty"`
+	Whatsapp          *string               `json:"whatsapp,omitempty"`
+	Email             *string               `json:"email,omitempty"`
+	Website           *string               `json:"website,omitempty"`
+	LogoURL           *string               `json:"logo_url,omitempty"`
+	CoverImageURL     *string               `json:"cover_image_url,omitempty"`
+	Status            string                `json:"status,omitempty"`
+	Address           *string               `json:"address,omitempty"`
+	Neighborhood      *string               `json:"neighborhood,omitempty"`
+	City              *string               `json:"city,omitempty"`
+	State             *string               `json:"state,omitempty"`
+	Country           *string               `json:"country,omitempty"`
+	PostalCode        *string               `json:"postal_code,omitempty"`
+	Latitude          *string               `json:"latitude,omitempty"`
+	Longitude         *string               `json:"longitude,omitempty"`
+	PickupAvailable   bool                  `json:"pickup_available"`
+	DeliveryAvailable bool                  `json:"delivery_available"`
+	Timezone          string                `json:"timezone"`
+	LocationMode      string                `json:"location_mode"`
+	ServiceAreas      []ServiceAreaResponse `json:"service_areas"`
+	CreatedAt         time.Time             `json:"created_at,omitempty"`
+	UpdatedAt         time.Time             `json:"updated_at,omitempty"`
 }
 
-func Map(b db.Business, includePrivate bool) Response {
+func Map(b db.Business, includePrivate bool, areas []db.BusinessServiceArea) Response {
 	out := Response{
 		ID:                b.ID,
 		Name:              b.Name,
@@ -79,14 +111,16 @@ func Map(b db.Business, includePrivate bool) Response {
 		BusinessType:      b.BusinessType,
 		LogoURL:           api.StringPtr(b.LogoUrl),
 		CoverImageURL:     api.StringPtr(b.CoverImageUrl),
-		City:              b.City,
-		State:             b.State,
-		Country:           b.Country,
+		City:              api.StringPtr(b.City),
+		State:             api.StringPtr(b.State),
+		Country:           api.StringPtr(b.Country),
 		Latitude:          api.DecimalPtr(b.Latitude),
 		Longitude:         api.DecimalPtr(b.Longitude),
 		PickupAvailable:   b.PickupAvailable,
 		DeliveryAvailable: b.DeliveryAvailable,
 		Timezone:          b.Timezone,
+		LocationMode:      b.LocationMode,
+		ServiceAreas:      MapServiceAreas(areas),
 		CreatedAt:         api.TS(b.CreatedAt),
 		UpdatedAt:         api.TS(b.UpdatedAt),
 	}
@@ -127,17 +161,37 @@ func CreateParams(req Request) (db.CreateBusinessParams, error) {
 	if err != nil {
 		return db.CreateBusinessParams{}, err
 	}
-	req.City = api.FirstNonEmpty(v.Clean(req.City), "CDMX")
-	req.State = api.FirstNonEmpty(v.Clean(req.State), "CDMX")
-	req.Country = strings.ToUpper(api.FirstNonEmpty(v.Clean(req.Country), "MX"))
+	locationModeInput := ""
+	if req.LocationMode != nil {
+		locationModeInput = *req.LocationMode
+	}
+	locationMode, err := v.Enum(locationModeInput, "location_mode", "fixed", "fixed", "mobile", "hybrid")
+	if err != nil {
+		return db.CreateBusinessParams{}, err
+	}
+	serviceAreas := []ServiceAreaRequest{}
+	if req.ServiceAreas != nil {
+		serviceAreas = *req.ServiceAreas
+	}
+	if _, err := NormalizeServiceAreas(serviceAreas); err != nil {
+		return db.CreateBusinessParams{}, err
+	}
+
+	city := v.CleanOptional(optionalString(req.City))
+	state := v.CleanOptional(optionalString(req.State))
+	country := v.CleanOptional(optionalString(strings.ToUpper(req.Country)))
 	req.Timezone = api.FirstNonEmpty(v.Clean(req.Timezone), "America/Mexico_City")
-	if err := v.StringLength(req.City, "city", 1, 120); err != nil {
-		return db.CreateBusinessParams{}, err
+	for _, field := range []struct {
+		value *string
+		name  string
+	}{{city, "city"}, {state, "state"}} {
+		if field.value != nil {
+			if err := v.StringLength(*field.value, field.name, 1, 120); err != nil {
+				return db.CreateBusinessParams{}, err
+			}
+		}
 	}
-	if err := v.StringLength(req.State, "state", 1, 120); err != nil {
-		return db.CreateBusinessParams{}, err
-	}
-	if len(req.Country) != 2 || req.Country[0] < 'A' || req.Country[0] > 'Z' || req.Country[1] < 'A' || req.Country[1] > 'Z' {
+	if country != nil && (len(*country) != 2 || (*country)[0] < 'A' || (*country)[0] > 'Z' || (*country)[1] < 'A' || (*country)[1] > 'Z') {
 		return db.CreateBusinessParams{}, fiber.NewError(fiber.StatusBadRequest, "country must be a two-letter code")
 	}
 	if len(req.Timezone) > 100 {
@@ -215,6 +269,34 @@ func CreateParams(req Request) (db.CreateBusinessParams, error) {
 			return db.CreateBusinessParams{}, err
 		}
 	}
+	if lat.Valid != lng.Valid {
+		return db.CreateBusinessParams{}, fiber.NewError(fiber.StatusBadRequest, "latitude and longitude must be provided together")
+	}
+	hasFixedLocation := lat.Valid && lng.Valid
+	hasFixedText := address != nil || neighborhood != nil || city != nil || state != nil || country != nil || postalCode != nil
+	switch locationMode {
+	case "fixed":
+		if len(serviceAreas) > 0 {
+			return db.CreateBusinessParams{}, fiber.NewError(fiber.StatusBadRequest, "fixed businesses must not define service_areas; use hybrid")
+		}
+		if status == "active" && !hasFixedLocation {
+			return db.CreateBusinessParams{}, fiber.NewError(fiber.StatusBadRequest, "active fixed businesses require latitude and longitude")
+		}
+	case "mobile":
+		if hasFixedLocation || hasFixedText {
+			return db.CreateBusinessParams{}, fiber.NewError(fiber.StatusBadRequest, "mobile businesses must not define a fixed location")
+		}
+		if req.PickupAvailable {
+			return db.CreateBusinessParams{}, fiber.NewError(fiber.StatusBadRequest, "mobile businesses cannot offer store pickup")
+		}
+		if status == "active" && len(serviceAreas) == 0 {
+			return db.CreateBusinessParams{}, fiber.NewError(fiber.StatusBadRequest, "active mobile businesses require at least one service area")
+		}
+	case "hybrid":
+		if status == "active" && (!hasFixedLocation || len(serviceAreas) == 0) {
+			return db.CreateBusinessParams{}, fiber.NewError(fiber.StatusBadRequest, "active hybrid businesses require coordinates and at least one service area")
+		}
+	}
 	return db.CreateBusinessParams{
 		Name:              req.Name,
 		Slug:              req.Slug,
@@ -229,15 +311,16 @@ func CreateParams(req Request) (db.CreateBusinessParams, error) {
 		Status:            status,
 		Address:           api.NullString(address),
 		Neighborhood:      api.NullString(neighborhood),
-		City:              req.City,
-		State:             req.State,
-		Country:           req.Country,
+		City:              api.NullString(city),
+		State:             api.NullString(state),
+		Country:           api.NullString(country),
 		PostalCode:        api.NullString(postalCode),
 		Latitude:          lat,
 		Longitude:         lng,
 		PickupAvailable:   req.PickupAvailable,
 		DeliveryAvailable: req.DeliveryAvailable,
 		Timezone:          req.Timezone,
+		LocationMode:      locationMode,
 	}, nil
 }
 
@@ -270,7 +353,137 @@ func UpdateParams(id, userID uuid.UUID, req Request) (db.UpdateBusinessParams, e
 		PickupAvailable:   params.PickupAvailable,
 		DeliveryAvailable: params.DeliveryAvailable,
 		Timezone:          params.Timezone,
+		LocationMode:      params.LocationMode,
 	}, nil
+}
+
+func optionalString(value string) *string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return &value
+}
+
+func keyPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	key := v.SearchKey(*value)
+	if key == "" {
+		return nil
+	}
+	return &key
+}
+
+func NormalizeServiceAreas(requests []ServiceAreaRequest) ([]ServiceAreaInput, error) {
+	if len(requests) > 20 {
+		return nil, fiber.NewError(fiber.StatusBadRequest, "service_areas must contain at most 20 areas")
+	}
+	inputs := make([]ServiceAreaInput, 0, len(requests))
+	seen := make(map[string]struct{}, len(requests))
+	for _, request := range requests {
+		name := v.Clean(request.Name)
+		country := strings.ToUpper(api.FirstNonEmpty(v.Clean(request.Country), "MX"))
+		state := v.Clean(request.State)
+		if err := v.StringLength(name, "service_areas.name", 2, 120); err != nil {
+			return nil, err
+		}
+		if len(country) != 2 || country[0] < 'A' || country[0] > 'Z' || country[1] < 'A' || country[1] > 'Z' {
+			return nil, fiber.NewError(fiber.StatusBadRequest, "service_areas.country must be a two-letter code")
+		}
+		if err := v.StringLength(state, "service_areas.state", 1, 120); err != nil {
+			return nil, err
+		}
+		municipality := v.CleanOptional(request.Municipality)
+		city := v.CleanOptional(request.City)
+		neighborhood := v.CleanOptional(request.Neighborhood)
+		postalCode := v.CleanOptional(request.PostalCode)
+		for _, field := range []struct {
+			value *string
+			name  string
+			max   int
+		}{
+			{municipality, "service_areas.municipality", 120},
+			{city, "service_areas.city", 120},
+			{neighborhood, "service_areas.neighborhood", 120},
+			{postalCode, "service_areas.postal_code", 20},
+		} {
+			if field.value != nil {
+				if err := v.StringLength(*field.value, field.name, 1, field.max); err != nil {
+					return nil, err
+				}
+			}
+		}
+		countryKey := v.SearchKey(country)
+		stateKey := v.SearchKey(state)
+		municipalityKey := keyPtr(municipality)
+		cityKey := keyPtr(city)
+		neighborhoodKey := keyPtr(neighborhood)
+		postalCodeKey := ""
+		if postalCode != nil {
+			postalCodeKey = v.PostalKey(*postalCode)
+			if postalCodeKey == "" {
+				return nil, fiber.NewError(fiber.StatusBadRequest, "service_areas.postal_code is invalid")
+			}
+		}
+		parts := []string{countryKey, stateKey, stringValue(municipalityKey), stringValue(cityKey), stringValue(neighborhoodKey), postalCodeKey}
+		normalizedKey := strings.Join(parts, "|")
+		if _, exists := seen[normalizedKey]; exists {
+			return nil, fiber.NewError(fiber.StatusBadRequest, "service_areas must be unique")
+		}
+		seen[normalizedKey] = struct{}{}
+		inputs = append(inputs, ServiceAreaInput{
+			Name: name, Country: country, State: state,
+			Municipality: municipality, City: city, Neighborhood: neighborhood, PostalCode: postalCode,
+			CountryKey: countryKey, StateKey: stateKey, MunicipalityKey: municipalityKey,
+			CityKey: cityKey, NeighborhoodKey: neighborhoodKey, PostalCodeKey: postalCodeKey,
+			NormalizedKey: normalizedKey,
+		})
+	}
+	return inputs, nil
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func ServiceAreaParams(businessID uuid.UUID, inputs []ServiceAreaInput) []db.CreateBusinessServiceAreaParams {
+	params := make([]db.CreateBusinessServiceAreaParams, 0, len(inputs))
+	for _, input := range inputs {
+		params = append(params, db.CreateBusinessServiceAreaParams{
+			BusinessID: businessID, Name: input.Name, Country: input.Country, State: input.State,
+			Municipality: api.NullString(input.Municipality), City: api.NullString(input.City),
+			Neighborhood: api.NullString(input.Neighborhood), PostalCode: api.NullString(input.PostalCode),
+			CountryKey: input.CountryKey, StateKey: input.StateKey,
+			MunicipalityKey: api.NullString(input.MunicipalityKey), CityKey: api.NullString(input.CityKey),
+			NeighborhoodKey: api.NullString(input.NeighborhoodKey), PostalCodeKey: api.NullString(optionalString(input.PostalCodeKey)),
+			NormalizedKey: input.NormalizedKey,
+		})
+	}
+	return params
+}
+
+func MapServiceAreas(rows []db.BusinessServiceArea) []ServiceAreaResponse {
+	areas := make([]ServiceAreaResponse, 0, len(rows))
+	for _, row := range rows {
+		areas = append(areas, ServiceAreaResponse{
+			Name: row.Name, Country: row.Country, State: row.State,
+			Municipality: api.StringPtr(row.Municipality), City: api.StringPtr(row.City),
+			Neighborhood: api.StringPtr(row.Neighborhood), PostalCode: api.StringPtr(row.PostalCode),
+		})
+	}
+	return areas
+}
+
+func GroupServiceAreasByBusiness(rows []db.BusinessServiceArea) map[uuid.UUID][]db.BusinessServiceArea {
+	grouped := make(map[uuid.UUID][]db.BusinessServiceArea)
+	for _, row := range rows {
+		grouped[row.BusinessID] = append(grouped[row.BusinessID], row)
+	}
+	return grouped
 }
 
 type HoursRequest struct {

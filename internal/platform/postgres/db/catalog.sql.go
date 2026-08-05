@@ -613,15 +613,70 @@ WHERE b.status = 'active'
   AND p.is_public = true
   AND p.status = 'active'
   AND pv.status = 'active'
-  AND ($1::text = '' OR to_tsvector('simple', p.name || ' ' || p.description) @@ plainto_tsquery('simple', $1))
+  AND ($1::text = '' OR to_tsvector('simple', p.name || ' ' || p.description) @@ plainto_tsquery('simple', $1::text))
+  AND (
+    (NOT $2::boolean AND NOT $3::boolean)
+    OR (
+      b.location_mode IN ('fixed', 'hybrid')
+      AND (
+        ($2::boolean
+          AND ($4::numeric IS NULL OR b.latitude >= $4::numeric)
+          AND ($5::numeric IS NULL OR b.latitude <= $5::numeric)
+          AND ($6::numeric IS NULL OR b.longitude >= $6::numeric)
+          AND ($7::numeric IS NULL OR b.longitude <= $7::numeric)
+        )
+        OR ($3::boolean
+          AND ($8::text IS NULL OR lower(b.country) = lower($8::text))
+          AND ($9::text IS NULL OR lower(b.state) = lower($9::text))
+          AND ($10::text IS NULL OR lower(b.city) = lower($10::text) OR lower(b.neighborhood) = lower($10::text))
+          AND ($11::text IS NULL OR lower(b.city) = lower($11::text))
+          AND ($12::text IS NULL OR lower(b.neighborhood) = lower($12::text))
+          AND ($13::text IS NULL OR b.postal_code = $13::text)
+        )
+      )
+    )
+    OR (
+      $3::boolean
+      AND b.location_mode IN ('mobile', 'hybrid')
+      AND EXISTS (
+        SELECT 1
+        FROM business_service_areas sa
+        WHERE sa.business_id = b.id
+          AND ($14::text IS NULL OR sa.country_key = $14::text)
+          AND ($15::text IS NULL OR sa.state_key = $15::text)
+          AND ($16::text IS NULL OR sa.municipality_key IS NULL OR sa.municipality_key = $16::text)
+          AND ($17::text IS NULL OR sa.city_key IS NULL OR sa.city_key = $17::text)
+          AND ($18::text IS NULL OR sa.neighborhood_key IS NULL OR sa.neighborhood_key = $18::text)
+          AND ($19::text IS NULL OR sa.postal_code_key IS NULL OR sa.postal_code_key = $19::text)
+      )
+    )
+  )
 ORDER BY p.name ASC
-LIMIT $2 OFFSET $3
+LIMIT $21 OFFSET $20
 `
 
 type SearchMarketplaceProductsParams struct {
-	Column1 string `json:"column_1"`
-	Limit   int32  `json:"limit"`
-	Offset  int32  `json:"offset"`
+	SearchQuery     string              `json:"search_query"`
+	HasBbox         bool                `json:"has_bbox"`
+	HasAreaFilter   bool                `json:"has_area_filter"`
+	MinLat          decimal.NullDecimal `json:"min_lat"`
+	MaxLat          decimal.NullDecimal `json:"max_lat"`
+	MinLng          decimal.NullDecimal `json:"min_lng"`
+	MaxLng          decimal.NullDecimal `json:"max_lng"`
+	Country         sql.NullString      `json:"country"`
+	State           sql.NullString      `json:"state"`
+	Municipality    sql.NullString      `json:"municipality"`
+	City            sql.NullString      `json:"city"`
+	Neighborhood    sql.NullString      `json:"neighborhood"`
+	PostalCode      sql.NullString      `json:"postal_code"`
+	CountryKey      sql.NullString      `json:"country_key"`
+	StateKey        sql.NullString      `json:"state_key"`
+	MunicipalityKey sql.NullString      `json:"municipality_key"`
+	CityKey         sql.NullString      `json:"city_key"`
+	NeighborhoodKey sql.NullString      `json:"neighborhood_key"`
+	PostalCodeKey   sql.NullString      `json:"postal_code_key"`
+	OffsetCount     int32               `json:"offset_count"`
+	LimitCount      int32               `json:"limit_count"`
 }
 
 type SearchMarketplaceProductsRow struct {
@@ -644,7 +699,29 @@ type SearchMarketplaceProductsRow struct {
 }
 
 func (q *Queries) SearchMarketplaceProducts(ctx context.Context, arg SearchMarketplaceProductsParams) ([]SearchMarketplaceProductsRow, error) {
-	rows, err := q.db.Query(ctx, searchMarketplaceProducts, arg.Column1, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, searchMarketplaceProducts,
+		arg.SearchQuery,
+		arg.HasBbox,
+		arg.HasAreaFilter,
+		arg.MinLat,
+		arg.MaxLat,
+		arg.MinLng,
+		arg.MaxLng,
+		arg.Country,
+		arg.State,
+		arg.Municipality,
+		arg.City,
+		arg.Neighborhood,
+		arg.PostalCode,
+		arg.CountryKey,
+		arg.StateKey,
+		arg.MunicipalityKey,
+		arg.CityKey,
+		arg.NeighborhoodKey,
+		arg.PostalCodeKey,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
 	if err != nil {
 		return nil, err
 	}

@@ -3,7 +3,7 @@ BEGIN;
 INSERT INTO businesses (
     id, name, slug, description, business_type, phone, whatsapp, email, website,
     logo_url, cover_image_url, status, address, neighborhood, city, state, country,
-    postal_code, latitude, longitude, pickup_available, delivery_available
+    postal_code, latitude, longitude, pickup_available, delivery_available, location_mode
 ) VALUES
 (
     '11111111-1111-4111-8111-111111111111',
@@ -27,7 +27,8 @@ INSERT INTO businesses (
     19.419400,
     -99.159100,
     true,
-    true
+    true,
+    'fixed'
 ),
 (
     '22222222-2222-4222-8222-222222222222',
@@ -51,7 +52,8 @@ INSERT INTO businesses (
     19.411700,
     -99.171800,
     true,
-    false
+    false,
+    'fixed'
 ),
 (
     '33333333-3333-4333-8333-333333333333',
@@ -75,7 +77,33 @@ INSERT INTO businesses (
     19.415700,
     -99.164900,
     true,
-    true
+    true,
+    'fixed'
+),
+(
+    '44444444-4444-4444-8444-444444444444',
+    'Carpintería a Domicilio',
+    'carpinteria-a-domicilio',
+    'Muebles a medida construidos e instalados directamente en tu hogar o negocio.',
+    'servicios',
+    '+525555040404',
+    '+525555040404',
+    'hola@carpinteriadomicilio.example',
+    NULL,
+    NULL,
+    NULL,
+    'active',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    false,
+    false,
+    'mobile'
 )
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
@@ -99,12 +127,43 @@ ON CONFLICT (id) DO UPDATE SET
     longitude = EXCLUDED.longitude,
     pickup_available = EXCLUDED.pickup_available,
     delivery_available = EXCLUDED.delivery_available,
+    location_mode = EXCLUDED.location_mode,
+    updated_at = now();
+
+INSERT INTO business_service_areas (
+    id, business_id, name, country, state, municipality, city, neighborhood, postal_code,
+    country_key, state_key, municipality_key, city_key, neighborhood_key,
+    postal_code_key, normalized_key
+) VALUES
+(
+    '99999999-4441-4441-8441-444444444441',
+    '44444444-4444-4444-8444-444444444444',
+    'Coyoacán', 'MX', 'Ciudad de México', 'Coyoacán', NULL, NULL, NULL,
+    'mx', 'ciudad-de-mexico', 'coyoacan', NULL, NULL, NULL,
+    'mx|ciudad-de-mexico|coyoacan|||'
+),
+(
+    '99999999-4442-4442-8442-444444444442',
+    '44444444-4444-4444-8444-444444444444',
+    'Benito Juárez', 'MX', 'Ciudad de México', 'Benito Juárez', NULL, NULL, NULL,
+    'mx', 'ciudad-de-mexico', 'benito-juarez', NULL, NULL, NULL,
+    'mx|ciudad-de-mexico|benito-juarez|||'
+)
+ON CONFLICT (business_id, normalized_key) DO UPDATE SET
+    name = EXCLUDED.name,
+    country = EXCLUDED.country,
+    state = EXCLUDED.state,
+    municipality = EXCLUDED.municipality,
+    city = EXCLUDED.city,
+    neighborhood = EXCLUDED.neighborhood,
+    postal_code = EXCLUDED.postal_code,
     updated_at = now();
 
 INSERT INTO inventory_locations (id, business_id, name, is_default) VALUES
 ('aaaaaaaa-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111', 'Tienda principal', true),
 ('aaaaaaaa-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222', 'Mostrador', true),
-('aaaaaaaa-3333-4333-8333-333333333333', '33333333-3333-4333-8333-333333333333', 'Sala de exhibición', true)
+('aaaaaaaa-3333-4333-8333-333333333333', '33333333-3333-4333-8333-333333333333', 'Sala de exhibición', true),
+('aaaaaaaa-4444-4444-8444-444444444444', '44444444-4444-4444-8444-444444444444', 'Herramientas móviles', true)
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     is_default = EXCLUDED.is_default;
@@ -115,7 +174,8 @@ INSERT INTO categories (id, business_id, name, slug) VALUES
 ('bbbbbbbb-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222', 'Pan', 'bread'),
 ('bbbbbbbb-2223-4223-8223-222222222223', '22222222-2222-4222-8222-222222222222', 'Pan dulce', 'pastries'),
 ('bbbbbbbb-3333-4333-8333-333333333333', '33333333-3333-4333-8333-333333333333', 'Plantas', 'plants'),
-('bbbbbbbb-3334-4334-8334-333333333334', '33333333-3333-4333-8333-333333333333', 'Kits de cuidado', 'care-kits')
+('bbbbbbbb-3334-4334-8334-333333333334', '33333333-3333-4333-8333-333333333333', 'Kits de cuidado', 'care-kits'),
+('bbbbbbbb-4444-4444-8444-444444444444', '44444444-4444-4444-8444-444444444444', 'Muebles a medida', 'custom-furniture')
 ON CONFLICT (business_id, slug) DO UPDATE SET
     name = EXCLUDED.name;
 
@@ -128,7 +188,8 @@ INSERT INTO products (
 ('cccccccc-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222', 'bbbbbbbb-2222-4222-8222-222222222222', 'Hogaza de masa madre', 'country-sourdough', 'Hogaza de fermentación natural, corteza crujiente y miga abierta.', 'Casa Pan', 'pieza', 'stocked_product', true, true, 'active'),
 ('cccccccc-2223-4223-8223-222222222223', '22222222-2222-4222-8222-222222222222', 'bbbbbbbb-2223-4223-8223-222222222223', 'Rol de guayaba', 'guava-roll', 'Pan hojaldrado relleno de ate de guayaba.', 'Casa Pan', 'pieza', 'stocked_product', true, true, 'active'),
 ('cccccccc-3333-4333-8333-333333333333', '33333333-3333-4333-8333-333333333333', 'bbbbbbbb-3333-4333-8333-333333333333', 'Monstera Deliciosa', 'monstera-deliciosa', 'Monstera mediana de interior en maceta de vivero.', 'Taller Botanico', 'pieza', 'unique_item', false, true, 'active'),
-('cccccccc-3334-4334-8334-333333333334', '33333333-3333-4333-8333-333333333333', 'bbbbbbbb-3334-4334-8334-333333333334', 'Kit de cuidado para plantas', 'starter-plant-care-kit', 'Sustrato, fertilizante, tijeras de poda y guía de cuidados.', 'Taller Botanico', 'pieza', 'stocked_product', false, true, 'active')
+('cccccccc-3334-4334-8334-333333333334', '33333333-3333-4333-8333-333333333333', 'bbbbbbbb-3334-4334-8334-333333333334', 'Kit de cuidado para plantas', 'starter-plant-care-kit', 'Sustrato, fertilizante, tijeras de poda y guía de cuidados.', 'Taller Botanico', 'pieza', 'stocked_product', false, true, 'active'),
+('cccccccc-4444-4444-8444-444444444444', '44444444-4444-4444-8444-444444444444', 'bbbbbbbb-4444-4444-8444-444444444444', 'Mueble a medida', 'custom-furniture', 'Diseño, fabricación e instalación de un mueble adaptado a tu espacio.', 'Carpintería a Domicilio', 'proyecto', 'made_to_order_product', true, true, 'active')
 ON CONFLICT (business_id, slug) DO UPDATE SET
     category_id = EXCLUDED.category_id,
     name = EXCLUDED.name,
@@ -151,7 +212,8 @@ INSERT INTO product_variants (
 ('dddddddd-2222-4222-8222-222222222222', 'cccccccc-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222', 'CP-SOURDOUGH', '7502000000021', 'CP-SOURDOUGH', 'Hogaza 900 g', '{"size":"900 g"}', 120.00, 46.00, 'MXN', true, 'available', 10, 1, 'active'),
 ('dddddddd-2223-4223-8223-222222222223', 'cccccccc-2223-4223-8223-222222222223', '22222222-2222-4222-8222-222222222222', 'CP-GUAVA-ROLL', '7502000000022', 'CP-GUAVA-ROLL', 'Pieza', '{"size":"single"}', 52.00, 18.00, 'MXN', true, 'available', 20, 1, 'active'),
 ('dddddddd-3333-4333-8333-333333333333', 'cccccccc-3333-4333-8333-333333333333', '33333333-3333-4333-8333-333333333333', 'TB-MONSTERA-M', '7503000000031', 'TB-MONSTERA-M', 'Planta mediana', '{"size":"medium"}', 420.00, 210.00, 'MXN', true, 'low_stock', 3, 5, 'active'),
-('dddddddd-3334-4334-8334-333333333334', 'cccccccc-3334-4334-8334-333333333334', '33333333-3333-4333-8333-333333333333', 'TB-CARE-KIT', '7503000000032', 'TB-CARE-KIT', 'Kit inicial', '{"size":"starter"}', 260.00, 122.00, 'MXN', true, 'available', 5, 3, 'active')
+('dddddddd-3334-4334-8334-333333333334', 'cccccccc-3334-4334-8334-333333333334', '33333333-3333-4333-8333-333333333333', 'TB-CARE-KIT', '7503000000032', 'TB-CARE-KIT', 'Kit inicial', '{"size":"starter"}', 260.00, 122.00, 'MXN', true, 'available', 5, 3, 'active'),
+('dddddddd-4444-4444-8444-444444444444', 'cccccccc-4444-4444-8444-444444444444', '44444444-4444-4444-8444-444444444444', 'CD-CUSTOM-FURNITURE', NULL, 'CD-CUSTOM-FURNITURE', 'Cotización inicial', '{"made_to_measure":true}', 2500.00, NULL, 'MXN', false, 'made_to_order', 0, 14, 'active')
 ON CONFLICT (business_id, sku) DO UPDATE SET
     barcode = EXCLUDED.barcode,
     internal_code = EXCLUDED.internal_code,
