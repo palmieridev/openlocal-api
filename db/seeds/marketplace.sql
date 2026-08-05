@@ -104,6 +104,56 @@ INSERT INTO businesses (
     false,
     false,
     'mobile'
+),
+(
+    '55555555-5555-4555-8555-555555555555',
+    'Plomería Rodante',
+    'plomeria-rodante',
+    'Diagnóstico y reparaciones de plomería en hogares y pequeños comercios, sin local abierto al público.',
+    'servicios',
+    '+525555050505',
+    '+525555050505',
+    'servicio@plomeriarodante.example',
+    NULL,
+    NULL,
+    NULL,
+    'active',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    false,
+    false,
+    'mobile'
+),
+(
+    '66666666-6666-4666-8666-666666666666',
+    'Bicis del Barrio',
+    'bicis-del-barrio',
+    'Taller de bicicletas con recepción en el local y servicio mecánico a domicilio.',
+    'servicios',
+    '+525555060606',
+    '+525555060606',
+    'hola@bicisdelbarrio.example',
+    'https://openlocal.example/bicis-del-barrio',
+    NULL,
+    'https://images.unsplash.com/photo-1532298229144-0ec0c57515c7?auto=format&fit=crop&w=1400&q=80',
+    'active',
+    'Durango 126',
+    'Roma Norte',
+    'Ciudad de México',
+    'Ciudad de México',
+    'MX',
+    '06700',
+    19.419950,
+    -99.162050,
+    true,
+    false,
+    'hybrid'
 )
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
@@ -148,6 +198,24 @@ INSERT INTO business_service_areas (
     'Benito Juárez', 'MX', 'Ciudad de México', 'Benito Juárez', NULL, NULL, NULL,
     'mx', 'ciudad-de-mexico', 'benito-juarez', NULL, NULL, NULL,
     'mx|ciudad-de-mexico|benito-juarez|||'
+),
+(
+    '99999999-5551-4551-8551-555555555551',
+    '55555555-5555-4555-8555-555555555555', 'Cuauhtémoc', 'MX', 'Ciudad de México', 'Cuauhtémoc', NULL, NULL, NULL,
+    'mx', 'ciudad-de-mexico', 'cuauhtemoc', NULL, NULL, NULL,
+    'mx|ciudad-de-mexico|cuauhtemoc|||'
+),
+(
+    '99999999-5552-4552-8552-555555555552',
+    '55555555-5555-4555-8555-555555555555', 'Benito Juárez', 'MX', 'Ciudad de México', 'Benito Juárez', NULL, NULL, NULL,
+    'mx', 'ciudad-de-mexico', 'benito-juarez', NULL, NULL, NULL,
+    'mx|ciudad-de-mexico|benito-juarez|||'
+),
+(
+    '99999999-6661-4661-8661-666666666661',
+    '66666666-6666-4666-8666-666666666666', 'Roma y Condesa', 'MX', 'Ciudad de México', 'Cuauhtémoc', 'Ciudad de México', NULL, NULL,
+    'mx', 'ciudad-de-mexico', 'cuauhtemoc', 'ciudad-de-mexico', NULL, NULL,
+    'mx|ciudad-de-mexico|cuauhtemoc|ciudad-de-mexico||'
 )
 ON CONFLICT (business_id, normalized_key) DO UPDATE SET
     name = EXCLUDED.name,
@@ -163,7 +231,9 @@ INSERT INTO inventory_locations (id, business_id, name, is_default) VALUES
 ('aaaaaaaa-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111', 'Tienda principal', true),
 ('aaaaaaaa-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222', 'Mostrador', true),
 ('aaaaaaaa-3333-4333-8333-333333333333', '33333333-3333-4333-8333-333333333333', 'Sala de exhibición', true),
-('aaaaaaaa-4444-4444-8444-444444444444', '44444444-4444-4444-8444-444444444444', 'Herramientas móviles', true)
+('aaaaaaaa-4444-4444-8444-444444444444', '44444444-4444-4444-8444-444444444444', 'Herramientas móviles', true),
+('aaaaaaaa-5555-4555-8555-555555555555', '55555555-5555-4555-8555-555555555555', 'Unidad móvil', true),
+('aaaaaaaa-6666-4666-8666-666666666666', '66666666-6666-4666-8666-666666666666', 'Taller principal', true)
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     is_default = EXCLUDED.is_default;
@@ -175,7 +245,9 @@ INSERT INTO categories (id, business_id, name, slug) VALUES
 ('bbbbbbbb-2223-4223-8223-222222222223', '22222222-2222-4222-8222-222222222222', 'Pan dulce', 'pastries'),
 ('bbbbbbbb-3333-4333-8333-333333333333', '33333333-3333-4333-8333-333333333333', 'Plantas', 'plants'),
 ('bbbbbbbb-3334-4334-8334-333333333334', '33333333-3333-4333-8333-333333333333', 'Kits de cuidado', 'care-kits'),
-('bbbbbbbb-4444-4444-8444-444444444444', '44444444-4444-4444-8444-444444444444', 'Muebles a medida', 'custom-furniture')
+('bbbbbbbb-4444-4444-8444-444444444444', '44444444-4444-4444-8444-444444444444', 'Muebles a medida', 'custom-furniture'),
+('bbbbbbbb-5555-4555-8555-555555555555', '55555555-5555-4555-8555-555555555555', 'Plomería a domicilio', 'mobile-plumbing'),
+('bbbbbbbb-6666-4666-8666-666666666666', '66666666-6666-4666-8666-666666666666', 'Servicio de bicicletas', 'bicycle-service')
 ON CONFLICT (business_id, slug) DO UPDATE SET
     name = EXCLUDED.name;
 
@@ -189,7 +261,9 @@ INSERT INTO products (
 ('cccccccc-2223-4223-8223-222222222223', '22222222-2222-4222-8222-222222222222', 'bbbbbbbb-2223-4223-8223-222222222223', 'Rol de guayaba', 'guava-roll', 'Pan hojaldrado relleno de ate de guayaba.', 'Casa Pan', 'pieza', 'stocked_product', true, true, 'active'),
 ('cccccccc-3333-4333-8333-333333333333', '33333333-3333-4333-8333-333333333333', 'bbbbbbbb-3333-4333-8333-333333333333', 'Monstera Deliciosa', 'monstera-deliciosa', 'Monstera mediana de interior en maceta de vivero.', 'Taller Botanico', 'pieza', 'unique_item', false, true, 'active'),
 ('cccccccc-3334-4334-8334-333333333334', '33333333-3333-4333-8333-333333333333', 'bbbbbbbb-3334-4334-8334-333333333334', 'Kit de cuidado para plantas', 'starter-plant-care-kit', 'Sustrato, fertilizante, tijeras de poda y guía de cuidados.', 'Taller Botanico', 'pieza', 'stocked_product', false, true, 'active'),
-('cccccccc-4444-4444-8444-444444444444', '44444444-4444-4444-8444-444444444444', 'bbbbbbbb-4444-4444-8444-444444444444', 'Mueble a medida', 'custom-furniture', 'Diseño, fabricación e instalación de un mueble adaptado a tu espacio.', 'Carpintería a Domicilio', 'proyecto', 'made_to_order_product', true, true, 'active')
+('cccccccc-4444-4444-8444-444444444444', '44444444-4444-4444-8444-444444444444', 'bbbbbbbb-4444-4444-8444-444444444444', 'Mueble a medida', 'custom-furniture', 'Diseño, fabricación e instalación de un mueble adaptado a tu espacio.', 'Carpintería a Domicilio', 'proyecto', 'made_to_order_product', true, true, 'active'),
+('cccccccc-5555-4555-8555-555555555555', '55555555-5555-4555-8555-555555555555', 'bbbbbbbb-5555-4555-8555-555555555555', 'Visita de diagnóstico', 'diagnostic-visit', 'Revisión de fugas, presión y conexiones con presupuesto de reparación.', 'Plomería Rodante', 'visita', 'made_to_order_product', false, true, 'active'),
+('cccccccc-6666-4666-8666-666666666666', '66666666-6666-4666-8666-666666666666', 'bbbbbbbb-6666-4666-8666-666666666666', 'Afinación completa de bicicleta', 'complete-bike-tune-up', 'Ajuste de frenos y cambios, lubricación y revisión general en taller o a domicilio.', 'Bicis del Barrio', 'servicio', 'made_to_order_product', false, true, 'active')
 ON CONFLICT (business_id, slug) DO UPDATE SET
     category_id = EXCLUDED.category_id,
     name = EXCLUDED.name,
@@ -213,7 +287,9 @@ INSERT INTO product_variants (
 ('dddddddd-2223-4223-8223-222222222223', 'cccccccc-2223-4223-8223-222222222223', '22222222-2222-4222-8222-222222222222', 'CP-GUAVA-ROLL', '7502000000022', 'CP-GUAVA-ROLL', 'Pieza', '{"size":"single"}', 52.00, 18.00, 'MXN', true, 'available', 20, 1, 'active'),
 ('dddddddd-3333-4333-8333-333333333333', 'cccccccc-3333-4333-8333-333333333333', '33333333-3333-4333-8333-333333333333', 'TB-MONSTERA-M', '7503000000031', 'TB-MONSTERA-M', 'Planta mediana', '{"size":"medium"}', 420.00, 210.00, 'MXN', true, 'low_stock', 3, 5, 'active'),
 ('dddddddd-3334-4334-8334-333333333334', 'cccccccc-3334-4334-8334-333333333334', '33333333-3333-4333-8333-333333333333', 'TB-CARE-KIT', '7503000000032', 'TB-CARE-KIT', 'Kit inicial', '{"size":"starter"}', 260.00, 122.00, 'MXN', true, 'available', 5, 3, 'active'),
-('dddddddd-4444-4444-8444-444444444444', 'cccccccc-4444-4444-8444-444444444444', '44444444-4444-4444-8444-444444444444', 'CD-CUSTOM-FURNITURE', NULL, 'CD-CUSTOM-FURNITURE', 'Cotización inicial', '{"made_to_measure":true}', 2500.00, NULL, 'MXN', false, 'made_to_order', 0, 14, 'active')
+('dddddddd-4444-4444-8444-444444444444', 'cccccccc-4444-4444-8444-444444444444', '44444444-4444-4444-8444-444444444444', 'CD-CUSTOM-FURNITURE', NULL, 'CD-CUSTOM-FURNITURE', 'Cotización inicial', '{"made_to_measure":true}', 2500.00, NULL, 'MXN', false, 'made_to_order', 0, 14, 'active'),
+('dddddddd-5555-4555-8555-555555555555', 'cccccccc-5555-4555-8555-555555555555', '55555555-5555-4555-8555-555555555555', 'PR-DIAGNOSTIC', NULL, 'PR-DIAGNOSTIC', 'Visita programada', '{"at_customer_location":true}', 350.00, NULL, 'MXN', false, 'made_to_order', 0, 1, 'active'),
+('dddddddd-6666-4666-8666-666666666666', 'cccccccc-6666-4666-8666-666666666666', '66666666-6666-4666-8666-666666666666', 'BB-TUNE-UP', NULL, 'BB-TUNE-UP', 'Servicio completo', '{"at_shop_or_customer_location":true}', 650.00, NULL, 'MXN', false, 'made_to_order', 0, 2, 'active')
 ON CONFLICT (business_id, sku) DO UPDATE SET
     barcode = EXCLUDED.barcode,
     internal_code = EXCLUDED.internal_code,
