@@ -72,11 +72,12 @@ const createBusiness = `-- name: CreateBusiness :one
 INSERT INTO businesses (
     clerk_org_id, name, slug, description, business_type, phone, whatsapp, email, website,
     logo_url, cover_image_url, status, address, neighborhood, city, state,
-    country, postal_code, latitude, longitude, pickup_available, delivery_available, timezone
+    country, postal_code, latitude, longitude, pickup_available, delivery_available, timezone,
+    location_mode
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
 )
-RETURNING id, name, slug, description, business_type, phone, whatsapp, email, website, logo_url, cover_image_url, status, address, neighborhood, city, state, country, postal_code, latitude, longitude, pickup_available, delivery_available, created_at, updated_at, clerk_org_id, timezone
+RETURNING id, name, slug, description, business_type, phone, whatsapp, email, website, logo_url, cover_image_url, status, address, neighborhood, city, state, country, postal_code, latitude, longitude, pickup_available, delivery_available, created_at, updated_at, clerk_org_id, timezone, location_mode
 `
 
 type CreateBusinessParams struct {
@@ -94,15 +95,16 @@ type CreateBusinessParams struct {
 	Status            string              `json:"status"`
 	Address           sql.NullString      `json:"address"`
 	Neighborhood      sql.NullString      `json:"neighborhood"`
-	City              string              `json:"city"`
-	State             string              `json:"state"`
-	Country           string              `json:"country"`
+	City              sql.NullString      `json:"city"`
+	State             sql.NullString      `json:"state"`
+	Country           sql.NullString      `json:"country"`
 	PostalCode        sql.NullString      `json:"postal_code"`
 	Latitude          decimal.NullDecimal `json:"latitude"`
 	Longitude         decimal.NullDecimal `json:"longitude"`
 	PickupAvailable   bool                `json:"pickup_available"`
 	DeliveryAvailable bool                `json:"delivery_available"`
 	Timezone          string              `json:"timezone"`
+	LocationMode      string              `json:"location_mode"`
 }
 
 func (q *Queries) CreateBusiness(ctx context.Context, arg CreateBusinessParams) (Business, error) {
@@ -130,6 +132,7 @@ func (q *Queries) CreateBusiness(ctx context.Context, arg CreateBusinessParams) 
 		arg.PickupAvailable,
 		arg.DeliveryAvailable,
 		arg.Timezone,
+		arg.LocationMode,
 	)
 	var i Business
 	err := row.Scan(
@@ -159,6 +162,78 @@ func (q *Queries) CreateBusiness(ctx context.Context, arg CreateBusinessParams) 
 		&i.UpdatedAt,
 		&i.ClerkOrgID,
 		&i.Timezone,
+		&i.LocationMode,
+	)
+	return i, err
+}
+
+const createBusinessServiceArea = `-- name: CreateBusinessServiceArea :one
+INSERT INTO business_service_areas (
+    business_id, name, country, state, municipality, city, neighborhood, postal_code,
+    country_key, state_key, municipality_key, city_key, neighborhood_key,
+    postal_code_key, normalized_key
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+)
+RETURNING id, business_id, name, country, state, municipality, city, neighborhood, postal_code, country_key, state_key, municipality_key, city_key, neighborhood_key, postal_code_key, normalized_key, created_at, updated_at
+`
+
+type CreateBusinessServiceAreaParams struct {
+	BusinessID      uuid.UUID      `json:"business_id"`
+	Name            string         `json:"name"`
+	Country         string         `json:"country"`
+	State           string         `json:"state"`
+	Municipality    sql.NullString `json:"municipality"`
+	City            sql.NullString `json:"city"`
+	Neighborhood    sql.NullString `json:"neighborhood"`
+	PostalCode      sql.NullString `json:"postal_code"`
+	CountryKey      string         `json:"country_key"`
+	StateKey        string         `json:"state_key"`
+	MunicipalityKey sql.NullString `json:"municipality_key"`
+	CityKey         sql.NullString `json:"city_key"`
+	NeighborhoodKey sql.NullString `json:"neighborhood_key"`
+	PostalCodeKey   sql.NullString `json:"postal_code_key"`
+	NormalizedKey   string         `json:"normalized_key"`
+}
+
+func (q *Queries) CreateBusinessServiceArea(ctx context.Context, arg CreateBusinessServiceAreaParams) (BusinessServiceArea, error) {
+	row := q.db.QueryRow(ctx, createBusinessServiceArea,
+		arg.BusinessID,
+		arg.Name,
+		arg.Country,
+		arg.State,
+		arg.Municipality,
+		arg.City,
+		arg.Neighborhood,
+		arg.PostalCode,
+		arg.CountryKey,
+		arg.StateKey,
+		arg.MunicipalityKey,
+		arg.CityKey,
+		arg.NeighborhoodKey,
+		arg.PostalCodeKey,
+		arg.NormalizedKey,
+	)
+	var i BusinessServiceArea
+	err := row.Scan(
+		&i.ID,
+		&i.BusinessID,
+		&i.Name,
+		&i.Country,
+		&i.State,
+		&i.Municipality,
+		&i.City,
+		&i.Neighborhood,
+		&i.PostalCode,
+		&i.CountryKey,
+		&i.StateKey,
+		&i.MunicipalityKey,
+		&i.CityKey,
+		&i.NeighborhoodKey,
+		&i.PostalCodeKey,
+		&i.NormalizedKey,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -188,8 +263,18 @@ func (q *Queries) DeleteBusinessMemberByClerkOrgAndUser(ctx context.Context, arg
 	return err
 }
 
+const deleteBusinessServiceAreas = `-- name: DeleteBusinessServiceAreas :exec
+DELETE FROM business_service_areas
+WHERE business_id = $1
+`
+
+func (q *Queries) DeleteBusinessServiceAreas(ctx context.Context, businessID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteBusinessServiceAreas, businessID)
+	return err
+}
+
 const getBusinessForMember = `-- name: GetBusinessForMember :one
-SELECT b.id, b.name, b.slug, b.description, b.business_type, b.phone, b.whatsapp, b.email, b.website, b.logo_url, b.cover_image_url, b.status, b.address, b.neighborhood, b.city, b.state, b.country, b.postal_code, b.latitude, b.longitude, b.pickup_available, b.delivery_available, b.created_at, b.updated_at, b.clerk_org_id, b.timezone
+SELECT b.id, b.name, b.slug, b.description, b.business_type, b.phone, b.whatsapp, b.email, b.website, b.logo_url, b.cover_image_url, b.status, b.address, b.neighborhood, b.city, b.state, b.country, b.postal_code, b.latitude, b.longitude, b.pickup_available, b.delivery_available, b.created_at, b.updated_at, b.clerk_org_id, b.timezone, b.location_mode
 FROM businesses b
 JOIN business_members bm ON bm.business_id = b.id
 WHERE b.id = $1 AND bm.user_id = $2
@@ -230,6 +315,7 @@ func (q *Queries) GetBusinessForMember(ctx context.Context, arg GetBusinessForMe
 		&i.UpdatedAt,
 		&i.ClerkOrgID,
 		&i.Timezone,
+		&i.LocationMode,
 	)
 	return i, err
 }
@@ -274,7 +360,8 @@ func (q *Queries) GetBusinessMemberRole(ctx context.Context, arg GetBusinessMemb
 const getPublicBusinessBySlug = `-- name: GetPublicBusinessBySlug :one
 SELECT id, name, slug, description, business_type, phone, whatsapp, email, website,
        logo_url, cover_image_url, address, neighborhood, city, state, country,
-       postal_code, latitude, longitude, pickup_available, delivery_available, timezone
+       postal_code, latitude, longitude, pickup_available, delivery_available, timezone,
+       location_mode
 FROM businesses
 WHERE slug = $1 AND status = 'active'
 `
@@ -293,15 +380,16 @@ type GetPublicBusinessBySlugRow struct {
 	CoverImageUrl     sql.NullString      `json:"cover_image_url"`
 	Address           sql.NullString      `json:"address"`
 	Neighborhood      sql.NullString      `json:"neighborhood"`
-	City              string              `json:"city"`
-	State             string              `json:"state"`
-	Country           string              `json:"country"`
+	City              sql.NullString      `json:"city"`
+	State             sql.NullString      `json:"state"`
+	Country           sql.NullString      `json:"country"`
 	PostalCode        sql.NullString      `json:"postal_code"`
 	Latitude          decimal.NullDecimal `json:"latitude"`
 	Longitude         decimal.NullDecimal `json:"longitude"`
 	PickupAvailable   bool                `json:"pickup_available"`
 	DeliveryAvailable bool                `json:"delivery_available"`
 	Timezone          string              `json:"timezone"`
+	LocationMode      string              `json:"location_mode"`
 }
 
 func (q *Queries) GetPublicBusinessBySlug(ctx context.Context, slug string) (GetPublicBusinessBySlugRow, error) {
@@ -330,6 +418,7 @@ func (q *Queries) GetPublicBusinessBySlug(ctx context.Context, slug string) (Get
 		&i.PickupAvailable,
 		&i.DeliveryAvailable,
 		&i.Timezone,
+		&i.LocationMode,
 	)
 	return i, err
 }
@@ -341,6 +430,7 @@ WHERE business_id = $1
 ORDER BY day_of_week
 `
 
+// day_of_week is 0=Monday .. 6=Sunday.
 func (q *Queries) ListBusinessHours(ctx context.Context, businessID uuid.UUID) ([]BusinessHour, error) {
 	rows, err := q.db.Query(ctx, listBusinessHours, businessID)
 	if err != nil {
@@ -368,28 +458,202 @@ func (q *Queries) ListBusinessHours(ctx context.Context, businessID uuid.UUID) (
 	return items, nil
 }
 
+const listBusinessHoursForBusinesses = `-- name: ListBusinessHoursForBusinesses :many
+SELECT id, business_id, day_of_week, opens_at, closes_at, is_closed
+FROM business_hours
+WHERE business_id = ANY($1::uuid[])
+ORDER BY business_id, day_of_week
+`
+
+// Batch variant so marketplace listings fetch every business's hours in one
+// round trip instead of one query per business.
+func (q *Queries) ListBusinessHoursForBusinesses(ctx context.Context, businessIds []uuid.UUID) ([]BusinessHour, error) {
+	rows, err := q.db.Query(ctx, listBusinessHoursForBusinesses, businessIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BusinessHour{}
+	for rows.Next() {
+		var i BusinessHour
+		if err := rows.Scan(
+			&i.ID,
+			&i.BusinessID,
+			&i.DayOfWeek,
+			&i.OpensAt,
+			&i.ClosesAt,
+			&i.IsClosed,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBusinessServiceAreas = `-- name: ListBusinessServiceAreas :many
+SELECT id, business_id, name, country, state, municipality, city, neighborhood, postal_code, country_key, state_key, municipality_key, city_key, neighborhood_key, postal_code_key, normalized_key, created_at, updated_at
+FROM business_service_areas
+WHERE business_id = $1
+ORDER BY name, id
+`
+
+func (q *Queries) ListBusinessServiceAreas(ctx context.Context, businessID uuid.UUID) ([]BusinessServiceArea, error) {
+	rows, err := q.db.Query(ctx, listBusinessServiceAreas, businessID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BusinessServiceArea{}
+	for rows.Next() {
+		var i BusinessServiceArea
+		if err := rows.Scan(
+			&i.ID,
+			&i.BusinessID,
+			&i.Name,
+			&i.Country,
+			&i.State,
+			&i.Municipality,
+			&i.City,
+			&i.Neighborhood,
+			&i.PostalCode,
+			&i.CountryKey,
+			&i.StateKey,
+			&i.MunicipalityKey,
+			&i.CityKey,
+			&i.NeighborhoodKey,
+			&i.PostalCodeKey,
+			&i.NormalizedKey,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBusinessServiceAreasForBusinesses = `-- name: ListBusinessServiceAreasForBusinesses :many
+SELECT id, business_id, name, country, state, municipality, city, neighborhood, postal_code, country_key, state_key, municipality_key, city_key, neighborhood_key, postal_code_key, normalized_key, created_at, updated_at
+FROM business_service_areas
+WHERE business_id = ANY($1::uuid[])
+ORDER BY business_id, name, id
+`
+
+func (q *Queries) ListBusinessServiceAreasForBusinesses(ctx context.Context, businessIds []uuid.UUID) ([]BusinessServiceArea, error) {
+	rows, err := q.db.Query(ctx, listBusinessServiceAreasForBusinesses, businessIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BusinessServiceArea{}
+	for rows.Next() {
+		var i BusinessServiceArea
+		if err := rows.Scan(
+			&i.ID,
+			&i.BusinessID,
+			&i.Name,
+			&i.Country,
+			&i.State,
+			&i.Municipality,
+			&i.City,
+			&i.Neighborhood,
+			&i.PostalCode,
+			&i.CountryKey,
+			&i.StateKey,
+			&i.MunicipalityKey,
+			&i.CityKey,
+			&i.NeighborhoodKey,
+			&i.PostalCodeKey,
+			&i.NormalizedKey,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPublicBusinesses = `-- name: ListPublicBusinesses :many
 SELECT id, name, slug, description, business_type, logo_url, cover_image_url,
-       city, state, country, latitude, longitude, pickup_available, delivery_available, timezone
-FROM businesses
+       city, state, country, latitude, longitude, pickup_available, delivery_available,
+       timezone, location_mode
+FROM businesses b
 WHERE status = 'active'
-  AND ($1::text IS NULL OR city = $1::text)
-  AND ($2::numeric IS NULL OR latitude >= $2::numeric)
-  AND ($3::numeric IS NULL OR latitude <= $3::numeric)
-  AND ($4::numeric IS NULL OR longitude >= $4::numeric)
-  AND ($5::numeric IS NULL OR longitude <= $5::numeric)
+  AND (
+    (NOT $1::boolean AND NOT $2::boolean)
+    OR (
+      b.location_mode IN ('fixed', 'hybrid')
+      AND (
+        ($1::boolean
+          AND ($3::numeric IS NULL OR b.latitude >= $3::numeric)
+          AND ($4::numeric IS NULL OR b.latitude <= $4::numeric)
+          AND ($5::numeric IS NULL OR b.longitude >= $5::numeric)
+          AND ($6::numeric IS NULL OR b.longitude <= $6::numeric)
+        )
+        OR ($2::boolean
+          AND ($7::text IS NULL OR lower(b.country) = lower($7::text))
+          AND ($8::text IS NULL OR lower(b.state) = lower($8::text))
+          AND ($9::text IS NULL OR lower(b.city) = lower($9::text) OR lower(b.neighborhood) = lower($9::text))
+          AND ($10::text IS NULL OR lower(b.city) = lower($10::text))
+          AND ($11::text IS NULL OR lower(b.neighborhood) = lower($11::text))
+          AND ($12::text IS NULL OR b.postal_code = $12::text)
+        )
+      )
+    )
+    OR (
+      $2::boolean
+      AND b.location_mode IN ('mobile', 'hybrid')
+      AND EXISTS (
+        SELECT 1
+        FROM business_service_areas sa
+        WHERE sa.business_id = b.id
+          AND ($13::text IS NULL OR sa.country_key = $13::text)
+          AND ($14::text IS NULL OR sa.state_key = $14::text)
+          AND ($15::text IS NULL OR sa.municipality_key IS NULL OR sa.municipality_key = $15::text)
+          AND ($16::text IS NULL OR sa.city_key IS NULL OR sa.city_key = $16::text)
+          AND ($17::text IS NULL OR sa.neighborhood_key IS NULL OR sa.neighborhood_key = $17::text)
+          AND ($18::text IS NULL OR sa.postal_code_key IS NULL OR sa.postal_code_key = $18::text)
+      )
+    )
+  )
 ORDER BY name ASC
-LIMIT $7 OFFSET $6
+LIMIT $20 OFFSET $19
 `
 
 type ListPublicBusinessesParams struct {
-	City        sql.NullString      `json:"city"`
-	MinLat      decimal.NullDecimal `json:"min_lat"`
-	MaxLat      decimal.NullDecimal `json:"max_lat"`
-	MinLng      decimal.NullDecimal `json:"min_lng"`
-	MaxLng      decimal.NullDecimal `json:"max_lng"`
-	OffsetCount int32               `json:"offset_count"`
-	LimitCount  int32               `json:"limit_count"`
+	HasBbox         bool                `json:"has_bbox"`
+	HasAreaFilter   bool                `json:"has_area_filter"`
+	MinLat          decimal.NullDecimal `json:"min_lat"`
+	MaxLat          decimal.NullDecimal `json:"max_lat"`
+	MinLng          decimal.NullDecimal `json:"min_lng"`
+	MaxLng          decimal.NullDecimal `json:"max_lng"`
+	Country         sql.NullString      `json:"country"`
+	State           sql.NullString      `json:"state"`
+	Municipality    sql.NullString      `json:"municipality"`
+	City            sql.NullString      `json:"city"`
+	Neighborhood    sql.NullString      `json:"neighborhood"`
+	PostalCode      sql.NullString      `json:"postal_code"`
+	CountryKey      sql.NullString      `json:"country_key"`
+	StateKey        sql.NullString      `json:"state_key"`
+	MunicipalityKey sql.NullString      `json:"municipality_key"`
+	CityKey         sql.NullString      `json:"city_key"`
+	NeighborhoodKey sql.NullString      `json:"neighborhood_key"`
+	PostalCodeKey   sql.NullString      `json:"postal_code_key"`
+	OffsetCount     int32               `json:"offset_count"`
+	LimitCount      int32               `json:"limit_count"`
 }
 
 type ListPublicBusinessesRow struct {
@@ -400,23 +664,37 @@ type ListPublicBusinessesRow struct {
 	BusinessType      string              `json:"business_type"`
 	LogoUrl           sql.NullString      `json:"logo_url"`
 	CoverImageUrl     sql.NullString      `json:"cover_image_url"`
-	City              string              `json:"city"`
-	State             string              `json:"state"`
-	Country           string              `json:"country"`
+	City              sql.NullString      `json:"city"`
+	State             sql.NullString      `json:"state"`
+	Country           sql.NullString      `json:"country"`
 	Latitude          decimal.NullDecimal `json:"latitude"`
 	Longitude         decimal.NullDecimal `json:"longitude"`
 	PickupAvailable   bool                `json:"pickup_available"`
 	DeliveryAvailable bool                `json:"delivery_available"`
 	Timezone          string              `json:"timezone"`
+	LocationMode      string              `json:"location_mode"`
 }
 
 func (q *Queries) ListPublicBusinesses(ctx context.Context, arg ListPublicBusinessesParams) ([]ListPublicBusinessesRow, error) {
 	rows, err := q.db.Query(ctx, listPublicBusinesses,
-		arg.City,
+		arg.HasBbox,
+		arg.HasAreaFilter,
 		arg.MinLat,
 		arg.MaxLat,
 		arg.MinLng,
 		arg.MaxLng,
+		arg.Country,
+		arg.State,
+		arg.Municipality,
+		arg.City,
+		arg.Neighborhood,
+		arg.PostalCode,
+		arg.CountryKey,
+		arg.StateKey,
+		arg.MunicipalityKey,
+		arg.CityKey,
+		arg.NeighborhoodKey,
+		arg.PostalCodeKey,
 		arg.OffsetCount,
 		arg.LimitCount,
 	)
@@ -443,6 +721,7 @@ func (q *Queries) ListPublicBusinesses(ctx context.Context, arg ListPublicBusine
 			&i.PickupAvailable,
 			&i.DeliveryAvailable,
 			&i.Timezone,
+			&i.LocationMode,
 		); err != nil {
 			return nil, err
 		}
@@ -477,6 +756,7 @@ UPDATE businesses SET
     pickup_available = $21,
     delivery_available = $22,
     timezone = $23,
+    location_mode = $24,
     updated_at = now()
 WHERE businesses.id = $1 AND EXISTS (
     SELECT 1 FROM business_members bm
@@ -484,7 +764,7 @@ WHERE businesses.id = $1 AND EXISTS (
       AND bm.user_id = $2
       AND bm.role IN ('owner', 'manager')
 )
-RETURNING id, name, slug, description, business_type, phone, whatsapp, email, website, logo_url, cover_image_url, status, address, neighborhood, city, state, country, postal_code, latitude, longitude, pickup_available, delivery_available, created_at, updated_at, clerk_org_id, timezone
+RETURNING id, name, slug, description, business_type, phone, whatsapp, email, website, logo_url, cover_image_url, status, address, neighborhood, city, state, country, postal_code, latitude, longitude, pickup_available, delivery_available, created_at, updated_at, clerk_org_id, timezone, location_mode
 `
 
 type UpdateBusinessParams struct {
@@ -502,15 +782,16 @@ type UpdateBusinessParams struct {
 	Status            string              `json:"status"`
 	Address           sql.NullString      `json:"address"`
 	Neighborhood      sql.NullString      `json:"neighborhood"`
-	City              string              `json:"city"`
-	State             string              `json:"state"`
-	Country           string              `json:"country"`
+	City              sql.NullString      `json:"city"`
+	State             sql.NullString      `json:"state"`
+	Country           sql.NullString      `json:"country"`
 	PostalCode        sql.NullString      `json:"postal_code"`
 	Latitude          decimal.NullDecimal `json:"latitude"`
 	Longitude         decimal.NullDecimal `json:"longitude"`
 	PickupAvailable   bool                `json:"pickup_available"`
 	DeliveryAvailable bool                `json:"delivery_available"`
 	Timezone          string              `json:"timezone"`
+	LocationMode      string              `json:"location_mode"`
 }
 
 func (q *Queries) UpdateBusiness(ctx context.Context, arg UpdateBusinessParams) (Business, error) {
@@ -538,6 +819,7 @@ func (q *Queries) UpdateBusiness(ctx context.Context, arg UpdateBusinessParams) 
 		arg.PickupAvailable,
 		arg.DeliveryAvailable,
 		arg.Timezone,
+		arg.LocationMode,
 	)
 	var i Business
 	err := row.Scan(
@@ -567,6 +849,7 @@ func (q *Queries) UpdateBusiness(ctx context.Context, arg UpdateBusinessParams) 
 		&i.UpdatedAt,
 		&i.ClerkOrgID,
 		&i.Timezone,
+		&i.LocationMode,
 	)
 	return i, err
 }

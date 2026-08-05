@@ -168,6 +168,29 @@ func (q *Queries) CreateVariant(ctx context.Context, arg CreateVariantParams) (P
 	return i, err
 }
 
+const createVariantImage = `-- name: CreateVariantImage :exec
+INSERT INTO product_images (variant_id, url, position) VALUES ($1, $2, 0)
+`
+
+type CreateVariantImageParams struct {
+	VariantID uuid.UUID `json:"variant_id"`
+	Url       string    `json:"url"`
+}
+
+func (q *Queries) CreateVariantImage(ctx context.Context, arg CreateVariantImageParams) error {
+	_, err := q.db.Exec(ctx, createVariantImage, arg.VariantID, arg.Url)
+	return err
+}
+
+const deleteVariantImages = `-- name: DeleteVariantImages :exec
+DELETE FROM product_images WHERE variant_id = $1
+`
+
+func (q *Queries) DeleteVariantImages(ctx context.Context, variantID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteVariantImages, variantID)
+	return err
+}
+
 const getProductForBusiness = `-- name: GetProductForBusiness :one
 SELECT id, business_id, category_id, name, slug, description, brand, unit, product_type, is_handmade, is_public, status, created_at, updated_at
 FROM products
@@ -202,9 +225,17 @@ func (q *Queries) GetProductForBusiness(ctx context.Context, arg GetProductForBu
 }
 
 const getVariantByBarcode = `-- name: GetVariantByBarcode :one
-SELECT id, product_id, business_id, sku, barcode, internal_code, name, attributes, price, cost, currency, track_inventory, public_stock_status, reorder_point, lead_time_days, status, created_at, updated_at
-FROM product_variants
-WHERE business_id = $1 AND barcode = $2 AND status = 'active'
+SELECT pv.id, pv.product_id, pv.business_id, pv.sku, pv.barcode, pv.internal_code, pv.name, pv.attributes, pv.price, pv.cost, pv.currency, pv.track_inventory, pv.public_stock_status, pv.reorder_point, pv.lead_time_days, pv.status, pv.created_at, pv.updated_at,
+       COALESCE(pi.url, '') AS image_url
+FROM product_variants pv
+LEFT JOIN LATERAL (
+    SELECT url
+    FROM product_images
+    WHERE variant_id = pv.id
+    ORDER BY position ASC, created_at ASC
+    LIMIT 1
+) pi ON true
+WHERE pv.business_id = $1 AND pv.barcode = $2 AND pv.status = 'active'
 `
 
 type GetVariantByBarcodeParams struct {
@@ -212,36 +243,50 @@ type GetVariantByBarcodeParams struct {
 	Barcode    sql.NullString `json:"barcode"`
 }
 
-func (q *Queries) GetVariantByBarcode(ctx context.Context, arg GetVariantByBarcodeParams) (ProductVariant, error) {
+type GetVariantByBarcodeRow struct {
+	ProductVariant ProductVariant `json:"product_variant"`
+	ImageUrl       string         `json:"image_url"`
+}
+
+func (q *Queries) GetVariantByBarcode(ctx context.Context, arg GetVariantByBarcodeParams) (GetVariantByBarcodeRow, error) {
 	row := q.db.QueryRow(ctx, getVariantByBarcode, arg.BusinessID, arg.Barcode)
-	var i ProductVariant
+	var i GetVariantByBarcodeRow
 	err := row.Scan(
-		&i.ID,
-		&i.ProductID,
-		&i.BusinessID,
-		&i.Sku,
-		&i.Barcode,
-		&i.InternalCode,
-		&i.Name,
-		&i.Attributes,
-		&i.Price,
-		&i.Cost,
-		&i.Currency,
-		&i.TrackInventory,
-		&i.PublicStockStatus,
-		&i.ReorderPoint,
-		&i.LeadTimeDays,
-		&i.Status,
-		&i.CreatedAt,
-		&i.UpdatedAt,
+		&i.ProductVariant.ID,
+		&i.ProductVariant.ProductID,
+		&i.ProductVariant.BusinessID,
+		&i.ProductVariant.Sku,
+		&i.ProductVariant.Barcode,
+		&i.ProductVariant.InternalCode,
+		&i.ProductVariant.Name,
+		&i.ProductVariant.Attributes,
+		&i.ProductVariant.Price,
+		&i.ProductVariant.Cost,
+		&i.ProductVariant.Currency,
+		&i.ProductVariant.TrackInventory,
+		&i.ProductVariant.PublicStockStatus,
+		&i.ProductVariant.ReorderPoint,
+		&i.ProductVariant.LeadTimeDays,
+		&i.ProductVariant.Status,
+		&i.ProductVariant.CreatedAt,
+		&i.ProductVariant.UpdatedAt,
+		&i.ImageUrl,
 	)
 	return i, err
 }
 
 const getVariantBySKU = `-- name: GetVariantBySKU :one
-SELECT id, product_id, business_id, sku, barcode, internal_code, name, attributes, price, cost, currency, track_inventory, public_stock_status, reorder_point, lead_time_days, status, created_at, updated_at
-FROM product_variants
-WHERE business_id = $1 AND sku = $2 AND status = 'active'
+SELECT pv.id, pv.product_id, pv.business_id, pv.sku, pv.barcode, pv.internal_code, pv.name, pv.attributes, pv.price, pv.cost, pv.currency, pv.track_inventory, pv.public_stock_status, pv.reorder_point, pv.lead_time_days, pv.status, pv.created_at, pv.updated_at,
+       COALESCE(pi.url, '') AS image_url
+FROM product_variants pv
+LEFT JOIN LATERAL (
+    SELECT url
+    FROM product_images
+    WHERE variant_id = pv.id
+    ORDER BY position ASC, created_at ASC
+    LIMIT 1
+) pi ON true
+WHERE pv.business_id = $1 AND pv.sku = $2 AND pv.status = 'active'
 `
 
 type GetVariantBySKUParams struct {
@@ -249,36 +294,50 @@ type GetVariantBySKUParams struct {
 	Sku        string    `json:"sku"`
 }
 
-func (q *Queries) GetVariantBySKU(ctx context.Context, arg GetVariantBySKUParams) (ProductVariant, error) {
+type GetVariantBySKURow struct {
+	ProductVariant ProductVariant `json:"product_variant"`
+	ImageUrl       string         `json:"image_url"`
+}
+
+func (q *Queries) GetVariantBySKU(ctx context.Context, arg GetVariantBySKUParams) (GetVariantBySKURow, error) {
 	row := q.db.QueryRow(ctx, getVariantBySKU, arg.BusinessID, arg.Sku)
-	var i ProductVariant
+	var i GetVariantBySKURow
 	err := row.Scan(
-		&i.ID,
-		&i.ProductID,
-		&i.BusinessID,
-		&i.Sku,
-		&i.Barcode,
-		&i.InternalCode,
-		&i.Name,
-		&i.Attributes,
-		&i.Price,
-		&i.Cost,
-		&i.Currency,
-		&i.TrackInventory,
-		&i.PublicStockStatus,
-		&i.ReorderPoint,
-		&i.LeadTimeDays,
-		&i.Status,
-		&i.CreatedAt,
-		&i.UpdatedAt,
+		&i.ProductVariant.ID,
+		&i.ProductVariant.ProductID,
+		&i.ProductVariant.BusinessID,
+		&i.ProductVariant.Sku,
+		&i.ProductVariant.Barcode,
+		&i.ProductVariant.InternalCode,
+		&i.ProductVariant.Name,
+		&i.ProductVariant.Attributes,
+		&i.ProductVariant.Price,
+		&i.ProductVariant.Cost,
+		&i.ProductVariant.Currency,
+		&i.ProductVariant.TrackInventory,
+		&i.ProductVariant.PublicStockStatus,
+		&i.ProductVariant.ReorderPoint,
+		&i.ProductVariant.LeadTimeDays,
+		&i.ProductVariant.Status,
+		&i.ProductVariant.CreatedAt,
+		&i.ProductVariant.UpdatedAt,
+		&i.ImageUrl,
 	)
 	return i, err
 }
 
 const getVariantForBusiness = `-- name: GetVariantForBusiness :one
-SELECT id, product_id, business_id, sku, barcode, internal_code, name, attributes, price, cost, currency, track_inventory, public_stock_status, reorder_point, lead_time_days, status, created_at, updated_at
-FROM product_variants
-WHERE id = $1 AND business_id = $2
+SELECT pv.id, pv.product_id, pv.business_id, pv.sku, pv.barcode, pv.internal_code, pv.name, pv.attributes, pv.price, pv.cost, pv.currency, pv.track_inventory, pv.public_stock_status, pv.reorder_point, pv.lead_time_days, pv.status, pv.created_at, pv.updated_at,
+       COALESCE(pi.url, '') AS image_url
+FROM product_variants pv
+LEFT JOIN LATERAL (
+    SELECT url
+    FROM product_images
+    WHERE variant_id = pv.id
+    ORDER BY position ASC, created_at ASC
+    LIMIT 1
+) pi ON true
+WHERE pv.id = $1 AND pv.business_id = $2
 `
 
 type GetVariantForBusinessParams struct {
@@ -286,37 +345,63 @@ type GetVariantForBusinessParams struct {
 	BusinessID uuid.UUID `json:"business_id"`
 }
 
-func (q *Queries) GetVariantForBusiness(ctx context.Context, arg GetVariantForBusinessParams) (ProductVariant, error) {
+type GetVariantForBusinessRow struct {
+	ProductVariant ProductVariant `json:"product_variant"`
+	ImageUrl       string         `json:"image_url"`
+}
+
+func (q *Queries) GetVariantForBusiness(ctx context.Context, arg GetVariantForBusinessParams) (GetVariantForBusinessRow, error) {
 	row := q.db.QueryRow(ctx, getVariantForBusiness, arg.ID, arg.BusinessID)
-	var i ProductVariant
+	var i GetVariantForBusinessRow
 	err := row.Scan(
-		&i.ID,
-		&i.ProductID,
-		&i.BusinessID,
-		&i.Sku,
-		&i.Barcode,
-		&i.InternalCode,
-		&i.Name,
-		&i.Attributes,
-		&i.Price,
-		&i.Cost,
-		&i.Currency,
-		&i.TrackInventory,
-		&i.PublicStockStatus,
-		&i.ReorderPoint,
-		&i.LeadTimeDays,
-		&i.Status,
-		&i.CreatedAt,
-		&i.UpdatedAt,
+		&i.ProductVariant.ID,
+		&i.ProductVariant.ProductID,
+		&i.ProductVariant.BusinessID,
+		&i.ProductVariant.Sku,
+		&i.ProductVariant.Barcode,
+		&i.ProductVariant.InternalCode,
+		&i.ProductVariant.Name,
+		&i.ProductVariant.Attributes,
+		&i.ProductVariant.Price,
+		&i.ProductVariant.Cost,
+		&i.ProductVariant.Currency,
+		&i.ProductVariant.TrackInventory,
+		&i.ProductVariant.PublicStockStatus,
+		&i.ProductVariant.ReorderPoint,
+		&i.ProductVariant.LeadTimeDays,
+		&i.ProductVariant.Status,
+		&i.ProductVariant.CreatedAt,
+		&i.ProductVariant.UpdatedAt,
+		&i.ImageUrl,
 	)
 	return i, err
 }
 
+const getVariantImage = `-- name: GetVariantImage :one
+SELECT COALESCE(
+    (SELECT url
+     FROM product_images
+     WHERE variant_id = $1
+     ORDER BY position ASC, created_at ASC
+     LIMIT 1),
+    ''
+)::text AS url
+`
+
+// Storefront image. Variants carry at most one today, so writes replace the
+// whole set; the scalar subquery keeps the read row-safe (no ErrNoRows).
+func (q *Queries) GetVariantImage(ctx context.Context, variantID uuid.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getVariantImage, variantID)
+	var url string
+	err := row.Scan(&url)
+	return url, err
+}
+
 const listProducts = `-- name: ListProducts :many
-SELECT id, business_id, category_id, name, slug, description, brand, unit, product_type, is_handmade, is_public, status, created_at, updated_at
-FROM products
-WHERE business_id = $1
-ORDER BY created_at DESC
+SELECT p.id, p.business_id, p.category_id, p.name, p.slug, p.description, p.brand, p.unit, p.product_type, p.is_handmade, p.is_public, p.status, p.created_at, p.updated_at
+FROM products p
+WHERE p.business_id = $1
+ORDER BY p.created_at DESC
 LIMIT $2 OFFSET $3
 `
 
@@ -372,7 +457,7 @@ JOIN product_variants pv ON pv.product_id = p.id
 LEFT JOIN LATERAL (
     SELECT url
     FROM product_images
-    WHERE product_id = p.id
+    WHERE variant_id = pv.id
     ORDER BY position ASC, created_at ASC
     LIMIT 1
 ) pi ON true
@@ -444,10 +529,18 @@ func (q *Queries) ListPublicProductsByBusinessSlug(ctx context.Context, arg List
 }
 
 const listVariantsByProduct = `-- name: ListVariantsByProduct :many
-SELECT id, product_id, business_id, sku, barcode, internal_code, name, attributes, price, cost, currency, track_inventory, public_stock_status, reorder_point, lead_time_days, status, created_at, updated_at
-FROM product_variants
-WHERE product_id = $1 AND business_id = $2
-ORDER BY created_at ASC
+SELECT pv.id, pv.product_id, pv.business_id, pv.sku, pv.barcode, pv.internal_code, pv.name, pv.attributes, pv.price, pv.cost, pv.currency, pv.track_inventory, pv.public_stock_status, pv.reorder_point, pv.lead_time_days, pv.status, pv.created_at, pv.updated_at,
+       COALESCE(pi.url, '') AS image_url
+FROM product_variants pv
+LEFT JOIN LATERAL (
+    SELECT url
+    FROM product_images
+    WHERE variant_id = pv.id
+    ORDER BY position ASC, created_at ASC
+    LIMIT 1
+) pi ON true
+WHERE pv.product_id = $1 AND pv.business_id = $2
+ORDER BY pv.created_at ASC
 `
 
 type ListVariantsByProductParams struct {
@@ -455,34 +548,40 @@ type ListVariantsByProductParams struct {
 	BusinessID uuid.UUID `json:"business_id"`
 }
 
-func (q *Queries) ListVariantsByProduct(ctx context.Context, arg ListVariantsByProductParams) ([]ProductVariant, error) {
+type ListVariantsByProductRow struct {
+	ProductVariant ProductVariant `json:"product_variant"`
+	ImageUrl       string         `json:"image_url"`
+}
+
+func (q *Queries) ListVariantsByProduct(ctx context.Context, arg ListVariantsByProductParams) ([]ListVariantsByProductRow, error) {
 	rows, err := q.db.Query(ctx, listVariantsByProduct, arg.ProductID, arg.BusinessID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ProductVariant{}
+	items := []ListVariantsByProductRow{}
 	for rows.Next() {
-		var i ProductVariant
+		var i ListVariantsByProductRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.ProductID,
-			&i.BusinessID,
-			&i.Sku,
-			&i.Barcode,
-			&i.InternalCode,
-			&i.Name,
-			&i.Attributes,
-			&i.Price,
-			&i.Cost,
-			&i.Currency,
-			&i.TrackInventory,
-			&i.PublicStockStatus,
-			&i.ReorderPoint,
-			&i.LeadTimeDays,
-			&i.Status,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.ProductVariant.ID,
+			&i.ProductVariant.ProductID,
+			&i.ProductVariant.BusinessID,
+			&i.ProductVariant.Sku,
+			&i.ProductVariant.Barcode,
+			&i.ProductVariant.InternalCode,
+			&i.ProductVariant.Name,
+			&i.ProductVariant.Attributes,
+			&i.ProductVariant.Price,
+			&i.ProductVariant.Cost,
+			&i.ProductVariant.Currency,
+			&i.ProductVariant.TrackInventory,
+			&i.ProductVariant.PublicStockStatus,
+			&i.ProductVariant.ReorderPoint,
+			&i.ProductVariant.LeadTimeDays,
+			&i.ProductVariant.Status,
+			&i.ProductVariant.CreatedAt,
+			&i.ProductVariant.UpdatedAt,
+			&i.ImageUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -506,7 +605,7 @@ JOIN product_variants pv ON pv.product_id = p.id
 LEFT JOIN LATERAL (
     SELECT url
     FROM product_images
-    WHERE product_id = p.id
+    WHERE variant_id = pv.id
     ORDER BY position ASC, created_at ASC
     LIMIT 1
 ) pi ON true
@@ -514,15 +613,70 @@ WHERE b.status = 'active'
   AND p.is_public = true
   AND p.status = 'active'
   AND pv.status = 'active'
-  AND ($1::text = '' OR to_tsvector('simple', p.name || ' ' || p.description) @@ plainto_tsquery('simple', $1))
+  AND ($1::text = '' OR to_tsvector('simple', p.name || ' ' || p.description) @@ plainto_tsquery('simple', $1::text))
+  AND (
+    (NOT $2::boolean AND NOT $3::boolean)
+    OR (
+      b.location_mode IN ('fixed', 'hybrid')
+      AND (
+        ($2::boolean
+          AND ($4::numeric IS NULL OR b.latitude >= $4::numeric)
+          AND ($5::numeric IS NULL OR b.latitude <= $5::numeric)
+          AND ($6::numeric IS NULL OR b.longitude >= $6::numeric)
+          AND ($7::numeric IS NULL OR b.longitude <= $7::numeric)
+        )
+        OR ($3::boolean
+          AND ($8::text IS NULL OR lower(b.country) = lower($8::text))
+          AND ($9::text IS NULL OR lower(b.state) = lower($9::text))
+          AND ($10::text IS NULL OR lower(b.city) = lower($10::text) OR lower(b.neighborhood) = lower($10::text))
+          AND ($11::text IS NULL OR lower(b.city) = lower($11::text))
+          AND ($12::text IS NULL OR lower(b.neighborhood) = lower($12::text))
+          AND ($13::text IS NULL OR b.postal_code = $13::text)
+        )
+      )
+    )
+    OR (
+      $3::boolean
+      AND b.location_mode IN ('mobile', 'hybrid')
+      AND EXISTS (
+        SELECT 1
+        FROM business_service_areas sa
+        WHERE sa.business_id = b.id
+          AND ($14::text IS NULL OR sa.country_key = $14::text)
+          AND ($15::text IS NULL OR sa.state_key = $15::text)
+          AND ($16::text IS NULL OR sa.municipality_key IS NULL OR sa.municipality_key = $16::text)
+          AND ($17::text IS NULL OR sa.city_key IS NULL OR sa.city_key = $17::text)
+          AND ($18::text IS NULL OR sa.neighborhood_key IS NULL OR sa.neighborhood_key = $18::text)
+          AND ($19::text IS NULL OR sa.postal_code_key IS NULL OR sa.postal_code_key = $19::text)
+      )
+    )
+  )
 ORDER BY p.name ASC
-LIMIT $2 OFFSET $3
+LIMIT $21 OFFSET $20
 `
 
 type SearchMarketplaceProductsParams struct {
-	Column1 string `json:"column_1"`
-	Limit   int32  `json:"limit"`
-	Offset  int32  `json:"offset"`
+	SearchQuery     string              `json:"search_query"`
+	HasBbox         bool                `json:"has_bbox"`
+	HasAreaFilter   bool                `json:"has_area_filter"`
+	MinLat          decimal.NullDecimal `json:"min_lat"`
+	MaxLat          decimal.NullDecimal `json:"max_lat"`
+	MinLng          decimal.NullDecimal `json:"min_lng"`
+	MaxLng          decimal.NullDecimal `json:"max_lng"`
+	Country         sql.NullString      `json:"country"`
+	State           sql.NullString      `json:"state"`
+	Municipality    sql.NullString      `json:"municipality"`
+	City            sql.NullString      `json:"city"`
+	Neighborhood    sql.NullString      `json:"neighborhood"`
+	PostalCode      sql.NullString      `json:"postal_code"`
+	CountryKey      sql.NullString      `json:"country_key"`
+	StateKey        sql.NullString      `json:"state_key"`
+	MunicipalityKey sql.NullString      `json:"municipality_key"`
+	CityKey         sql.NullString      `json:"city_key"`
+	NeighborhoodKey sql.NullString      `json:"neighborhood_key"`
+	PostalCodeKey   sql.NullString      `json:"postal_code_key"`
+	OffsetCount     int32               `json:"offset_count"`
+	LimitCount      int32               `json:"limit_count"`
 }
 
 type SearchMarketplaceProductsRow struct {
@@ -545,7 +699,29 @@ type SearchMarketplaceProductsRow struct {
 }
 
 func (q *Queries) SearchMarketplaceProducts(ctx context.Context, arg SearchMarketplaceProductsParams) ([]SearchMarketplaceProductsRow, error) {
-	rows, err := q.db.Query(ctx, searchMarketplaceProducts, arg.Column1, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, searchMarketplaceProducts,
+		arg.SearchQuery,
+		arg.HasBbox,
+		arg.HasAreaFilter,
+		arg.MinLat,
+		arg.MaxLat,
+		arg.MinLng,
+		arg.MaxLng,
+		arg.Country,
+		arg.State,
+		arg.Municipality,
+		arg.City,
+		arg.Neighborhood,
+		arg.PostalCode,
+		arg.CountryKey,
+		arg.StateKey,
+		arg.MunicipalityKey,
+		arg.CityKey,
+		arg.NeighborhoodKey,
+		arg.PostalCodeKey,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
 	if err != nil {
 		return nil, err
 	}

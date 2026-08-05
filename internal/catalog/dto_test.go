@@ -26,7 +26,7 @@ func TestPublicVariantDTOExcludesPrivateFields(t *testing.T) {
 		ReorderPoint:      decimal.NewFromInt(5),
 		Status:            "active",
 	}
-	body, err := json.Marshal(MapVariant(variant, false))
+	body, err := json.Marshal(MapVariant(variant, "", false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,6 +51,17 @@ func TestProductParamsRejectsInvalidEnumsAndLengths(t *testing.T) {
 		if _, _, err := ProductParams(req); err == nil {
 			t.Fatalf("expected validation error for %+v", req)
 		}
+	}
+}
+
+func TestMapVariantMapsOptionalImageURL(t *testing.T) {
+	variant := MapVariant(db.ProductVariant{}, " https://cdn.example.com/variant.jpg ", true)
+	if variant.ImageURL == nil || *variant.ImageURL != "https://cdn.example.com/variant.jpg" {
+		t.Fatalf("image_url = %v, want trimmed URL", variant.ImageURL)
+	}
+
+	if imageURL := MapVariant(db.ProductVariant{}, "", true).ImageURL; imageURL != nil {
+		t.Fatalf("image_url = %q, want nil", *imageURL)
 	}
 }
 
@@ -95,5 +106,70 @@ func TestVariantParamsDefaultsAttributesToObject(t *testing.T) {
 	}
 	if string(params.Attributes) != "{}" {
 		t.Fatalf("attributes = %s, want {}", params.Attributes)
+	}
+}
+
+func TestVariantImageURLOmittedLeavesImageUnchanged(t *testing.T) {
+	got, err := VariantImageURL(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Fatalf("got %v, want nil (leave unchanged)", *got)
+	}
+}
+
+func TestVariantImageURLEmptyRemovesImage(t *testing.T) {
+	for _, raw := range []string{"", "   "} {
+		got, err := VariantImageURL(&raw)
+		if err != nil {
+			t.Fatalf("%q: %v", raw, err)
+		}
+		if got == nil || *got != "" {
+			t.Fatalf("%q: got %v, want empty string (remove)", raw, got)
+		}
+	}
+}
+
+func TestVariantImageURLAcceptsAbsoluteHTTPURLs(t *testing.T) {
+	raw := "  https://xyz.public.blob.vercel-storage.com/products/abc.jpg  "
+	got, err := VariantImageURL(&raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || *got != strings.TrimSpace(raw) {
+		t.Fatalf("got %v, want the trimmed url", got)
+	}
+}
+
+func TestVariantImageURLRejectsNonHTTPValues(t *testing.T) {
+	for _, raw := range []string{
+		"javascript:alert(1)",
+		"/products/abc.jpg",
+		"ftp://example.com/a.jpg",
+		"data:image/png;base64,AAAA",
+		"https://",
+	} {
+		if _, err := VariantImageURL(&raw); err == nil {
+			t.Fatalf("%q was accepted, want rejection", raw)
+		}
+	}
+}
+
+func TestVariantImageURLRejectsOverlongValues(t *testing.T) {
+	raw := "https://example.com/" + strings.Repeat("a", 2100)
+	if _, err := VariantImageURL(&raw); err == nil {
+		t.Fatal("overlong url was accepted, want rejection")
+	}
+}
+
+func TestVariantRequestAcceptsImageURL(t *testing.T) {
+	var req VariantRequest
+	body := `{"business_id":"b","product_id":"p","sku":"s","image_url":"https://example.com/a.jpg"}`
+	if err := json.Unmarshal([]byte(body), &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.ImageURL == nil || *req.ImageURL != "https://example.com/a.jpg" {
+		t.Fatalf("image_url did not decode: %v", req.ImageURL)
 	}
 }

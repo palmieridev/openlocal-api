@@ -3,14 +3,14 @@ BEGIN;
 INSERT INTO businesses (
     id, name, slug, description, business_type, phone, whatsapp, email, website,
     logo_url, cover_image_url, status, address, neighborhood, city, state, country,
-    postal_code, latitude, longitude, pickup_available, delivery_available
+    postal_code, latitude, longitude, pickup_available, delivery_available, location_mode
 ) VALUES
 (
     '11111111-1111-4111-8111-111111111111',
     'Mercado Verde Roma',
     'mercado-verde-roma',
-    'Fresh produce, pantry staples, and prepared foods from neighborhood growers.',
-    'grocery',
+    'Frutas, verduras y despensa de productores del barrio, además de comida preparada.',
+    'comida',
     '+525555010101',
     '+525555010101',
     'hola@mercadoverde.example',
@@ -27,14 +27,15 @@ INSERT INTO businesses (
     19.419400,
     -99.159100,
     true,
-    true
+    true,
+    'fixed'
 ),
 (
     '22222222-2222-4222-8222-222222222222',
     'Casa Pan Local',
     'casa-pan-local',
-    'Small-batch sourdough, pastries, and pantry goods baked every morning.',
-    'bakery',
+    'Masa madre en lotes pequeños, pan dulce y despensa horneados cada mañana.',
+    'comida',
     '+525555020202',
     '+525555020202',
     'pedidos@casapan.example',
@@ -51,14 +52,15 @@ INSERT INTO businesses (
     19.411700,
     -99.171800,
     true,
-    false
+    false,
+    'fixed'
 ),
 (
     '33333333-3333-4333-8333-333333333333',
     'Taller Botanico',
     'taller-botanico',
-    'Plants, ceramic pots, soil mixes, and care kits for urban homes.',
-    'garden',
+    'Plantas, macetas de cerámica, sustratos y kits de cuidado para el hogar urbano.',
+    'hogar',
     '+525555030303',
     '+525555030303',
     'contacto@tallerbotanico.example',
@@ -75,7 +77,83 @@ INSERT INTO businesses (
     19.415700,
     -99.164900,
     true,
-    true
+    true,
+    'fixed'
+),
+(
+    '44444444-4444-4444-8444-444444444444',
+    'Carpintería a Domicilio',
+    'carpinteria-a-domicilio',
+    'Muebles a medida construidos e instalados directamente en tu hogar o negocio.',
+    'servicios',
+    '+525555040404',
+    '+525555040404',
+    'hola@carpinteriadomicilio.example',
+    NULL,
+    NULL,
+    NULL,
+    'active',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    false,
+    false,
+    'mobile'
+),
+(
+    '55555555-5555-4555-8555-555555555555',
+    'Plomería Rodante',
+    'plomeria-rodante',
+    'Diagnóstico y reparaciones de plomería en hogares y pequeños comercios, sin local abierto al público.',
+    'servicios',
+    '+525555050505',
+    '+525555050505',
+    'servicio@plomeriarodante.example',
+    NULL,
+    NULL,
+    NULL,
+    'active',
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    false,
+    false,
+    'mobile'
+),
+(
+    '66666666-6666-4666-8666-666666666666',
+    'Bicis del Barrio',
+    'bicis-del-barrio',
+    'Taller de bicicletas con recepción en el local y servicio mecánico a domicilio.',
+    'servicios',
+    '+525555060606',
+    '+525555060606',
+    'hola@bicisdelbarrio.example',
+    'https://openlocal.example/bicis-del-barrio',
+    NULL,
+    'https://images.unsplash.com/photo-1532298229144-0ec0c57515c7?auto=format&fit=crop&w=1400&q=80',
+    'active',
+    'Durango 126',
+    'Roma Norte',
+    'Ciudad de México',
+    'Ciudad de México',
+    'MX',
+    '06700',
+    19.419950,
+    -99.162050,
+    true,
+    false,
+    'hybrid'
 )
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
@@ -99,23 +177,77 @@ ON CONFLICT (id) DO UPDATE SET
     longitude = EXCLUDED.longitude,
     pickup_available = EXCLUDED.pickup_available,
     delivery_available = EXCLUDED.delivery_available,
+    location_mode = EXCLUDED.location_mode,
+    updated_at = now();
+
+INSERT INTO business_service_areas (
+    id, business_id, name, country, state, municipality, city, neighborhood, postal_code,
+    country_key, state_key, municipality_key, city_key, neighborhood_key,
+    postal_code_key, normalized_key
+) VALUES
+(
+    '99999999-4441-4441-8441-444444444441',
+    '44444444-4444-4444-8444-444444444444',
+    'Coyoacán', 'MX', 'Ciudad de México', 'Coyoacán', NULL, NULL, NULL,
+    'mx', 'ciudad-de-mexico', 'coyoacan', NULL, NULL, NULL,
+    'mx|ciudad-de-mexico|coyoacan|||'
+),
+(
+    '99999999-4442-4442-8442-444444444442',
+    '44444444-4444-4444-8444-444444444444',
+    'Benito Juárez', 'MX', 'Ciudad de México', 'Benito Juárez', NULL, NULL, NULL,
+    'mx', 'ciudad-de-mexico', 'benito-juarez', NULL, NULL, NULL,
+    'mx|ciudad-de-mexico|benito-juarez|||'
+),
+(
+    '99999999-5551-4551-8551-555555555551',
+    '55555555-5555-4555-8555-555555555555', 'Cuauhtémoc', 'MX', 'Ciudad de México', 'Cuauhtémoc', NULL, NULL, NULL,
+    'mx', 'ciudad-de-mexico', 'cuauhtemoc', NULL, NULL, NULL,
+    'mx|ciudad-de-mexico|cuauhtemoc|||'
+),
+(
+    '99999999-5552-4552-8552-555555555552',
+    '55555555-5555-4555-8555-555555555555', 'Benito Juárez', 'MX', 'Ciudad de México', 'Benito Juárez', NULL, NULL, NULL,
+    'mx', 'ciudad-de-mexico', 'benito-juarez', NULL, NULL, NULL,
+    'mx|ciudad-de-mexico|benito-juarez|||'
+),
+(
+    '99999999-6661-4661-8661-666666666661',
+    '66666666-6666-4666-8666-666666666666', 'Roma y Condesa', 'MX', 'Ciudad de México', 'Cuauhtémoc', 'Ciudad de México', NULL, NULL,
+    'mx', 'ciudad-de-mexico', 'cuauhtemoc', 'ciudad-de-mexico', NULL, NULL,
+    'mx|ciudad-de-mexico|cuauhtemoc|ciudad-de-mexico||'
+)
+ON CONFLICT (business_id, normalized_key) DO UPDATE SET
+    name = EXCLUDED.name,
+    country = EXCLUDED.country,
+    state = EXCLUDED.state,
+    municipality = EXCLUDED.municipality,
+    city = EXCLUDED.city,
+    neighborhood = EXCLUDED.neighborhood,
+    postal_code = EXCLUDED.postal_code,
     updated_at = now();
 
 INSERT INTO inventory_locations (id, business_id, name, is_default) VALUES
-('aaaaaaaa-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111', 'Main Store', true),
-('aaaaaaaa-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222', 'Bakery Counter', true),
-('aaaaaaaa-3333-4333-8333-333333333333', '33333333-3333-4333-8333-333333333333', 'Showroom', true)
+('aaaaaaaa-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111', 'Tienda principal', true),
+('aaaaaaaa-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222', 'Mostrador', true),
+('aaaaaaaa-3333-4333-8333-333333333333', '33333333-3333-4333-8333-333333333333', 'Sala de exhibición', true),
+('aaaaaaaa-4444-4444-8444-444444444444', '44444444-4444-4444-8444-444444444444', 'Herramientas móviles', true),
+('aaaaaaaa-5555-4555-8555-555555555555', '55555555-5555-4555-8555-555555555555', 'Unidad móvil', true),
+('aaaaaaaa-6666-4666-8666-666666666666', '66666666-6666-4666-8666-666666666666', 'Taller principal', true)
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     is_default = EXCLUDED.is_default;
 
 INSERT INTO categories (id, business_id, name, slug) VALUES
-('bbbbbbbb-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111', 'Produce', 'produce'),
-('bbbbbbbb-1112-4112-8112-111111111112', '11111111-1111-4111-8111-111111111111', 'Pantry', 'pantry'),
-('bbbbbbbb-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222', 'Bread', 'bread'),
-('bbbbbbbb-2223-4223-8223-222222222223', '22222222-2222-4222-8222-222222222222', 'Pastries', 'pastries'),
-('bbbbbbbb-3333-4333-8333-333333333333', '33333333-3333-4333-8333-333333333333', 'Plants', 'plants'),
-('bbbbbbbb-3334-4334-8334-333333333334', '33333333-3333-4333-8333-333333333333', 'Care Kits', 'care-kits')
+('bbbbbbbb-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111', 'Frutas y verduras', 'produce'),
+('bbbbbbbb-1112-4112-8112-111111111112', '11111111-1111-4111-8111-111111111111', 'Despensa', 'pantry'),
+('bbbbbbbb-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222', 'Pan', 'bread'),
+('bbbbbbbb-2223-4223-8223-222222222223', '22222222-2222-4222-8222-222222222222', 'Pan dulce', 'pastries'),
+('bbbbbbbb-3333-4333-8333-333333333333', '33333333-3333-4333-8333-333333333333', 'Plantas', 'plants'),
+('bbbbbbbb-3334-4334-8334-333333333334', '33333333-3333-4333-8333-333333333333', 'Kits de cuidado', 'care-kits'),
+('bbbbbbbb-4444-4444-8444-444444444444', '44444444-4444-4444-8444-444444444444', 'Muebles a medida', 'custom-furniture'),
+('bbbbbbbb-5555-4555-8555-555555555555', '55555555-5555-4555-8555-555555555555', 'Plomería a domicilio', 'mobile-plumbing'),
+('bbbbbbbb-6666-4666-8666-666666666666', '66666666-6666-4666-8666-666666666666', 'Servicio de bicicletas', 'bicycle-service')
 ON CONFLICT (business_id, slug) DO UPDATE SET
     name = EXCLUDED.name;
 
@@ -123,12 +255,15 @@ INSERT INTO products (
     id, business_id, category_id, name, slug, description, brand, unit,
     product_type, is_handmade, is_public, status
 ) VALUES
-('cccccccc-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111', 'bbbbbbbb-1111-4111-8111-111111111111', 'Heirloom Tomato Box', 'heirloom-tomato-box', 'Seasonal tomato mix from nearby growers.', 'Mercado Verde', 'box', 'stocked_product', false, true, 'active'),
-('cccccccc-1112-4112-8112-111111111112', '11111111-1111-4111-8111-111111111111', 'bbbbbbbb-1112-4112-8112-111111111112', 'House Salsa Verde', 'house-salsa-verde', 'Roasted tomatillo salsa prepared daily.', 'Mercado Verde', 'jar', 'stocked_product', true, true, 'active'),
-('cccccccc-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222', 'bbbbbbbb-2222-4222-8222-222222222222', 'Country Sourdough', 'country-sourdough', 'Naturally leavened loaf with crisp crust and open crumb.', 'Casa Pan', 'loaf', 'stocked_product', true, true, 'active'),
-('cccccccc-2223-4223-8223-222222222223', '22222222-2222-4222-8222-222222222222', 'bbbbbbbb-2223-4223-8223-222222222223', 'Guava Roll', 'guava-roll', 'Laminated pastry filled with guava jam.', 'Casa Pan', 'piece', 'stocked_product', true, true, 'active'),
-('cccccccc-3333-4333-8333-333333333333', '33333333-3333-4333-8333-333333333333', 'bbbbbbbb-3333-4333-8333-333333333333', 'Monstera Deliciosa', 'monstera-deliciosa', 'Medium indoor monstera in nursery pot.', 'Taller Botanico', 'plant', 'unique_item', false, true, 'active'),
-('cccccccc-3334-4334-8334-333333333334', '33333333-3333-4333-8333-333333333333', 'bbbbbbbb-3334-4334-8334-333333333334', 'Starter Plant Care Kit', 'starter-plant-care-kit', 'Soil mix, fertilizer, pruning snips, and care card.', 'Taller Botanico', 'kit', 'stocked_product', false, true, 'active')
+('cccccccc-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111', 'bbbbbbbb-1111-4111-8111-111111111111', 'Caja de jitomate heirloom', 'heirloom-tomato-box', 'Mezcla de jitomates de temporada de productores cercanos.', 'Mercado Verde', 'caja', 'stocked_product', false, true, 'active'),
+('cccccccc-1112-4112-8112-111111111112', '11111111-1111-4111-8111-111111111111', 'bbbbbbbb-1112-4112-8112-111111111112', 'Salsa verde de la casa', 'house-salsa-verde', 'Salsa de tomate verde asado, preparada a diario.', 'Mercado Verde', 'pieza', 'stocked_product', true, true, 'active'),
+('cccccccc-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222', 'bbbbbbbb-2222-4222-8222-222222222222', 'Hogaza de masa madre', 'country-sourdough', 'Hogaza de fermentación natural, corteza crujiente y miga abierta.', 'Casa Pan', 'pieza', 'stocked_product', true, true, 'active'),
+('cccccccc-2223-4223-8223-222222222223', '22222222-2222-4222-8222-222222222222', 'bbbbbbbb-2223-4223-8223-222222222223', 'Rol de guayaba', 'guava-roll', 'Pan hojaldrado relleno de ate de guayaba.', 'Casa Pan', 'pieza', 'stocked_product', true, true, 'active'),
+('cccccccc-3333-4333-8333-333333333333', '33333333-3333-4333-8333-333333333333', 'bbbbbbbb-3333-4333-8333-333333333333', 'Monstera Deliciosa', 'monstera-deliciosa', 'Monstera mediana de interior en maceta de vivero.', 'Taller Botanico', 'pieza', 'unique_item', false, true, 'active'),
+('cccccccc-3334-4334-8334-333333333334', '33333333-3333-4333-8333-333333333333', 'bbbbbbbb-3334-4334-8334-333333333334', 'Kit de cuidado para plantas', 'starter-plant-care-kit', 'Sustrato, fertilizante, tijeras de poda y guía de cuidados.', 'Taller Botanico', 'pieza', 'stocked_product', false, true, 'active'),
+('cccccccc-4444-4444-8444-444444444444', '44444444-4444-4444-8444-444444444444', 'bbbbbbbb-4444-4444-8444-444444444444', 'Mueble a medida', 'custom-furniture', 'Diseño, fabricación e instalación de un mueble adaptado a tu espacio.', 'Carpintería a Domicilio', 'proyecto', 'made_to_order_product', true, true, 'active'),
+('cccccccc-5555-4555-8555-555555555555', '55555555-5555-4555-8555-555555555555', 'bbbbbbbb-5555-4555-8555-555555555555', 'Visita de diagnóstico', 'diagnostic-visit', 'Revisión de fugas, presión y conexiones con presupuesto de reparación.', 'Plomería Rodante', 'visita', 'made_to_order_product', false, true, 'active'),
+('cccccccc-6666-4666-8666-666666666666', '66666666-6666-4666-8666-666666666666', 'bbbbbbbb-6666-4666-8666-666666666666', 'Afinación completa de bicicleta', 'complete-bike-tune-up', 'Ajuste de frenos y cambios, lubricación y revisión general en taller o a domicilio.', 'Bicis del Barrio', 'servicio', 'made_to_order_product', false, true, 'active')
 ON CONFLICT (business_id, slug) DO UPDATE SET
     category_id = EXCLUDED.category_id,
     name = EXCLUDED.name,
@@ -146,12 +281,15 @@ INSERT INTO product_variants (
     price, cost, currency, track_inventory, public_stock_status, reorder_point,
     lead_time_days, status
 ) VALUES
-('dddddddd-1111-4111-8111-111111111111', 'cccccccc-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111', 'MV-TOMATO-BOX', '7501000000011', 'MV-TOMATO-BOX', '2 kg box', '{"size":"2 kg"}', 185.00, 98.00, 'MXN', true, 'available', 6, 2, 'active'),
-('dddddddd-1112-4112-8112-111111111112', 'cccccccc-1112-4112-8112-111111111112', '11111111-1111-4111-8111-111111111111', 'MV-SALSA-VERDE', '7501000000012', 'MV-SALSA-VERDE', '450 g jar', '{"size":"450 g"}', 86.00, 34.00, 'MXN', true, 'low_stock', 12, 1, 'active'),
-('dddddddd-2222-4222-8222-222222222222', 'cccccccc-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222', 'CP-SOURDOUGH', '7502000000021', 'CP-SOURDOUGH', '900 g loaf', '{"size":"900 g"}', 120.00, 46.00, 'MXN', true, 'available', 10, 1, 'active'),
-('dddddddd-2223-4223-8223-222222222223', 'cccccccc-2223-4223-8223-222222222223', '22222222-2222-4222-8222-222222222222', 'CP-GUAVA-ROLL', '7502000000022', 'CP-GUAVA-ROLL', 'Single pastry', '{"size":"single"}', 52.00, 18.00, 'MXN', true, 'available', 20, 1, 'active'),
-('dddddddd-3333-4333-8333-333333333333', 'cccccccc-3333-4333-8333-333333333333', '33333333-3333-4333-8333-333333333333', 'TB-MONSTERA-M', '7503000000031', 'TB-MONSTERA-M', 'Medium plant', '{"size":"medium"}', 420.00, 210.00, 'MXN', true, 'low_stock', 3, 5, 'active'),
-('dddddddd-3334-4334-8334-333333333334', 'cccccccc-3334-4334-8334-333333333334', '33333333-3333-4333-8333-333333333333', 'TB-CARE-KIT', '7503000000032', 'TB-CARE-KIT', 'Starter kit', '{"size":"starter"}', 260.00, 122.00, 'MXN', true, 'available', 5, 3, 'active')
+('dddddddd-1111-4111-8111-111111111111', 'cccccccc-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111', 'MV-TOMATO-BOX', '7501000000011', 'MV-TOMATO-BOX', 'Caja 2 kg', '{"size":"2 kg"}', 185.00, 98.00, 'MXN', true, 'available', 6, 2, 'active'),
+('dddddddd-1112-4112-8112-111111111112', 'cccccccc-1112-4112-8112-111111111112', '11111111-1111-4111-8111-111111111111', 'MV-SALSA-VERDE', '7501000000012', 'MV-SALSA-VERDE', 'Frasco 450 g', '{"size":"450 g"}', 86.00, 34.00, 'MXN', true, 'low_stock', 12, 1, 'active'),
+('dddddddd-2222-4222-8222-222222222222', 'cccccccc-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222', 'CP-SOURDOUGH', '7502000000021', 'CP-SOURDOUGH', 'Hogaza 900 g', '{"size":"900 g"}', 120.00, 46.00, 'MXN', true, 'available', 10, 1, 'active'),
+('dddddddd-2223-4223-8223-222222222223', 'cccccccc-2223-4223-8223-222222222223', '22222222-2222-4222-8222-222222222222', 'CP-GUAVA-ROLL', '7502000000022', 'CP-GUAVA-ROLL', 'Pieza', '{"size":"single"}', 52.00, 18.00, 'MXN', true, 'available', 20, 1, 'active'),
+('dddddddd-3333-4333-8333-333333333333', 'cccccccc-3333-4333-8333-333333333333', '33333333-3333-4333-8333-333333333333', 'TB-MONSTERA-M', '7503000000031', 'TB-MONSTERA-M', 'Planta mediana', '{"size":"medium"}', 420.00, 210.00, 'MXN', true, 'low_stock', 3, 5, 'active'),
+('dddddddd-3334-4334-8334-333333333334', 'cccccccc-3334-4334-8334-333333333334', '33333333-3333-4333-8333-333333333333', 'TB-CARE-KIT', '7503000000032', 'TB-CARE-KIT', 'Kit inicial', '{"size":"starter"}', 260.00, 122.00, 'MXN', true, 'available', 5, 3, 'active'),
+('dddddddd-4444-4444-8444-444444444444', 'cccccccc-4444-4444-8444-444444444444', '44444444-4444-4444-8444-444444444444', 'CD-CUSTOM-FURNITURE', NULL, 'CD-CUSTOM-FURNITURE', 'Cotización inicial', '{"made_to_measure":true}', 2500.00, NULL, 'MXN', false, 'made_to_order', 0, 14, 'active'),
+('dddddddd-5555-4555-8555-555555555555', 'cccccccc-5555-4555-8555-555555555555', '55555555-5555-4555-8555-555555555555', 'PR-DIAGNOSTIC', NULL, 'PR-DIAGNOSTIC', 'Visita programada', '{"at_customer_location":true}', 350.00, NULL, 'MXN', false, 'made_to_order', 0, 1, 'active'),
+('dddddddd-6666-4666-8666-666666666666', 'cccccccc-6666-4666-8666-666666666666', '66666666-6666-4666-8666-666666666666', 'BB-TUNE-UP', NULL, 'BB-TUNE-UP', 'Servicio completo', '{"at_shop_or_customer_location":true}', 650.00, NULL, 'MXN', false, 'made_to_order', 0, 2, 'active')
 ON CONFLICT (business_id, sku) DO UPDATE SET
     barcode = EXCLUDED.barcode,
     internal_code = EXCLUDED.internal_code,
@@ -167,13 +305,13 @@ ON CONFLICT (business_id, sku) DO UPDATE SET
     status = EXCLUDED.status,
     updated_at = now();
 
-INSERT INTO product_images (id, product_id, url, alt_text, position) VALUES
-('eeeeeeee-1111-4111-8111-111111111111', 'cccccccc-1111-4111-8111-111111111111', 'https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=900&q=80', 'Heirloom tomatoes in a produce box', 0),
-('eeeeeeee-1112-4112-8112-111111111112', 'cccccccc-1112-4112-8112-111111111112', 'https://images.unsplash.com/photo-1626200419199-391ae4be7a41?auto=format&fit=crop&w=900&q=80', 'Jar of green salsa with tomatillos', 0),
-('eeeeeeee-2222-4222-8222-222222222222', 'cccccccc-2222-4222-8222-222222222222', 'https://images.unsplash.com/photo-1585478259715-4d3f01d2954f?auto=format&fit=crop&w=900&q=80', 'Country sourdough loaf on a bakery table', 0),
-('eeeeeeee-2223-4223-8223-222222222223', 'cccccccc-2223-4223-8223-222222222223', 'https://images.unsplash.com/photo-1509365465985-25d11c17e812?auto=format&fit=crop&w=900&q=80', 'Sweet pastry on a tray', 0),
-('eeeeeeee-3333-4333-8333-333333333333', 'cccccccc-3333-4333-8333-333333333333', 'https://images.unsplash.com/photo-1614594975525-e45190c55d0b?auto=format&fit=crop&w=900&q=80', 'Monstera plant in a pot', 0),
-('eeeeeeee-3334-4334-8334-333333333334', 'cccccccc-3334-4334-8334-333333333334', 'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?auto=format&fit=crop&w=900&q=80', 'Plant care tools and soil on a table', 0)
+INSERT INTO product_images (id, variant_id, url, alt_text, position) VALUES
+('eeeeeeee-1111-4111-8111-111111111111', 'dddddddd-1111-4111-8111-111111111111', 'https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=900&q=80', 'Jitomates heirloom en una caja', 0),
+('eeeeeeee-1112-4112-8112-111111111112', 'dddddddd-1112-4112-8112-111111111112', 'https://images.unsplash.com/photo-1626200419199-391ae4be7a41?auto=format&fit=crop&w=900&q=80', 'Frasco de salsa verde con tomate verde', 0),
+('eeeeeeee-2222-4222-8222-222222222222', 'dddddddd-2222-4222-8222-222222222222', 'https://images.unsplash.com/photo-1585478259715-4d3f01d2954f?auto=format&fit=crop&w=900&q=80', 'Hogaza de masa madre sobre la mesa de la panadería', 0),
+('eeeeeeee-2223-4223-8223-222222222223', 'dddddddd-2223-4223-8223-222222222223', 'https://images.unsplash.com/photo-1509365465985-25d11c17e812?auto=format&fit=crop&w=900&q=80', 'Pan dulce en una charola', 0),
+('eeeeeeee-3333-4333-8333-333333333333', 'dddddddd-3333-4333-8333-333333333333', 'https://images.unsplash.com/photo-1614594975525-e45190c55d0b?auto=format&fit=crop&w=900&q=80', 'Planta monstera en maceta', 0),
+('eeeeeeee-3334-4334-8334-333333333334', 'dddddddd-3334-4334-8334-333333333334', 'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?auto=format&fit=crop&w=900&q=80', 'Herramientas de jardinería y sustrato sobre una mesa', 0)
 ON CONFLICT (id) DO UPDATE SET
     url = EXCLUDED.url,
     alt_text = EXCLUDED.alt_text,
