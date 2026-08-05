@@ -1,0 +1,44 @@
+name: CI
+
+# Gates every PR and every push to a long-lived branch. Railway's "Wait for CI"
+# on production keys off this workflow, so a red run keeps main from deploying.
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+# One run per branch/PR; new pushes cancel the stale run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: vet · test · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Unit tests
+        run: go test ./...
+
+      - name: Build
+        run: go build ./...
+
+      # sqlc output is committed, so a query edit without a regenerate would
+      # silently ship stale Go. `sqlc diff` fails when the two drift apart.
+      - name: sqlc up to date
+        uses: sqlc-dev/setup-sqlc@v4
+        with:
+          sqlc-version: "1.31.1"
+
+      - run: sqlc diff
