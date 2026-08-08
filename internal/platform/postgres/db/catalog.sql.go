@@ -99,13 +99,13 @@ func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) (P
 
 const createVariant = `-- name: CreateVariant :one
 INSERT INTO product_variants (
-    product_id, business_id, sku, barcode, internal_code, name, attributes,
+    product_id, business_id, sku, barcode, internal_code, name, description, price_note, attributes,
     price, cost, currency, track_inventory, public_stock_status, reorder_point,
     lead_time_days, status
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
 )
-RETURNING id, product_id, business_id, sku, barcode, internal_code, name, attributes, price, cost, currency, track_inventory, public_stock_status, reorder_point, lead_time_days, status, created_at, updated_at
+RETURNING id, product_id, business_id, sku, barcode, internal_code, name, attributes, price, cost, currency, track_inventory, public_stock_status, reorder_point, lead_time_days, status, created_at, updated_at, description, price_note
 `
 
 type CreateVariantParams struct {
@@ -115,6 +115,8 @@ type CreateVariantParams struct {
 	Barcode           sql.NullString      `json:"barcode"`
 	InternalCode      string              `json:"internal_code"`
 	Name              string              `json:"name"`
+	Description       sql.NullString      `json:"description"`
+	PriceNote         sql.NullString      `json:"price_note"`
 	Attributes        []byte              `json:"attributes"`
 	Price             decimal.Decimal     `json:"price"`
 	Cost              decimal.NullDecimal `json:"cost"`
@@ -134,6 +136,8 @@ func (q *Queries) CreateVariant(ctx context.Context, arg CreateVariantParams) (P
 		arg.Barcode,
 		arg.InternalCode,
 		arg.Name,
+		arg.Description,
+		arg.PriceNote,
 		arg.Attributes,
 		arg.Price,
 		arg.Cost,
@@ -164,6 +168,8 @@ func (q *Queries) CreateVariant(ctx context.Context, arg CreateVariantParams) (P
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Description,
+		&i.PriceNote,
 	)
 	return i, err
 }
@@ -225,7 +231,7 @@ func (q *Queries) GetProductForBusiness(ctx context.Context, arg GetProductForBu
 }
 
 const getVariantByBarcode = `-- name: GetVariantByBarcode :one
-SELECT pv.id, pv.product_id, pv.business_id, pv.sku, pv.barcode, pv.internal_code, pv.name, pv.attributes, pv.price, pv.cost, pv.currency, pv.track_inventory, pv.public_stock_status, pv.reorder_point, pv.lead_time_days, pv.status, pv.created_at, pv.updated_at,
+SELECT pv.id, pv.product_id, pv.business_id, pv.sku, pv.barcode, pv.internal_code, pv.name, pv.attributes, pv.price, pv.cost, pv.currency, pv.track_inventory, pv.public_stock_status, pv.reorder_point, pv.lead_time_days, pv.status, pv.created_at, pv.updated_at, pv.description, pv.price_note,
        COALESCE(pi.url, '') AS image_url
 FROM product_variants pv
 LEFT JOIN LATERAL (
@@ -270,13 +276,15 @@ func (q *Queries) GetVariantByBarcode(ctx context.Context, arg GetVariantByBarco
 		&i.ProductVariant.Status,
 		&i.ProductVariant.CreatedAt,
 		&i.ProductVariant.UpdatedAt,
+		&i.ProductVariant.Description,
+		&i.ProductVariant.PriceNote,
 		&i.ImageUrl,
 	)
 	return i, err
 }
 
 const getVariantBySKU = `-- name: GetVariantBySKU :one
-SELECT pv.id, pv.product_id, pv.business_id, pv.sku, pv.barcode, pv.internal_code, pv.name, pv.attributes, pv.price, pv.cost, pv.currency, pv.track_inventory, pv.public_stock_status, pv.reorder_point, pv.lead_time_days, pv.status, pv.created_at, pv.updated_at,
+SELECT pv.id, pv.product_id, pv.business_id, pv.sku, pv.barcode, pv.internal_code, pv.name, pv.attributes, pv.price, pv.cost, pv.currency, pv.track_inventory, pv.public_stock_status, pv.reorder_point, pv.lead_time_days, pv.status, pv.created_at, pv.updated_at, pv.description, pv.price_note,
        COALESCE(pi.url, '') AS image_url
 FROM product_variants pv
 LEFT JOIN LATERAL (
@@ -321,13 +329,15 @@ func (q *Queries) GetVariantBySKU(ctx context.Context, arg GetVariantBySKUParams
 		&i.ProductVariant.Status,
 		&i.ProductVariant.CreatedAt,
 		&i.ProductVariant.UpdatedAt,
+		&i.ProductVariant.Description,
+		&i.ProductVariant.PriceNote,
 		&i.ImageUrl,
 	)
 	return i, err
 }
 
 const getVariantForBusiness = `-- name: GetVariantForBusiness :one
-SELECT pv.id, pv.product_id, pv.business_id, pv.sku, pv.barcode, pv.internal_code, pv.name, pv.attributes, pv.price, pv.cost, pv.currency, pv.track_inventory, pv.public_stock_status, pv.reorder_point, pv.lead_time_days, pv.status, pv.created_at, pv.updated_at,
+SELECT pv.id, pv.product_id, pv.business_id, pv.sku, pv.barcode, pv.internal_code, pv.name, pv.attributes, pv.price, pv.cost, pv.currency, pv.track_inventory, pv.public_stock_status, pv.reorder_point, pv.lead_time_days, pv.status, pv.created_at, pv.updated_at, pv.description, pv.price_note,
        COALESCE(pi.url, '') AS image_url
 FROM product_variants pv
 LEFT JOIN LATERAL (
@@ -372,6 +382,8 @@ func (q *Queries) GetVariantForBusiness(ctx context.Context, arg GetVariantForBu
 		&i.ProductVariant.Status,
 		&i.ProductVariant.CreatedAt,
 		&i.ProductVariant.UpdatedAt,
+		&i.ProductVariant.Description,
+		&i.ProductVariant.PriceNote,
 		&i.ImageUrl,
 	)
 	return i, err
@@ -448,7 +460,8 @@ func (q *Queries) ListProducts(ctx context.Context, arg ListProductsParams) ([]P
 
 const listPublicProductsByBusinessSlug = `-- name: ListPublicProductsByBusinessSlug :many
 SELECT p.id, p.name, p.slug, p.description, p.brand, p.unit, p.product_type,
-       pv.id AS variant_id, pv.sku, pv.name AS variant_name, pv.price, pv.currency,
+       pv.id AS variant_id, pv.sku, pv.name AS variant_name,
+       pv.description AS variant_description, pv.price_note, pv.price, pv.currency,
        pv.public_stock_status,
        COALESCE(pi.url, '') AS image_url
 FROM businesses b
@@ -477,20 +490,22 @@ type ListPublicProductsByBusinessSlugParams struct {
 }
 
 type ListPublicProductsByBusinessSlugRow struct {
-	ID                uuid.UUID       `json:"id"`
-	Name              string          `json:"name"`
-	Slug              string          `json:"slug"`
-	Description       string          `json:"description"`
-	Brand             sql.NullString  `json:"brand"`
-	Unit              string          `json:"unit"`
-	ProductType       string          `json:"product_type"`
-	VariantID         uuid.UUID       `json:"variant_id"`
-	Sku               string          `json:"sku"`
-	VariantName       string          `json:"variant_name"`
-	Price             decimal.Decimal `json:"price"`
-	Currency          string          `json:"currency"`
-	PublicStockStatus string          `json:"public_stock_status"`
-	ImageUrl          string          `json:"image_url"`
+	ID                 uuid.UUID       `json:"id"`
+	Name               string          `json:"name"`
+	Slug               string          `json:"slug"`
+	Description        string          `json:"description"`
+	Brand              sql.NullString  `json:"brand"`
+	Unit               string          `json:"unit"`
+	ProductType        string          `json:"product_type"`
+	VariantID          uuid.UUID       `json:"variant_id"`
+	Sku                string          `json:"sku"`
+	VariantName        string          `json:"variant_name"`
+	VariantDescription sql.NullString  `json:"variant_description"`
+	PriceNote          sql.NullString  `json:"price_note"`
+	Price              decimal.Decimal `json:"price"`
+	Currency           string          `json:"currency"`
+	PublicStockStatus  string          `json:"public_stock_status"`
+	ImageUrl           string          `json:"image_url"`
 }
 
 func (q *Queries) ListPublicProductsByBusinessSlug(ctx context.Context, arg ListPublicProductsByBusinessSlugParams) ([]ListPublicProductsByBusinessSlugRow, error) {
@@ -513,6 +528,8 @@ func (q *Queries) ListPublicProductsByBusinessSlug(ctx context.Context, arg List
 			&i.VariantID,
 			&i.Sku,
 			&i.VariantName,
+			&i.VariantDescription,
+			&i.PriceNote,
 			&i.Price,
 			&i.Currency,
 			&i.PublicStockStatus,
@@ -529,7 +546,7 @@ func (q *Queries) ListPublicProductsByBusinessSlug(ctx context.Context, arg List
 }
 
 const listVariantsByProduct = `-- name: ListVariantsByProduct :many
-SELECT pv.id, pv.product_id, pv.business_id, pv.sku, pv.barcode, pv.internal_code, pv.name, pv.attributes, pv.price, pv.cost, pv.currency, pv.track_inventory, pv.public_stock_status, pv.reorder_point, pv.lead_time_days, pv.status, pv.created_at, pv.updated_at,
+SELECT pv.id, pv.product_id, pv.business_id, pv.sku, pv.barcode, pv.internal_code, pv.name, pv.attributes, pv.price, pv.cost, pv.currency, pv.track_inventory, pv.public_stock_status, pv.reorder_point, pv.lead_time_days, pv.status, pv.created_at, pv.updated_at, pv.description, pv.price_note,
        COALESCE(pi.url, '') AS image_url
 FROM product_variants pv
 LEFT JOIN LATERAL (
@@ -581,6 +598,8 @@ func (q *Queries) ListVariantsByProduct(ctx context.Context, arg ListVariantsByP
 			&i.ProductVariant.Status,
 			&i.ProductVariant.CreatedAt,
 			&i.ProductVariant.UpdatedAt,
+			&i.ProductVariant.Description,
+			&i.ProductVariant.PriceNote,
 			&i.ImageUrl,
 		); err != nil {
 			return nil, err
@@ -596,7 +615,8 @@ func (q *Queries) ListVariantsByProduct(ctx context.Context, arg ListVariantsByP
 const searchMarketplaceProducts = `-- name: SearchMarketplaceProducts :many
 SELECT b.slug AS business_slug, b.name AS business_name,
        p.id, p.name, p.slug, p.description, p.brand, p.unit, p.product_type,
-       pv.id AS variant_id, pv.sku, pv.name AS variant_name, pv.price, pv.currency,
+       pv.id AS variant_id, pv.sku, pv.name AS variant_name,
+       pv.description AS variant_description, pv.price_note, pv.price, pv.currency,
        pv.public_stock_status,
        COALESCE(pi.url, '') AS image_url
 FROM businesses b
@@ -680,22 +700,24 @@ type SearchMarketplaceProductsParams struct {
 }
 
 type SearchMarketplaceProductsRow struct {
-	BusinessSlug      string          `json:"business_slug"`
-	BusinessName      string          `json:"business_name"`
-	ID                uuid.UUID       `json:"id"`
-	Name              string          `json:"name"`
-	Slug              string          `json:"slug"`
-	Description       string          `json:"description"`
-	Brand             sql.NullString  `json:"brand"`
-	Unit              string          `json:"unit"`
-	ProductType       string          `json:"product_type"`
-	VariantID         uuid.UUID       `json:"variant_id"`
-	Sku               string          `json:"sku"`
-	VariantName       string          `json:"variant_name"`
-	Price             decimal.Decimal `json:"price"`
-	Currency          string          `json:"currency"`
-	PublicStockStatus string          `json:"public_stock_status"`
-	ImageUrl          string          `json:"image_url"`
+	BusinessSlug       string          `json:"business_slug"`
+	BusinessName       string          `json:"business_name"`
+	ID                 uuid.UUID       `json:"id"`
+	Name               string          `json:"name"`
+	Slug               string          `json:"slug"`
+	Description        string          `json:"description"`
+	Brand              sql.NullString  `json:"brand"`
+	Unit               string          `json:"unit"`
+	ProductType        string          `json:"product_type"`
+	VariantID          uuid.UUID       `json:"variant_id"`
+	Sku                string          `json:"sku"`
+	VariantName        string          `json:"variant_name"`
+	VariantDescription sql.NullString  `json:"variant_description"`
+	PriceNote          sql.NullString  `json:"price_note"`
+	Price              decimal.Decimal `json:"price"`
+	Currency           string          `json:"currency"`
+	PublicStockStatus  string          `json:"public_stock_status"`
+	ImageUrl           string          `json:"image_url"`
 }
 
 func (q *Queries) SearchMarketplaceProducts(ctx context.Context, arg SearchMarketplaceProductsParams) ([]SearchMarketplaceProductsRow, error) {
@@ -742,6 +764,8 @@ func (q *Queries) SearchMarketplaceProducts(ctx context.Context, arg SearchMarke
 			&i.VariantID,
 			&i.Sku,
 			&i.VariantName,
+			&i.VariantDescription,
+			&i.PriceNote,
 			&i.Price,
 			&i.Currency,
 			&i.PublicStockStatus,
@@ -827,18 +851,20 @@ UPDATE product_variants SET
     barcode = $4,
     internal_code = $5,
     name = $6,
-    attributes = $7,
-    price = $8,
-    cost = $9,
-    currency = $10,
-    track_inventory = $11,
-    public_stock_status = $12,
-    reorder_point = $13,
-    lead_time_days = $14,
-    status = $15,
+    description = $7,
+    price_note = $8,
+    attributes = $9,
+    price = $10,
+    cost = $11,
+    currency = $12,
+    track_inventory = $13,
+    public_stock_status = $14,
+    reorder_point = $15,
+    lead_time_days = $16,
+    status = $17,
     updated_at = now()
 WHERE id = $1 AND business_id = $2
-RETURNING id, product_id, business_id, sku, barcode, internal_code, name, attributes, price, cost, currency, track_inventory, public_stock_status, reorder_point, lead_time_days, status, created_at, updated_at
+RETURNING id, product_id, business_id, sku, barcode, internal_code, name, attributes, price, cost, currency, track_inventory, public_stock_status, reorder_point, lead_time_days, status, created_at, updated_at, description, price_note
 `
 
 type UpdateVariantParams struct {
@@ -848,6 +874,8 @@ type UpdateVariantParams struct {
 	Barcode           sql.NullString      `json:"barcode"`
 	InternalCode      string              `json:"internal_code"`
 	Name              string              `json:"name"`
+	Description       sql.NullString      `json:"description"`
+	PriceNote         sql.NullString      `json:"price_note"`
 	Attributes        []byte              `json:"attributes"`
 	Price             decimal.Decimal     `json:"price"`
 	Cost              decimal.NullDecimal `json:"cost"`
@@ -867,6 +895,8 @@ func (q *Queries) UpdateVariant(ctx context.Context, arg UpdateVariantParams) (P
 		arg.Barcode,
 		arg.InternalCode,
 		arg.Name,
+		arg.Description,
+		arg.PriceNote,
 		arg.Attributes,
 		arg.Price,
 		arg.Cost,
@@ -897,6 +927,8 @@ func (q *Queries) UpdateVariant(ctx context.Context, arg UpdateVariantParams) (P
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Description,
+		&i.PriceNote,
 	)
 	return i, err
 }
