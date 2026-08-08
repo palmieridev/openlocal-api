@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"database/sql"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -55,13 +56,69 @@ func TestProductParamsRejectsInvalidEnumsAndLengths(t *testing.T) {
 }
 
 func TestMapVariantMapsOptionalImageURL(t *testing.T) {
-	variant := MapVariant(db.ProductVariant{}, " https://cdn.example.com/variant.jpg ", true)
+	variant := MapVariant(db.ProductVariant{
+		Description: sql.NullString{String: "Madera sólida", Valid: true},
+		PriceNote:   sql.NullString{String: "Precio sujeto a medidas", Valid: true},
+	}, " https://cdn.example.com/variant.jpg ", true)
 	if variant.ImageURL == nil || *variant.ImageURL != "https://cdn.example.com/variant.jpg" {
 		t.Fatalf("image_url = %v, want trimmed URL", variant.ImageURL)
+	}
+	if variant.Description == nil || *variant.Description != "Madera sólida" {
+		t.Fatalf("description = %v, want public variant details", variant.Description)
+	}
+	if variant.PriceNote == nil || *variant.PriceNote != "Precio sujeto a medidas" {
+		t.Fatalf("price_note = %v, want public price qualification", variant.PriceNote)
 	}
 
 	if imageURL := MapVariant(db.ProductVariant{}, "", true).ImageURL; imageURL != nil {
 		t.Fatalf("image_url = %q, want nil", *imageURL)
+	}
+}
+
+func TestVariantParamsCleansOptionalPublicDetails(t *testing.T) {
+	description := "  Mueble hecho a la medida  "
+	priceNote := "  El precio final depende de los acabados.  "
+	req := VariantRequest{
+		BusinessID:  uuid.New().String(),
+		ProductID:   uuid.New().String(),
+		SKU:         "SKU-DETAILS",
+		Price:       "10.00",
+		Description: &description,
+		PriceNote:   &priceNote,
+	}
+	params, _, err := VariantParams(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !params.Description.Valid || params.Description.String != "Mueble hecho a la medida" {
+		t.Fatalf("description = %#v", params.Description)
+	}
+	if !params.PriceNote.Valid || params.PriceNote.String != "El precio final depende de los acabados." {
+		t.Fatalf("price_note = %#v", params.PriceNote)
+	}
+}
+
+func TestVariantParamsRejectsOverlongPublicDetails(t *testing.T) {
+	for field, value := range map[string]string{
+		"description": strings.Repeat("x", 2001),
+		"price_note":  strings.Repeat("x", 501),
+	} {
+		t.Run(field, func(t *testing.T) {
+			req := VariantRequest{
+				BusinessID: uuid.New().String(),
+				ProductID:  uuid.New().String(),
+				SKU:        "SKU-LONG",
+				Price:      "10.00",
+			}
+			if field == "description" {
+				req.Description = &value
+			} else {
+				req.PriceNote = &value
+			}
+			if _, _, err := VariantParams(req); err == nil {
+				t.Fatalf("expected %s length validation", field)
+			}
+		})
 	}
 }
 

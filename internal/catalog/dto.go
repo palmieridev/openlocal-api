@@ -57,6 +57,8 @@ type VariantRequest struct {
 	Barcode      *string `json:"barcode"`
 	InternalCode string  `json:"internal_code"`
 	Name         string  `json:"name"`
+	Description  *string `json:"description"`
+	PriceNote    *string `json:"price_note"`
 	Attributes   JSONObj `json:"attributes"`
 	// ImageURL is the variant's storefront image. Omitted or null leaves the
 	// current image untouched — an empty string removes it. Callers that never
@@ -80,6 +82,8 @@ type VariantResponse struct {
 	Barcode           *string    `json:"barcode,omitempty"`
 	InternalCode      string     `json:"internal_code,omitempty"`
 	Name              string     `json:"name"`
+	Description       *string    `json:"description,omitempty"`
+	PriceNote         *string    `json:"price_note,omitempty"`
 	Attributes        JSONObj    `json:"attributes,omitempty"`
 	ImageURL          *string    `json:"image_url,omitempty"`
 	Price             string     `json:"price"`
@@ -122,6 +126,8 @@ func MapVariant(v db.ProductVariant, imageURL string, includePrivate bool) Varia
 		ProductID:         v.ProductID,
 		SKU:               v.Sku,
 		Name:              v.Name,
+		Description:       api.StringPtr(v.Description),
+		PriceNote:         api.StringPtr(v.PriceNote),
 		ImageURL:          stringPtr(imageURL),
 		Price:             v.Price.StringFixed(2),
 		Currency:          v.Currency,
@@ -270,6 +276,18 @@ func VariantParams(req VariantRequest) (db.CreateVariantParams, uuid.UUID, error
 	if err := v.StringLength(name, "name", 0, 180); err != nil {
 		return db.CreateVariantParams{}, uuid.Nil, err
 	}
+	description := v.CleanOptional(req.Description)
+	if description != nil {
+		if err := v.StringLength(*description, "description", 1, 2000); err != nil {
+			return db.CreateVariantParams{}, uuid.Nil, err
+		}
+	}
+	priceNote := v.CleanOptional(req.PriceNote)
+	if priceNote != nil {
+		if err := v.StringLength(*priceNote, "price_note", 1, 500); err != nil {
+			return db.CreateVariantParams{}, uuid.Nil, err
+		}
+	}
 	barcode := v.CleanOptional(req.Barcode)
 	if barcode != nil {
 		if err := v.StringLength(*barcode, "barcode", 1, 128); err != nil {
@@ -298,6 +316,8 @@ func VariantParams(req VariantRequest) (db.CreateVariantParams, uuid.UUID, error
 		Barcode:           api.NullString(barcode),
 		InternalCode:      internalCode,
 		Name:              name,
+		Description:       api.NullString(description),
+		PriceNote:         api.NullString(priceNote),
 		Attributes:        attributes,
 		Price:             price,
 		Cost:              cost,
@@ -322,6 +342,8 @@ func UpdateVariantParams(id uuid.UUID, req VariantRequest) (db.UpdateVariantPara
 		Barcode:           params.Barcode,
 		InternalCode:      params.InternalCode,
 		Name:              params.Name,
+		Description:       params.Description,
+		PriceNote:         params.PriceNote,
 		Attributes:        params.Attributes,
 		Price:             params.Price,
 		Cost:              params.Cost,
@@ -348,6 +370,8 @@ func PublicProductRows(rows []db.ListPublicProductsByBusinessSlugRow) []fiber.Ma
 			"variant_id":          row.VariantID,
 			"sku":                 row.Sku,
 			"variant_name":        row.VariantName,
+			"variant_description": api.StringPtr(row.VariantDescription),
+			"price_note":          api.StringPtr(row.PriceNote),
 			"price":               row.Price.StringFixed(2),
 			"currency":            row.Currency,
 			"public_stock_status": row.PublicStockStatus,

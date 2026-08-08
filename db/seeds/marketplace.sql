@@ -277,23 +277,25 @@ ON CONFLICT (business_id, slug) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO product_variants (
-    id, product_id, business_id, sku, barcode, internal_code, name, attributes,
+    id, product_id, business_id, sku, barcode, internal_code, name, description, price_note, attributes,
     price, cost, currency, track_inventory, public_stock_status, reorder_point,
     lead_time_days, status
 ) VALUES
-('dddddddd-1111-4111-8111-111111111111', 'cccccccc-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111', 'MV-TOMATO-BOX', '7501000000011', 'MV-TOMATO-BOX', 'Caja 2 kg', '{"size":"2 kg"}', 185.00, 98.00, 'MXN', true, 'available', 6, 2, 'active'),
-('dddddddd-1112-4112-8112-111111111112', 'cccccccc-1112-4112-8112-111111111112', '11111111-1111-4111-8111-111111111111', 'MV-SALSA-VERDE', '7501000000012', 'MV-SALSA-VERDE', 'Frasco 450 g', '{"size":"450 g"}', 86.00, 34.00, 'MXN', true, 'low_stock', 12, 1, 'active'),
-('dddddddd-2222-4222-8222-222222222222', 'cccccccc-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222', 'CP-SOURDOUGH', '7502000000021', 'CP-SOURDOUGH', 'Hogaza 900 g', '{"size":"900 g"}', 120.00, 46.00, 'MXN', true, 'available', 10, 1, 'active'),
-('dddddddd-2223-4223-8223-222222222223', 'cccccccc-2223-4223-8223-222222222223', '22222222-2222-4222-8222-222222222222', 'CP-GUAVA-ROLL', '7502000000022', 'CP-GUAVA-ROLL', 'Pieza', '{"size":"single"}', 52.00, 18.00, 'MXN', true, 'available', 20, 1, 'active'),
-('dddddddd-3333-4333-8333-333333333333', 'cccccccc-3333-4333-8333-333333333333', '33333333-3333-4333-8333-333333333333', 'TB-MONSTERA-M', '7503000000031', 'TB-MONSTERA-M', 'Planta mediana', '{"size":"medium"}', 420.00, 210.00, 'MXN', true, 'low_stock', 3, 5, 'active'),
-('dddddddd-3334-4334-8334-333333333334', 'cccccccc-3334-4334-8334-333333333334', '33333333-3333-4333-8333-333333333333', 'TB-CARE-KIT', '7503000000032', 'TB-CARE-KIT', 'Kit inicial', '{"size":"starter"}', 260.00, 122.00, 'MXN', true, 'available', 5, 3, 'active'),
-('dddddddd-4444-4444-8444-444444444444', 'cccccccc-4444-4444-8444-444444444444', '44444444-4444-4444-8444-444444444444', 'CD-CUSTOM-FURNITURE', NULL, 'CD-CUSTOM-FURNITURE', 'Cotización inicial', '{"made_to_measure":true}', 2500.00, NULL, 'MXN', false, 'made_to_order', 0, 14, 'active'),
-('dddddddd-5555-4555-8555-555555555555', 'cccccccc-5555-4555-8555-555555555555', '55555555-5555-4555-8555-555555555555', 'PR-DIAGNOSTIC', NULL, 'PR-DIAGNOSTIC', 'Visita programada', '{"at_customer_location":true}', 350.00, NULL, 'MXN', false, 'made_to_order', 0, 1, 'active'),
-('dddddddd-6666-4666-8666-666666666666', 'cccccccc-6666-4666-8666-666666666666', '66666666-6666-4666-8666-666666666666', 'BB-TUNE-UP', NULL, 'BB-TUNE-UP', 'Servicio completo', '{"at_shop_or_customer_location":true}', 650.00, NULL, 'MXN', false, 'made_to_order', 0, 2, 'active')
+('dddddddd-1111-4111-8111-111111111111', 'cccccccc-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111', 'MV-TOMATO-BOX', '7501000000011', 'MV-TOMATO-BOX', 'Caja 2 kg', NULL, NULL, '{"size":"2 kg"}', 185.00, 98.00, 'MXN', true, 'available', 6, 2, 'active'),
+('dddddddd-1112-4112-8112-111111111112', 'cccccccc-1112-4112-8112-111111111112', '11111111-1111-4111-8111-111111111111', 'MV-SALSA-VERDE', '7501000000012', 'MV-SALSA-VERDE', 'Frasco 450 g', NULL, NULL, '{"size":"450 g"}', 86.00, 34.00, 'MXN', true, 'low_stock', 12, 1, 'active'),
+('dddddddd-2222-4222-8222-222222222222', 'cccccccc-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222', 'CP-SOURDOUGH', '7502000000021', 'CP-SOURDOUGH', 'Hogaza 900 g', NULL, NULL, '{"size":"900 g"}', 120.00, 46.00, 'MXN', true, 'available', 10, 1, 'active'),
+('dddddddd-2223-4223-8223-222222222223', 'cccccccc-2223-4223-8223-222222222223', '22222222-2222-4222-8222-222222222222', 'CP-GUAVA-ROLL', '7502000000022', 'CP-GUAVA-ROLL', 'Pieza', NULL, NULL, '{"size":"single"}', 52.00, 18.00, 'MXN', true, 'available', 20, 1, 'active'),
+('dddddddd-3333-4333-8333-333333333333', 'cccccccc-3333-4333-8333-333333333333', '33333333-3333-4333-8333-333333333333', 'TB-MONSTERA-M', '7503000000031', 'TB-MONSTERA-M', 'Planta mediana', NULL, NULL, '{"size":"medium"}', 420.00, 210.00, 'MXN', true, 'low_stock', 3, 5, 'active'),
+('dddddddd-3334-4334-8334-333333333334', 'cccccccc-3334-4334-8334-333333333334', '33333333-3333-4333-8333-333333333333', 'TB-CARE-KIT', '7503000000032', 'TB-CARE-KIT', 'Kit inicial', NULL, NULL, '{"size":"starter"}', 260.00, 122.00, 'MXN', true, 'available', 5, 3, 'active'),
+('dddddddd-4444-4444-8444-444444444444', 'cccccccc-4444-4444-8444-444444444444', '44444444-4444-4444-8444-444444444444', 'CD-CUSTOM-FURNITURE', NULL, 'CD-CUSTOM-FURNITURE', 'Cotización inicial', 'Diseño, fabricación e instalación de un mueble adaptado a las medidas, materiales y acabados de tu espacio.', 'Precio de referencia; el total se confirma después de revisar medidas, materiales y acabados.', '{"made_to_measure":true}', 2500.00, NULL, 'MXN', false, 'made_to_order', 0, 14, 'active'),
+('dddddddd-5555-4555-8555-555555555555', 'cccccccc-5555-4555-8555-555555555555', '55555555-5555-4555-8555-555555555555', 'PR-DIAGNOSTIC', NULL, 'PR-DIAGNOSTIC', 'Visita programada', 'Revisión en sitio de fugas, presión y conexiones, con diagnóstico y presupuesto de reparación.', 'La visita cubre el diagnóstico; materiales y reparación se cotizan por separado.', '{"at_customer_location":true}', 350.00, NULL, 'MXN', false, 'made_to_order', 0, 1, 'active'),
+('dddddddd-6666-4666-8666-666666666666', 'cccccccc-6666-4666-8666-666666666666', '66666666-6666-4666-8666-666666666666', 'BB-TUNE-UP', NULL, 'BB-TUNE-UP', 'Servicio completo', 'Ajuste de frenos y cambios, lubricación y revisión general en taller o a domicilio.', 'Refacciones y servicios adicionales no están incluidos.', '{"at_shop_or_customer_location":true}', 650.00, NULL, 'MXN', false, 'made_to_order', 0, 2, 'active')
 ON CONFLICT (business_id, sku) DO UPDATE SET
     barcode = EXCLUDED.barcode,
     internal_code = EXCLUDED.internal_code,
     name = EXCLUDED.name,
+    description = EXCLUDED.description,
+    price_note = EXCLUDED.price_note,
     attributes = EXCLUDED.attributes,
     price = EXCLUDED.price,
     cost = EXCLUDED.cost,

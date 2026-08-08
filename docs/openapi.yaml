@@ -581,6 +581,18 @@ components:
           type: string
         name:
           type: string
+        description:
+          type: string
+          nullable: true
+          maxLength: 2000
+          description: Public details specific to this variant.
+        price_note:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: >-
+            Public qualification shown beside the price, for example when the
+            final amount depends on measurements, materials, or finishes.
         attributes:
           type: object
           additionalProperties: true
@@ -649,6 +661,14 @@ components:
           type: string
         name:
           type: string
+        description:
+          type: string
+          nullable: true
+          maxLength: 2000
+        price_note:
+          type: string
+          nullable: true
+          maxLength: 500
         attributes:
           type: object
           additionalProperties: true
@@ -716,6 +736,14 @@ components:
           type: string
         variant_name:
           type: string
+        variant_description:
+          type: string
+          nullable: true
+          maxLength: 2000
+        price_note:
+          type: string
+          nullable: true
+          maxLength: 500
         price:
           type: string
         currency:

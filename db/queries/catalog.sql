@@ -54,11 +54,11 @@ INSERT INTO product_images (variant_id, url, position) VALUES ($1, $2, 0);
 
 -- name: CreateVariant :one
 INSERT INTO product_variants (
-    product_id, business_id, sku, barcode, internal_code, name, attributes,
+    product_id, business_id, sku, barcode, internal_code, name, description, price_note, attributes,
     price, cost, currency, track_inventory, public_stock_status, reorder_point,
     lead_time_days, status
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
 )
 RETURNING *;
 
@@ -121,15 +121,17 @@ UPDATE product_variants SET
     barcode = $4,
     internal_code = $5,
     name = $6,
-    attributes = $7,
-    price = $8,
-    cost = $9,
-    currency = $10,
-    track_inventory = $11,
-    public_stock_status = $12,
-    reorder_point = $13,
-    lead_time_days = $14,
-    status = $15,
+    description = $7,
+    price_note = $8,
+    attributes = $9,
+    price = $10,
+    cost = $11,
+    currency = $12,
+    track_inventory = $13,
+    public_stock_status = $14,
+    reorder_point = $15,
+    lead_time_days = $16,
+    status = $17,
     updated_at = now()
 WHERE id = $1 AND business_id = $2
 RETURNING *;
@@ -140,7 +142,8 @@ WHERE id = $1 AND business_id = $2;
 
 -- name: ListPublicProductsByBusinessSlug :many
 SELECT p.id, p.name, p.slug, p.description, p.brand, p.unit, p.product_type,
-       pv.id AS variant_id, pv.sku, pv.name AS variant_name, pv.price, pv.currency,
+       pv.id AS variant_id, pv.sku, pv.name AS variant_name,
+       pv.description AS variant_description, pv.price_note, pv.price, pv.currency,
        pv.public_stock_status,
        COALESCE(pi.url, '') AS image_url
 FROM businesses b
@@ -164,7 +167,8 @@ LIMIT $2 OFFSET $3;
 -- name: SearchMarketplaceProducts :many
 SELECT b.slug AS business_slug, b.name AS business_name,
        p.id, p.name, p.slug, p.description, p.brand, p.unit, p.product_type,
-       pv.id AS variant_id, pv.sku, pv.name AS variant_name, pv.price, pv.currency,
+       pv.id AS variant_id, pv.sku, pv.name AS variant_name,
+       pv.description AS variant_description, pv.price_note, pv.price, pv.currency,
        pv.public_stock_status,
        COALESCE(pi.url, '') AS image_url
 FROM businesses b

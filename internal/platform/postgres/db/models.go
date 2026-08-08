@@ -175,6 +175,10 @@ type ProductVariant struct {
 	Status            string              `json:"status"`
 	CreatedAt         pgtype.Timestamptz  `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz  `json:"updated_at"`
+	// Public details specific to this variant, separate from the parent product description.
+	Description sql.NullString `json:"description"`
+	// Public qualification displayed beside the price, such as made-to-measure pricing conditions.
+	PriceNote sql.NullString `json:"price_note"`
 }
 
 type StockLevel struct {

@@ -384,6 +384,8 @@ func TestVariantImageCanBeSetReplacedAndCleared(t *testing.T) {
 		t.Fatal(err)
 	}
 	barcode := uuid.NewString()
+	variantDescription := "Public variant details"
+	priceNote := "Final price depends on measurements"
 	variant, err := q.CreateVariant(ctx, db.CreateVariantParams{
 		ProductID:         product.ID,
 		BusinessID:        business.ID,
@@ -391,6 +393,8 @@ func TestVariantImageCanBeSetReplacedAndCleared(t *testing.T) {
 		Barcode:           sql.NullString{String: barcode, Valid: true},
 		InternalCode:      "IMG-" + uuid.NewString()[:8],
 		Name:              "Image Variant",
+		Description:       sql.NullString{String: variantDescription, Valid: true},
+		PriceNote:         sql.NullString{String: priceNote, Valid: true},
 		Attributes:        []byte(`{}`),
 		Price:             decimal.NewFromInt(100),
 		Currency:          "MXN",
@@ -464,19 +468,27 @@ func TestVariantImageCanBeSetReplacedAndCleared(t *testing.T) {
 	if len(publicRows) != 1 || publicRows[0].ImageUrl != second {
 		t.Fatalf("ListPublicProductsByBusinessSlug rows = %#v, want image_url %q", publicRows, second)
 	}
+	if publicRows[0].VariantDescription.String != variantDescription || publicRows[0].PriceNote.String != priceNote {
+		t.Fatalf("public variant details = (%#v, %#v)", publicRows[0].VariantDescription, publicRows[0].PriceNote)
+	}
 
 	marketplaceRows, err := q.SearchMarketplaceProducts(ctx, db.SearchMarketplaceProductsParams{SearchQuery: "", LimitCount: 10, OffsetCount: 0})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var marketplaceImage string
+	var marketplaceImage, marketplaceDescription, marketplacePriceNote string
 	for _, row := range marketplaceRows {
 		if row.VariantID == variant.ID {
 			marketplaceImage = row.ImageUrl
+			marketplaceDescription = row.VariantDescription.String
+			marketplacePriceNote = row.PriceNote.String
 		}
 	}
 	if marketplaceImage != second {
 		t.Fatalf("SearchMarketplaceProducts image_url = %q, want %q", marketplaceImage, second)
+	}
+	if marketplaceDescription != variantDescription || marketplacePriceNote != priceNote {
+		t.Fatalf("SearchMarketplaceProducts details = (%q, %q)", marketplaceDescription, marketplacePriceNote)
 	}
 
 	// Clear.
