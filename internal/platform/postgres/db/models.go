@@ -206,6 +206,16 @@ type StockMovement struct {
 	IdempotencyKey sql.NullString      `json:"idempotency_key"`
 }
 
+type SupportFeedback struct {
+	ID        uuid.UUID          `json:"id"`
+	DocID     string             `json:"doc_id"`
+	Locale    string             `json:"locale"`
+	Verdict   string             `json:"verdict"`
+	Comment   sql.NullString     `json:"comment"`
+	Path      sql.NullString     `json:"path"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type Tag struct {
 	ID         uuid.UUID `json:"id"`
 	BusinessID uuid.UUID `json:"business_id"`
