@@ -93,6 +93,22 @@ func TestPublicLimitDoesNotCountPrivateRequests(t *testing.T) {
 	}
 }
 
+func TestSupportFeedbackRouteIsPublic(t *testing.T) {
+	app := New(Deps{Config: secureTestConfig()})
+	req := httptest.NewRequest(fiber.MethodPost, "/api/v1/public/support/feedback", strings.NewReader(
+		`{"doc_id":"faq","locale":"en","verdict":"up","comment":null,"path":null}`,
+	))
+	req.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
+
+	res, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != fiber.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 from the intentionally unconfigured test database", res.StatusCode)
+	}
+}
+
 func TestCORSDoesNotAdvertiseTestAuthHeaders(t *testing.T) {
 	app := New(Deps{Config: secureTestConfig()})
 	req := httptest.NewRequest(fiber.MethodOptions, "/healthz", nil)
