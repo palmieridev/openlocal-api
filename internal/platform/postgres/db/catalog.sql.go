@@ -10,6 +10,7 @@ import (
 	"database/sql"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
 )
 
@@ -100,12 +101,12 @@ func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) (P
 const createVariant = `-- name: CreateVariant :one
 INSERT INTO product_variants (
     product_id, business_id, sku, barcode, internal_code, name, description, price_note, attributes,
-    price, cost, currency, track_inventory, public_stock_status, reorder_point,
+    price, cost, currency, track_inventory, public_stock_status, is_public, reorder_point,
     lead_time_days, status
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
 )
-RETURNING id, product_id, business_id, sku, barcode, internal_code, name, attributes, price, cost, currency, track_inventory, public_stock_status, reorder_point, lead_time_days, status, created_at, updated_at, description, price_note
+RETURNING id, product_id, business_id, sku, barcode, internal_code, name, attributes, price, cost, currency, track_inventory, public_stock_status, reorder_point, lead_time_days, status, created_at, updated_at, description, price_note, is_public
 `
 
 type CreateVariantParams struct {
@@ -123,6 +124,7 @@ type CreateVariantParams struct {
 	Currency          string              `json:"currency"`
 	TrackInventory    bool                `json:"track_inventory"`
 	PublicStockStatus string              `json:"public_stock_status"`
+	IsPublic          bool                `json:"is_public"`
 	ReorderPoint      decimal.Decimal     `json:"reorder_point"`
 	LeadTimeDays      int32               `json:"lead_time_days"`
 	Status            string              `json:"status"`
@@ -144,6 +146,7 @@ func (q *Queries) CreateVariant(ctx context.Context, arg CreateVariantParams) (P
 		arg.Currency,
 		arg.TrackInventory,
 		arg.PublicStockStatus,
+		arg.IsPublic,
 		arg.ReorderPoint,
 		arg.LeadTimeDays,
 		arg.Status,
@@ -170,6 +173,7 @@ func (q *Queries) CreateVariant(ctx context.Context, arg CreateVariantParams) (P
 		&i.UpdatedAt,
 		&i.Description,
 		&i.PriceNote,
+		&i.IsPublic,
 	)
 	return i, err
 }
@@ -231,7 +235,7 @@ func (q *Queries) GetProductForBusiness(ctx context.Context, arg GetProductForBu
 }
 
 const getVariantByBarcode = `-- name: GetVariantByBarcode :one
-SELECT pv.id, pv.product_id, pv.business_id, pv.sku, pv.barcode, pv.internal_code, pv.name, pv.attributes, pv.price, pv.cost, pv.currency, pv.track_inventory, pv.public_stock_status, pv.reorder_point, pv.lead_time_days, pv.status, pv.created_at, pv.updated_at, pv.description, pv.price_note,
+SELECT pv.id, pv.product_id, pv.business_id, pv.sku, pv.barcode, pv.internal_code, pv.name, pv.attributes, pv.price, pv.cost, pv.currency, pv.track_inventory, pv.public_stock_status, pv.reorder_point, pv.lead_time_days, pv.status, pv.created_at, pv.updated_at, pv.description, pv.price_note, pv.is_public,
        COALESCE(pi.url, '') AS image_url
 FROM product_variants pv
 LEFT JOIN LATERAL (
@@ -278,13 +282,14 @@ func (q *Queries) GetVariantByBarcode(ctx context.Context, arg GetVariantByBarco
 		&i.ProductVariant.UpdatedAt,
 		&i.ProductVariant.Description,
 		&i.ProductVariant.PriceNote,
+		&i.ProductVariant.IsPublic,
 		&i.ImageUrl,
 	)
 	return i, err
 }
 
 const getVariantBySKU = `-- name: GetVariantBySKU :one
-SELECT pv.id, pv.product_id, pv.business_id, pv.sku, pv.barcode, pv.internal_code, pv.name, pv.attributes, pv.price, pv.cost, pv.currency, pv.track_inventory, pv.public_stock_status, pv.reorder_point, pv.lead_time_days, pv.status, pv.created_at, pv.updated_at, pv.description, pv.price_note,
+SELECT pv.id, pv.product_id, pv.business_id, pv.sku, pv.barcode, pv.internal_code, pv.name, pv.attributes, pv.price, pv.cost, pv.currency, pv.track_inventory, pv.public_stock_status, pv.reorder_point, pv.lead_time_days, pv.status, pv.created_at, pv.updated_at, pv.description, pv.price_note, pv.is_public,
        COALESCE(pi.url, '') AS image_url
 FROM product_variants pv
 LEFT JOIN LATERAL (
@@ -331,13 +336,14 @@ func (q *Queries) GetVariantBySKU(ctx context.Context, arg GetVariantBySKUParams
 		&i.ProductVariant.UpdatedAt,
 		&i.ProductVariant.Description,
 		&i.ProductVariant.PriceNote,
+		&i.ProductVariant.IsPublic,
 		&i.ImageUrl,
 	)
 	return i, err
 }
 
 const getVariantForBusiness = `-- name: GetVariantForBusiness :one
-SELECT pv.id, pv.product_id, pv.business_id, pv.sku, pv.barcode, pv.internal_code, pv.name, pv.attributes, pv.price, pv.cost, pv.currency, pv.track_inventory, pv.public_stock_status, pv.reorder_point, pv.lead_time_days, pv.status, pv.created_at, pv.updated_at, pv.description, pv.price_note,
+SELECT pv.id, pv.product_id, pv.business_id, pv.sku, pv.barcode, pv.internal_code, pv.name, pv.attributes, pv.price, pv.cost, pv.currency, pv.track_inventory, pv.public_stock_status, pv.reorder_point, pv.lead_time_days, pv.status, pv.created_at, pv.updated_at, pv.description, pv.price_note, pv.is_public,
        COALESCE(pi.url, '') AS image_url
 FROM product_variants pv
 LEFT JOIN LATERAL (
@@ -384,6 +390,7 @@ func (q *Queries) GetVariantForBusiness(ctx context.Context, arg GetVariantForBu
 		&i.ProductVariant.UpdatedAt,
 		&i.ProductVariant.Description,
 		&i.ProductVariant.PriceNote,
+		&i.ProductVariant.IsPublic,
 		&i.ImageUrl,
 	)
 	return i, err
@@ -478,6 +485,7 @@ WHERE b.slug = $1
   AND b.status = 'active'
   AND p.is_public = true
   AND p.status = 'active'
+  AND pv.is_public = true
   AND pv.status = 'active'
 ORDER BY p.name ASC, pv.created_at ASC
 LIMIT $2 OFFSET $3
@@ -546,7 +554,7 @@ func (q *Queries) ListPublicProductsByBusinessSlug(ctx context.Context, arg List
 }
 
 const listVariantsByProduct = `-- name: ListVariantsByProduct :many
-SELECT pv.id, pv.product_id, pv.business_id, pv.sku, pv.barcode, pv.internal_code, pv.name, pv.attributes, pv.price, pv.cost, pv.currency, pv.track_inventory, pv.public_stock_status, pv.reorder_point, pv.lead_time_days, pv.status, pv.created_at, pv.updated_at, pv.description, pv.price_note,
+SELECT pv.id, pv.product_id, pv.business_id, pv.sku, pv.barcode, pv.internal_code, pv.name, pv.attributes, pv.price, pv.cost, pv.currency, pv.track_inventory, pv.public_stock_status, pv.reorder_point, pv.lead_time_days, pv.status, pv.created_at, pv.updated_at, pv.description, pv.price_note, pv.is_public,
        COALESCE(pi.url, '') AS image_url
 FROM product_variants pv
 LEFT JOIN LATERAL (
@@ -600,6 +608,7 @@ func (q *Queries) ListVariantsByProduct(ctx context.Context, arg ListVariantsByP
 			&i.ProductVariant.UpdatedAt,
 			&i.ProductVariant.Description,
 			&i.ProductVariant.PriceNote,
+			&i.ProductVariant.IsPublic,
 			&i.ImageUrl,
 		); err != nil {
 			return nil, err
@@ -632,6 +641,7 @@ LEFT JOIN LATERAL (
 WHERE b.status = 'active'
   AND p.is_public = true
   AND p.status = 'active'
+  AND pv.is_public = true
   AND pv.status = 'active'
   AND ($1::text = '' OR to_tsvector('simple', p.name || ' ' || p.description) @@ plainto_tsquery('simple', $1::text))
   AND (
@@ -859,12 +869,13 @@ UPDATE product_variants SET
     currency = $12,
     track_inventory = $13,
     public_stock_status = $14,
+    is_public = COALESCE($18::boolean, is_public),
     reorder_point = $15,
     lead_time_days = $16,
     status = $17,
     updated_at = now()
 WHERE id = $1 AND business_id = $2
-RETURNING id, product_id, business_id, sku, barcode, internal_code, name, attributes, price, cost, currency, track_inventory, public_stock_status, reorder_point, lead_time_days, status, created_at, updated_at, description, price_note
+RETURNING id, product_id, business_id, sku, barcode, internal_code, name, attributes, price, cost, currency, track_inventory, public_stock_status, reorder_point, lead_time_days, status, created_at, updated_at, description, price_note, is_public
 `
 
 type UpdateVariantParams struct {
@@ -885,6 +896,7 @@ type UpdateVariantParams struct {
 	ReorderPoint      decimal.Decimal     `json:"reorder_point"`
 	LeadTimeDays      int32               `json:"lead_time_days"`
 	Status            string              `json:"status"`
+	IsPublic          pgtype.Bool         `json:"is_public"`
 }
 
 func (q *Queries) UpdateVariant(ctx context.Context, arg UpdateVariantParams) (ProductVariant, error) {
@@ -906,6 +918,7 @@ func (q *Queries) UpdateVariant(ctx context.Context, arg UpdateVariantParams) (P
 		arg.ReorderPoint,
 		arg.LeadTimeDays,
 		arg.Status,
+		arg.IsPublic,
 	)
 	var i ProductVariant
 	err := row.Scan(
@@ -929,6 +942,7 @@ func (q *Queries) UpdateVariant(ctx context.Context, arg UpdateVariantParams) (P
 		&i.UpdatedAt,
 		&i.Description,
 		&i.PriceNote,
+		&i.IsPublic,
 	)
 	return i, err
 }
