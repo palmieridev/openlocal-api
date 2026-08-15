@@ -285,6 +285,15 @@ func applyNonnegativeStockDelta(ctx context.Context, q *db.Queries, businessID, 
 		BusinessID: businessID, VariantID: variantID, LocationID: locationID, QuantityOnHand: delta,
 	})
 	if errors.Is(err, pgx.ErrNoRows) && delta.IsPositive() {
+		_, lookupErr := q.GetStockLevel(ctx, db.GetStockLevelParams{
+			BusinessID: businessID, VariantID: variantID, LocationID: locationID,
+		})
+		if lookupErr == nil {
+			return db.StockLevel{}, fiber.NewError(fiber.StatusConflict, "stock level cannot be negative")
+		}
+		if !errors.Is(lookupErr, pgx.ErrNoRows) {
+			return db.StockLevel{}, lookupErr
+		}
 		return q.ApplyStockDelta(ctx, db.ApplyStockDeltaParams{
 			BusinessID: businessID, VariantID: variantID, LocationID: locationID, QuantityOnHand: delta,
 		})
