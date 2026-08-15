@@ -622,6 +622,12 @@ components:
         public_stock_status:
           type: string
           enum: [available, low_stock, out_of_stock, made_to_order, unknown]
+        is_public:
+          type: boolean
+          default: true
+          description: >-
+            Variant-level storefront switch. Omit on updates to preserve the
+            current value.
         reorder_point:
           type: string
           default: "0"
@@ -689,6 +695,8 @@ components:
           type: boolean
         public_stock_status:
           type: string
+        is_public:
+          type: boolean
         reorder_point:
           type: string
         lead_time_days:
@@ -710,6 +718,7 @@ components:
         - price
         - currency
         - public_stock_status
+        - is_public
     PublicProduct:
       type: object
       additionalProperties: false
