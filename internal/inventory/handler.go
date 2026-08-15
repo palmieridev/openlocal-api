@@ -284,6 +284,11 @@ func applyNonnegativeStockDelta(ctx context.Context, q *db.Queries, businessID, 
 	level, err := q.ApplyNonnegativeStockDelta(ctx, db.ApplyNonnegativeStockDeltaParams{
 		BusinessID: businessID, VariantID: variantID, LocationID: locationID, QuantityOnHand: delta,
 	})
+	if errors.Is(err, pgx.ErrNoRows) && delta.IsPositive() {
+		return q.ApplyStockDelta(ctx, db.ApplyStockDeltaParams{
+			BusinessID: businessID, VariantID: variantID, LocationID: locationID, QuantityOnHand: delta,
+		})
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return db.StockLevel{}, fiber.NewError(fiber.StatusConflict, "stock level cannot be negative")
 	}

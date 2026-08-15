@@ -56,13 +56,13 @@ ON CONFLICT (business_id, variant_id, location_id) DO UPDATE SET
 RETURNING *;
 
 -- name: ApplyNonnegativeStockDelta :one
-INSERT INTO stock_levels (business_id, variant_id, location_id, quantity_on_hand)
-SELECT $1, $2, $3, $4
-WHERE $4 >= 0
-ON CONFLICT (business_id, variant_id, location_id) DO UPDATE SET
-    quantity_on_hand = stock_levels.quantity_on_hand + EXCLUDED.quantity_on_hand,
+UPDATE stock_levels
+SET quantity_on_hand = quantity_on_hand + sqlc.arg(quantity_on_hand)::numeric,
     updated_at = now()
-WHERE stock_levels.quantity_on_hand + EXCLUDED.quantity_on_hand >= 0
+WHERE business_id = sqlc.arg(business_id)
+  AND variant_id = sqlc.arg(variant_id)
+  AND location_id = sqlc.arg(location_id)
+  AND quantity_on_hand + sqlc.arg(quantity_on_hand)::numeric >= 0
 RETURNING *;
 
 -- name: GetStockLevel :one

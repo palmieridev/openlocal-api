@@ -14,29 +14,29 @@ import (
 )
 
 const applyNonnegativeStockDelta = `-- name: ApplyNonnegativeStockDelta :one
-INSERT INTO stock_levels (business_id, variant_id, location_id, quantity_on_hand)
-SELECT $1, $2, $3, $4
-WHERE $4 >= 0
-ON CONFLICT (business_id, variant_id, location_id) DO UPDATE SET
-    quantity_on_hand = stock_levels.quantity_on_hand + EXCLUDED.quantity_on_hand,
+UPDATE stock_levels
+SET quantity_on_hand = quantity_on_hand + $1::numeric,
     updated_at = now()
-WHERE stock_levels.quantity_on_hand + EXCLUDED.quantity_on_hand >= 0
+WHERE business_id = $2
+  AND variant_id = $3
+  AND location_id = $4
+  AND quantity_on_hand + $1::numeric >= 0
 RETURNING business_id, variant_id, location_id, quantity_on_hand, quantity_reserved, updated_at
 `
 
 type ApplyNonnegativeStockDeltaParams struct {
+	QuantityOnHand decimal.Decimal `json:"quantity_on_hand"`
 	BusinessID     uuid.UUID       `json:"business_id"`
 	VariantID      uuid.UUID       `json:"variant_id"`
 	LocationID     uuid.UUID       `json:"location_id"`
-	QuantityOnHand decimal.Decimal `json:"quantity_on_hand"`
 }
 
 func (q *Queries) ApplyNonnegativeStockDelta(ctx context.Context, arg ApplyNonnegativeStockDeltaParams) (StockLevel, error) {
 	row := q.db.QueryRow(ctx, applyNonnegativeStockDelta,
+		arg.QuantityOnHand,
 		arg.BusinessID,
 		arg.VariantID,
 		arg.LocationID,
-		arg.QuantityOnHand,
 	)
 	var i StockLevel
 	err := row.Scan(
