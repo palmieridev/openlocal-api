@@ -23,6 +23,30 @@ SELECT *
 FROM stock_movements
 WHERE business_id = $1 AND idempotency_key = $2;
 
+-- name: GetStockMovementForUpdate :one
+SELECT *
+FROM stock_movements
+WHERE id = $1 AND business_id = $2
+FOR UPDATE;
+
+-- name: UpdateStockMovement :one
+UPDATE stock_movements
+SET location_id = $3,
+    movement_type = $4,
+    quantity = $5,
+    unit_cost = $6,
+    reference_type = $7,
+    reference_id = $8,
+    notes = $9,
+    idempotency_key = $10
+WHERE id = $1 AND business_id = $2
+RETURNING *;
+
+-- name: DeleteStockMovement :one
+DELETE FROM stock_movements
+WHERE id = $1 AND business_id = $2
+RETURNING *;
+
 -- name: ApplyStockDelta :one
 INSERT INTO stock_levels (business_id, variant_id, location_id, quantity_on_hand)
 VALUES ($1, $2, $3, $4)
@@ -31,10 +55,25 @@ ON CONFLICT (business_id, variant_id, location_id) DO UPDATE SET
     updated_at = now()
 RETURNING *;
 
+-- name: ApplyNonnegativeStockDelta :one
+INSERT INTO stock_levels (business_id, variant_id, location_id, quantity_on_hand)
+SELECT $1, $2, $3, $4
+WHERE $4 >= 0
+ON CONFLICT (business_id, variant_id, location_id) DO UPDATE SET
+    quantity_on_hand = stock_levels.quantity_on_hand + EXCLUDED.quantity_on_hand,
+    updated_at = now()
+WHERE stock_levels.quantity_on_hand + EXCLUDED.quantity_on_hand >= 0
+RETURNING *;
+
 -- name: GetStockLevel :one
 SELECT *
 FROM stock_levels
 WHERE business_id = $1 AND variant_id = $2 AND location_id = $3;
+
+-- name: GetInventoryLocationForBusiness :one
+SELECT *
+FROM inventory_locations
+WHERE id = $1 AND business_id = $2;
 
 -- name: ListStockMovements :many
 SELECT *

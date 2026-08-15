@@ -120,6 +120,21 @@ func SameMovement(movement db.StockMovement, params db.CreateStockMovementParams
 		movement.CreatedBy == params.CreatedBy
 }
 
+func SameMovementEdit(movement db.StockMovement, params db.UpdateStockMovementParams) bool {
+	return movement.BusinessID == params.BusinessID &&
+		movement.LocationID == params.LocationID &&
+		movement.MovementType == params.MovementType &&
+		movement.Quantity.Equal(params.Quantity) &&
+		sameNullDecimal(movement.UnitCost, params.UnitCost) &&
+		movement.ReferenceType == params.ReferenceType &&
+		movement.ReferenceID == params.ReferenceID &&
+		movement.Notes == params.Notes
+}
+
+func MovementDelta(oldMovement db.StockMovement, newType string, newQuantity decimal.Decimal) decimal.Decimal {
+	return SignedQuantity(newType, newQuantity).Sub(SignedQuantity(oldMovement.MovementType, oldMovement.Quantity))
+}
+
 func sameNullDecimal(left, right decimal.NullDecimal) bool {
 	if left.Valid != right.Valid {
 		return false
