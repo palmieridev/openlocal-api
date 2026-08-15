@@ -123,6 +123,7 @@ func TestStockMovementAndStockLevelCanBeAppliedTransactionally(t *testing.T) {
 		Currency:          "MXN",
 		TrackInventory:    true,
 		PublicStockStatus: "available",
+		IsPublic:          true,
 		ReorderPoint:      decimal.NewFromInt(2),
 		LeadTimeDays:      3,
 		Status:            "active",
@@ -303,7 +304,8 @@ func TestMobileBusinessReachFiltersBusinessesAndProducts(t *testing.T) {
 		ProductID: product.ID, BusinessID: mobile.ID, Sku: "MOBILE-" + suffix,
 		InternalCode: "MOBILE-" + suffix, Name: "Cotización", Attributes: []byte(`{}`),
 		Price: decimal.NewFromInt(1000), Currency: "MXN", PublicStockStatus: "made_to_order",
-		Status: "active",
+		IsPublic: true,
+		Status:   "active",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -400,6 +402,7 @@ func TestVariantImageCanBeSetReplacedAndCleared(t *testing.T) {
 		Currency:          "MXN",
 		TrackInventory:    true,
 		PublicStockStatus: "available",
+		IsPublic:          true,
 		ReorderPoint:      decimal.Zero,
 		Status:            "active",
 	})
@@ -497,5 +500,112 @@ func TestVariantImageCanBeSetReplacedAndCleared(t *testing.T) {
 	}
 	if current, err = q.GetVariantImage(ctx, variant.ID); err != nil || current != "" {
 		t.Fatalf("got (%q, %v), want empty string", current, err)
+	}
+}
+
+func TestVariantVisibilityFiltersStorefrontAndMarketplaceCards(t *testing.T) {
+	pool := integrationPool(t)
+	ctx := context.Background()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback(ctx) })
+	q := db.New(tx)
+
+	business := createBusiness(t, ctx, q)
+	product, err := q.CreateProduct(ctx, db.CreateProductParams{
+		BusinessID: business.ID, Name: "Visibility Product", Slug: "visibility-product-" + uuid.NewString()[:8],
+		Description: "", Unit: "piece", ProductType: "stocked_product", IsPublic: true, Status: "active",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	createVariant := func(name string) db.ProductVariant {
+		t.Helper()
+		suffix := uuid.NewString()[:8]
+		variant, createErr := q.CreateVariant(ctx, db.CreateVariantParams{
+			ProductID: product.ID, BusinessID: business.ID, Sku: "VIS-" + suffix,
+			InternalCode: "VIS-" + suffix, Name: name, Attributes: []byte(`{}`),
+			Price: decimal.NewFromInt(100), Currency: "MXN", PublicStockStatus: "available",
+			IsPublic: true, Status: "active",
+		})
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		return variant
+	}
+	first := createVariant("First")
+	second := createVariant("Second")
+
+	setVisibility := func(variant db.ProductVariant, visibility pgtype.Bool) db.ProductVariant {
+		t.Helper()
+		updated, updateErr := q.UpdateVariant(ctx, db.UpdateVariantParams{
+			ID: variant.ID, BusinessID: variant.BusinessID, Sku: variant.Sku,
+			Barcode: variant.Barcode, InternalCode: variant.InternalCode, Name: variant.Name,
+			Description: variant.Description, PriceNote: variant.PriceNote, Attributes: variant.Attributes,
+			Price: variant.Price, Cost: variant.Cost, Currency: variant.Currency,
+			TrackInventory: variant.TrackInventory, PublicStockStatus: variant.PublicStockStatus,
+			ReorderPoint: variant.ReorderPoint, LeadTimeDays: variant.LeadTimeDays,
+			Status: variant.Status, IsPublic: visibility,
+		})
+		if updateErr != nil {
+			t.Fatal(updateErr)
+		}
+		return updated
+	}
+
+	first = setVisibility(first, pgtype.Bool{Bool: false, Valid: true})
+	if first.IsPublic {
+		t.Fatal("first variant stayed public")
+	}
+	first = setVisibility(first, pgtype.Bool{})
+	if first.IsPublic {
+		t.Fatal("omitted visibility update clobbered the hidden value")
+	}
+
+	storefront, err := q.ListPublicProductsByBusinessSlug(ctx, db.ListPublicProductsByBusinessSlugParams{
+		Slug: business.Slug, Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(storefront) != 1 || storefront[0].VariantID != second.ID {
+		t.Fatalf("storefront rows = %#v, want only second variant", storefront)
+	}
+
+	marketplace, err := q.SearchMarketplaceProducts(ctx, db.SearchMarketplaceProductsParams{
+		SearchQuery: "Visibility Product", LimitCount: 100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range marketplace {
+		if row.VariantID == first.ID {
+			t.Fatal("hidden first variant appeared in marketplace search")
+		}
+	}
+
+	second = setVisibility(second, pgtype.Bool{Bool: false, Valid: true})
+	storefront, err = q.ListPublicProductsByBusinessSlug(ctx, db.ListPublicProductsByBusinessSlugParams{
+		Slug: business.Slug, Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(storefront) != 0 {
+		t.Fatalf("storefront rows = %#v, want product removed after its last visible variant", storefront)
+	}
+
+	marketplace, err = q.SearchMarketplaceProducts(ctx, db.SearchMarketplaceProductsParams{
+		SearchQuery: "Visibility Product", LimitCount: 100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range marketplace {
+		if row.VariantID == first.ID || row.VariantID == second.ID {
+			t.Fatal("product with no visible variants appeared in marketplace search")
+		}
 	}
 }

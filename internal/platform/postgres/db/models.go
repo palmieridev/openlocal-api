@@ -179,6 +179,7 @@ type ProductVariant struct {
 	Description sql.NullString `json:"description"`
 	// Public qualification displayed beside the price, such as made-to-measure pricing conditions.
 	PriceNote sql.NullString `json:"price_note"`
+	IsPublic  bool           `json:"is_public"`
 }
 
 type StockLevel struct {

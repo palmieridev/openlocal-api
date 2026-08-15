@@ -35,10 +35,17 @@ func TestPublicVariantDTOExcludesPrivateFields(t *testing.T) {
 	if err := json.Unmarshal(body, &payload); err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"cost", "internal_code", "business_id", "track_inventory", "reorder_point"} {
+	for _, forbidden := range []string{"cost", "internal_code", "business_id", "track_inventory", "reorder_point", "is_public"} {
 		if _, ok := payload[forbidden]; ok {
 			t.Fatalf("public DTO exposed %s: %s", forbidden, string(body))
 		}
+	}
+}
+
+func TestMapVariantIncludesVisibilityForOwners(t *testing.T) {
+	variant := MapVariant(db.ProductVariant{IsPublic: false}, "", true)
+	if variant.IsPublic == nil || *variant.IsPublic {
+		t.Fatalf("is_public = %v, want false", variant.IsPublic)
 	}
 }
 
@@ -163,6 +170,36 @@ func TestVariantParamsDefaultsAttributesToObject(t *testing.T) {
 	}
 	if string(params.Attributes) != "{}" {
 		t.Fatalf("attributes = %s, want {}", params.Attributes)
+	}
+	if !params.IsPublic {
+		t.Fatal("is_public = false, want true by default")
+	}
+}
+
+func TestVariantVisibilityCanBeCreatedHiddenAndOmittedOnUpdate(t *testing.T) {
+	hidden := false
+	req := VariantRequest{
+		BusinessID: uuid.New().String(),
+		ProductID:  uuid.New().String(),
+		SKU:        "SKU-HIDDEN",
+		Price:      "10.00",
+		IsPublic:   &hidden,
+	}
+	created, _, err := VariantParams(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.IsPublic {
+		t.Fatal("is_public = true, want false")
+	}
+
+	req.IsPublic = nil
+	updated, _, err := UpdateVariantParams(uuid.New(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.IsPublic.Valid {
+		t.Fatalf("is_public = %#v, want omitted update", updated.IsPublic)
 	}
 }
 

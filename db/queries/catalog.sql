@@ -55,10 +55,10 @@ INSERT INTO product_images (variant_id, url, position) VALUES ($1, $2, 0);
 -- name: CreateVariant :one
 INSERT INTO product_variants (
     product_id, business_id, sku, barcode, internal_code, name, description, price_note, attributes,
-    price, cost, currency, track_inventory, public_stock_status, reorder_point,
+    price, cost, currency, track_inventory, public_stock_status, is_public, reorder_point,
     lead_time_days, status
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
 )
 RETURNING *;
 
@@ -129,6 +129,7 @@ UPDATE product_variants SET
     currency = $12,
     track_inventory = $13,
     public_stock_status = $14,
+    is_public = COALESCE(sqlc.narg('is_public')::boolean, is_public),
     reorder_point = $15,
     lead_time_days = $16,
     status = $17,
@@ -160,6 +161,7 @@ WHERE b.slug = $1
   AND b.status = 'active'
   AND p.is_public = true
   AND p.status = 'active'
+  AND pv.is_public = true
   AND pv.status = 'active'
 ORDER BY p.name ASC, pv.created_at ASC
 LIMIT $2 OFFSET $3;
@@ -184,6 +186,7 @@ LEFT JOIN LATERAL (
 WHERE b.status = 'active'
   AND p.is_public = true
   AND p.status = 'active'
+  AND pv.is_public = true
   AND pv.status = 'active'
   AND (sqlc.arg('search_query')::text = '' OR to_tsvector('simple', p.name || ' ' || p.description) @@ plainto_tsquery('simple', sqlc.arg('search_query')::text))
   AND (

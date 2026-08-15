@@ -9,6 +9,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/palmieridev/openlocal-api/internal/api"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	v "github.com/palmieridev/openlocal-api/internal/platform/validator"
@@ -69,6 +70,7 @@ type VariantRequest struct {
 	Currency          string  `json:"currency"`
 	TrackInventory    bool    `json:"track_inventory"`
 	PublicStockStatus string  `json:"public_stock_status"`
+	IsPublic          *bool   `json:"is_public"`
 	ReorderPoint      string  `json:"reorder_point"`
 	LeadTimeDays      int32   `json:"lead_time_days"`
 	Status            string  `json:"status"`
@@ -91,6 +93,7 @@ type VariantResponse struct {
 	Currency          string     `json:"currency"`
 	TrackInventory    bool       `json:"track_inventory,omitempty"`
 	PublicStockStatus string     `json:"public_stock_status"`
+	IsPublic          *bool      `json:"is_public,omitempty"`
 	ReorderPoint      string     `json:"reorder_point,omitempty"`
 	LeadTimeDays      int32      `json:"lead_time_days,omitempty"`
 	Status            string     `json:"status,omitempty"`
@@ -139,6 +142,7 @@ func MapVariant(v db.ProductVariant, imageURL string, includePrivate bool) Varia
 		out.InternalCode = v.InternalCode
 		out.Cost = api.DecimalPtr(v.Cost)
 		out.TrackInventory = v.TrackInventory
+		out.IsPublic = boolPtr(v.IsPublic)
 		out.ReorderPoint = v.ReorderPoint.String()
 		out.LeadTimeDays = v.LeadTimeDays
 		out.Status = v.Status
@@ -309,6 +313,10 @@ func VariantParams(req VariantRequest) (db.CreateVariantParams, uuid.UUID, error
 	if req.LeadTimeDays < 0 || req.LeadTimeDays > 3650 {
 		return db.CreateVariantParams{}, uuid.Nil, fiber.NewError(fiber.StatusBadRequest, "lead_time_days must be between 0 and 3650")
 	}
+	isPublic := true
+	if req.IsPublic != nil {
+		isPublic = *req.IsPublic
+	}
 	return db.CreateVariantParams{
 		ProductID:         productID,
 		BusinessID:        businessID,
@@ -324,6 +332,7 @@ func VariantParams(req VariantRequest) (db.CreateVariantParams, uuid.UUID, error
 		Currency:          currency,
 		TrackInventory:    req.TrackInventory,
 		PublicStockStatus: publicStockStatus,
+		IsPublic:          isPublic,
 		ReorderPoint:      reorderPoint,
 		LeadTimeDays:      req.LeadTimeDays,
 		Status:            status,
@@ -350,6 +359,7 @@ func UpdateVariantParams(id uuid.UUID, req VariantRequest) (db.UpdateVariantPara
 		Currency:          params.Currency,
 		TrackInventory:    params.TrackInventory,
 		PublicStockStatus: params.PublicStockStatus,
+		IsPublic:          nullableBool(req.IsPublic),
 		ReorderPoint:      params.ReorderPoint,
 		LeadTimeDays:      params.LeadTimeDays,
 		Status:            params.Status,
@@ -387,6 +397,17 @@ func stringPtr(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+func boolPtr(value bool) *bool {
+	return &value
+}
+
+func nullableBool(value *bool) pgtype.Bool {
+	if value == nil {
+		return pgtype.Bool{}
+	}
+	return pgtype.Bool{Bool: *value, Valid: true}
 }
 
 // VariantImageURL validates the image_url field of a variant request.
