@@ -1347,6 +1347,62 @@ paths:
                 $ref: "#/components/schemas/StockMovementResult"
         "409":
           description: The idempotency key was already used for different movement data.
+  /api/v1/inventory/movements/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags:
+        - Inventory
+      description: Updates a movement and applies its signed delta to stock in the same transaction. Omitting location_id preserves the original location; variant_id cannot be changed.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Unique key for safely retrying this movement edit.
+          schema:
+            type: string
+            minLength: 8
+            maxLength: 128
+            pattern: '^[A-Za-z0-9._:-]+$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StockMovementRequest"
+      responses:
+        "200":
+          description: Movement and stock level updated transactionally, or an identical edit replayed.
+          headers:
+            Idempotent-Replayed:
+              description: Present with value true when an identical edit is replayed.
+              schema:
+                type: string
+                enum: ["true"]
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockMovementResult"
+        "400":
+          description: Invalid input or an attempted variant_id change.
+        "409":
+          description: The edit would make stock negative or the idempotency key is already in use.
+    delete:
+      tags:
+        - Inventory
+      description: Deletes a movement and reverses its signed stock effect in the same transaction.
+      parameters:
+        - $ref: "#/components/parameters/BusinessIDQuery"
+      responses:
+        "204":
+          description: Movement deleted and its stock effect reversed.
+        "409":
+          description: Reversing the movement would make stock negative.
   /api/v1/inventory/stock-levels:
     get:
       tags:

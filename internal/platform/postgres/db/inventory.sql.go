@@ -13,6 +13,43 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+const applyNonnegativeStockDelta = `-- name: ApplyNonnegativeStockDelta :one
+UPDATE stock_levels
+SET quantity_on_hand = quantity_on_hand + $1::numeric,
+    updated_at = now()
+WHERE business_id = $2
+  AND variant_id = $3
+  AND location_id = $4
+  AND quantity_on_hand + $1::numeric >= 0
+RETURNING business_id, variant_id, location_id, quantity_on_hand, quantity_reserved, updated_at
+`
+
+type ApplyNonnegativeStockDeltaParams struct {
+	QuantityOnHand decimal.Decimal `json:"quantity_on_hand"`
+	BusinessID     uuid.UUID       `json:"business_id"`
+	VariantID      uuid.UUID       `json:"variant_id"`
+	LocationID     uuid.UUID       `json:"location_id"`
+}
+
+func (q *Queries) ApplyNonnegativeStockDelta(ctx context.Context, arg ApplyNonnegativeStockDeltaParams) (StockLevel, error) {
+	row := q.db.QueryRow(ctx, applyNonnegativeStockDelta,
+		arg.QuantityOnHand,
+		arg.BusinessID,
+		arg.VariantID,
+		arg.LocationID,
+	)
+	var i StockLevel
+	err := row.Scan(
+		&i.BusinessID,
+		&i.VariantID,
+		&i.LocationID,
+		&i.QuantityOnHand,
+		&i.QuantityReserved,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const applyStockDelta = `-- name: ApplyStockDelta :one
 INSERT INTO stock_levels (business_id, variant_id, location_id, quantity_on_hand)
 VALUES ($1, $2, $3, $4)
@@ -131,6 +168,38 @@ func (q *Queries) CreateStockMovement(ctx context.Context, arg CreateStockMoveme
 	return i, err
 }
 
+const deleteStockMovement = `-- name: DeleteStockMovement :one
+DELETE FROM stock_movements
+WHERE id = $1 AND business_id = $2
+RETURNING id, business_id, variant_id, location_id, movement_type, quantity, unit_cost, reference_type, reference_id, notes, created_by, created_at, idempotency_key
+`
+
+type DeleteStockMovementParams struct {
+	ID         uuid.UUID `json:"id"`
+	BusinessID uuid.UUID `json:"business_id"`
+}
+
+func (q *Queries) DeleteStockMovement(ctx context.Context, arg DeleteStockMovementParams) (StockMovement, error) {
+	row := q.db.QueryRow(ctx, deleteStockMovement, arg.ID, arg.BusinessID)
+	var i StockMovement
+	err := row.Scan(
+		&i.ID,
+		&i.BusinessID,
+		&i.VariantID,
+		&i.LocationID,
+		&i.MovementType,
+		&i.Quantity,
+		&i.UnitCost,
+		&i.ReferenceType,
+		&i.ReferenceID,
+		&i.Notes,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.IdempotencyKey,
+	)
+	return i, err
+}
+
 const getDefaultInventoryLocation = `-- name: GetDefaultInventoryLocation :one
 SELECT id, business_id, name, is_default, created_at
 FROM inventory_locations
@@ -139,6 +208,30 @@ WHERE business_id = $1 AND is_default = true
 
 func (q *Queries) GetDefaultInventoryLocation(ctx context.Context, businessID uuid.UUID) (InventoryLocation, error) {
 	row := q.db.QueryRow(ctx, getDefaultInventoryLocation, businessID)
+	var i InventoryLocation
+	err := row.Scan(
+		&i.ID,
+		&i.BusinessID,
+		&i.Name,
+		&i.IsDefault,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getInventoryLocationForBusiness = `-- name: GetInventoryLocationForBusiness :one
+SELECT id, business_id, name, is_default, created_at
+FROM inventory_locations
+WHERE id = $1 AND business_id = $2
+`
+
+type GetInventoryLocationForBusinessParams struct {
+	ID         uuid.UUID `json:"id"`
+	BusinessID uuid.UUID `json:"business_id"`
+}
+
+func (q *Queries) GetInventoryLocationForBusiness(ctx context.Context, arg GetInventoryLocationForBusinessParams) (InventoryLocation, error) {
+	row := q.db.QueryRow(ctx, getInventoryLocationForBusiness, arg.ID, arg.BusinessID)
 	var i InventoryLocation
 	err := row.Scan(
 		&i.ID,
@@ -189,6 +282,39 @@ type GetStockMovementByIdempotencyKeyParams struct {
 
 func (q *Queries) GetStockMovementByIdempotencyKey(ctx context.Context, arg GetStockMovementByIdempotencyKeyParams) (StockMovement, error) {
 	row := q.db.QueryRow(ctx, getStockMovementByIdempotencyKey, arg.BusinessID, arg.IdempotencyKey)
+	var i StockMovement
+	err := row.Scan(
+		&i.ID,
+		&i.BusinessID,
+		&i.VariantID,
+		&i.LocationID,
+		&i.MovementType,
+		&i.Quantity,
+		&i.UnitCost,
+		&i.ReferenceType,
+		&i.ReferenceID,
+		&i.Notes,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.IdempotencyKey,
+	)
+	return i, err
+}
+
+const getStockMovementForUpdate = `-- name: GetStockMovementForUpdate :one
+SELECT id, business_id, variant_id, location_id, movement_type, quantity, unit_cost, reference_type, reference_id, notes, created_by, created_at, idempotency_key
+FROM stock_movements
+WHERE id = $1 AND business_id = $2
+FOR UPDATE
+`
+
+type GetStockMovementForUpdateParams struct {
+	ID         uuid.UUID `json:"id"`
+	BusinessID uuid.UUID `json:"business_id"`
+}
+
+func (q *Queries) GetStockMovementForUpdate(ctx context.Context, arg GetStockMovementForUpdateParams) (StockMovement, error) {
+	row := q.db.QueryRow(ctx, getStockMovementForUpdate, arg.ID, arg.BusinessID)
 	var i StockMovement
 	err := row.Scan(
 		&i.ID,
@@ -295,4 +421,63 @@ func (q *Queries) ListStockMovements(ctx context.Context, arg ListStockMovements
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateStockMovement = `-- name: UpdateStockMovement :one
+UPDATE stock_movements
+SET location_id = $3,
+    movement_type = $4,
+    quantity = $5,
+    unit_cost = $6,
+    reference_type = $7,
+    reference_id = $8,
+    notes = $9,
+    idempotency_key = $10
+WHERE id = $1 AND business_id = $2
+RETURNING id, business_id, variant_id, location_id, movement_type, quantity, unit_cost, reference_type, reference_id, notes, created_by, created_at, idempotency_key
+`
+
+type UpdateStockMovementParams struct {
+	ID             uuid.UUID           `json:"id"`
+	BusinessID     uuid.UUID           `json:"business_id"`
+	LocationID     uuid.UUID           `json:"location_id"`
+	MovementType   string              `json:"movement_type"`
+	Quantity       decimal.Decimal     `json:"quantity"`
+	UnitCost       decimal.NullDecimal `json:"unit_cost"`
+	ReferenceType  sql.NullString      `json:"reference_type"`
+	ReferenceID    sql.NullString      `json:"reference_id"`
+	Notes          string              `json:"notes"`
+	IdempotencyKey sql.NullString      `json:"idempotency_key"`
+}
+
+func (q *Queries) UpdateStockMovement(ctx context.Context, arg UpdateStockMovementParams) (StockMovement, error) {
+	row := q.db.QueryRow(ctx, updateStockMovement,
+		arg.ID,
+		arg.BusinessID,
+		arg.LocationID,
+		arg.MovementType,
+		arg.Quantity,
+		arg.UnitCost,
+		arg.ReferenceType,
+		arg.ReferenceID,
+		arg.Notes,
+		arg.IdempotencyKey,
+	)
+	var i StockMovement
+	err := row.Scan(
+		&i.ID,
+		&i.BusinessID,
+		&i.VariantID,
+		&i.LocationID,
+		&i.MovementType,
+		&i.Quantity,
+		&i.UnitCost,
+		&i.ReferenceType,
+		&i.ReferenceID,
+		&i.Notes,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.IdempotencyKey,
+	)
+	return i, err
 }

@@ -21,6 +21,27 @@ func TestSignedQuantity(t *testing.T) {
 	}
 }
 
+func TestMovementDelta(t *testing.T) {
+	old := db.StockMovement{MovementType: "IN_PURCHASE", Quantity: decimal.NewFromInt(5)}
+	tests := []struct {
+		name     string
+		newType  string
+		quantity decimal.Decimal
+		want     decimal.Decimal
+	}{
+		{name: "edit inbound up", newType: "IN_PURCHASE", quantity: decimal.NewFromInt(8), want: decimal.NewFromInt(3)},
+		{name: "edit inbound down", newType: "IN_PURCHASE", quantity: decimal.NewFromInt(2), want: decimal.NewFromInt(-3)},
+		{name: "change to outbound", newType: "OUT_ADJUSTMENT", quantity: decimal.NewFromInt(2), want: decimal.NewFromInt(-7)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := MovementDelta(old, tt.newType, tt.quantity); !got.Equal(tt.want) {
+				t.Fatalf("MovementDelta() = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestMovementParamsRejectsUnsafeValues(t *testing.T) {
 	base := StockMovementRequest{
 		BusinessID:   uuid.New().String(),
