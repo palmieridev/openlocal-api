@@ -13,22 +13,33 @@ import (
 )
 
 type Config struct {
-	AppEnv                 string
-	HTTPAddr               string
-	DatabaseURL            string
-	ClerkSecretKey         string
-	ClerkAPIURL            string
-	ClerkWebhookSecret     string
-	ClerkIssuerURL         string
-	ClerkJWKSURL           string
-	ClerkAuthorizedParties []string
-	CORSAllowedOrigins     []string
-	AuthTestBypass         bool
-	RateLimitWindow        time.Duration
-	GlobalRateLimitMax     int
-	PublicRateLimitMax     int
-	PrivateRateLimitMax    int
-	WebhookRateLimitMax    int
+	AppEnv                    string
+	HTTPAddr                  string
+	DatabaseURL               string
+	ClerkSecretKey            string
+	ClerkAPIURL               string
+	ClerkWebhookSecret        string
+	ClerkIssuerURL            string
+	ClerkJWKSURL              string
+	ClerkAuthorizedParties    []string
+	CORSAllowedOrigins        []string
+	AuthTestBypass            bool
+	RateLimitWindow           time.Duration
+	GlobalRateLimitMax        int
+	PublicRateLimitMax        int
+	PrivateRateLimitMax       int
+	WebhookRateLimitMax       int
+	ModulesTokenKey           string
+	ModulesAllowTestChallenge bool
+	TurnstileSecret           string
+	TurnstileHostnames        []string
+	StripeSecretKey           string
+	StripeWebhookSecret       string
+	StripeEssentialPrice      string
+	StripeBusinessPrice       string
+	StripeSecondModulePrice   string
+	StripePortalConfiguration string
+	AppBaseURL                string
 }
 
 func Load() (Config, error) {
@@ -36,17 +47,28 @@ func Load() (Config, error) {
 	_ = godotenv.Load()
 
 	cfg := Config{
-		AppEnv:                 getenv("APP_ENV", "development"),
-		HTTPAddr:               portAddr(),
-		DatabaseURL:            getenv("DATABASE_URL", "postgres://openlocal:openlocal@localhost:5432/openlocal?sslmode=disable"),
-		ClerkSecretKey:         os.Getenv("CLERK_SECRET_KEY"),
-		ClerkAPIURL:            getenv("CLERK_API_URL", "https://api.clerk.com/v1"),
-		ClerkWebhookSecret:     os.Getenv("CLERK_WEBHOOK_SIGNING_SECRET"),
-		ClerkIssuerURL:         os.Getenv("CLERK_ISSUER_URL"),
-		ClerkJWKSURL:           os.Getenv("CLERK_JWKS_URL"),
-		ClerkAuthorizedParties: splitCSV(os.Getenv("CLERK_AUTHORIZED_PARTIES")),
-		CORSAllowedOrigins:     splitCSV(getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173")),
-		AuthTestBypass:         getbool("AUTH_TEST_BYPASS", false),
+		AppEnv:                    getenv("APP_ENV", "development"),
+		HTTPAddr:                  portAddr(),
+		DatabaseURL:               getenv("DATABASE_URL", "postgres://openlocal:openlocal@localhost:5432/openlocal?sslmode=disable"),
+		ClerkSecretKey:            os.Getenv("CLERK_SECRET_KEY"),
+		ClerkAPIURL:               getenv("CLERK_API_URL", "https://api.clerk.com/v1"),
+		ClerkWebhookSecret:        os.Getenv("CLERK_WEBHOOK_SIGNING_SECRET"),
+		ClerkIssuerURL:            os.Getenv("CLERK_ISSUER_URL"),
+		ClerkJWKSURL:              os.Getenv("CLERK_JWKS_URL"),
+		ClerkAuthorizedParties:    splitCSV(os.Getenv("CLERK_AUTHORIZED_PARTIES")),
+		CORSAllowedOrigins:        splitCSV(getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173")),
+		AuthTestBypass:            getbool("AUTH_TEST_BYPASS", false),
+		ModulesTokenKey:           os.Getenv("MODULES_TOKEN_KEY"),
+		ModulesAllowTestChallenge: getbool("MODULES_ALLOW_TEST_CHALLENGE", false),
+		TurnstileSecret:           os.Getenv("TURNSTILE_SECRET_KEY"),
+		TurnstileHostnames:        splitCSV(getenv("TURNSTILE_HOSTNAMES", "openlocal.store")),
+		StripeSecretKey:           os.Getenv("STRIPE_SECRET_KEY"),
+		StripeWebhookSecret:       os.Getenv("STRIPE_WEBHOOK_SECRET"),
+		StripeEssentialPrice:      os.Getenv("STRIPE_ESSENTIAL_PRICE_ID"),
+		StripeBusinessPrice:       os.Getenv("STRIPE_BUSINESS_PRICE_ID"),
+		StripeSecondModulePrice:   os.Getenv("STRIPE_SECOND_MODULE_PRICE_ID"),
+		StripePortalConfiguration: os.Getenv("STRIPE_PORTAL_CONFIGURATION_ID"),
+		AppBaseURL:                getenv("APP_BASE_URL", "http://localhost:4321"),
 	}
 	var err error
 	if cfg.RateLimitWindow, err = positiveDuration("RATE_LIMIT_WINDOW", time.Minute); err != nil {
@@ -78,6 +100,12 @@ func Load() (Config, error) {
 }
 
 func validate(cfg Config) error {
+	if cfg.ModulesTokenKey != "" {
+		key, err := base64.StdEncoding.DecodeString(cfg.ModulesTokenKey)
+		if err != nil || len(key) != 32 {
+			return errors.New("MODULES_TOKEN_KEY must be base64-encoded 32 bytes")
+		}
+	}
 	if !cfg.AuthTestBypass && (cfg.ClerkIssuerURL == "" || cfg.ClerkJWKSURL == "") {
 		return errors.New("CLERK_ISSUER_URL and CLERK_JWKS_URL are required unless AUTH_TEST_BYPASS=true")
 	}
@@ -89,6 +117,12 @@ func validate(cfg Config) error {
 	}
 	if cfg.AuthTestBypass {
 		return errors.New("AUTH_TEST_BYPASS cannot be enabled in production")
+	}
+	if cfg.ModulesAllowTestChallenge {
+		return errors.New("MODULES_ALLOW_TEST_CHALLENGE cannot be enabled in production")
+	}
+	if cfg.StripeSecretKey != "" && (cfg.StripeWebhookSecret == "" || cfg.ModulesTokenKey == "" || !strings.HasPrefix(cfg.AppBaseURL, "https://")) {
+		return errors.New("production billing requires webhook secret, module key and HTTPS APP_BASE_URL")
 	}
 	if len(cfg.ClerkAuthorizedParties) == 0 {
 		return errors.New("CLERK_AUTHORIZED_PARTIES is required in production")
