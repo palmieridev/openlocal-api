@@ -204,7 +204,7 @@ func (h *Handler) Reconcile(ctx context.Context, customer string) error {
 	local, err := h.RT.Q.GetSubscriptionByCustomer(ctx, sqlText(customer))
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			return nil
+			return h.RT.Q.ProcessBillingEvents(ctx, customer)
 		}
 		return err
 	}
