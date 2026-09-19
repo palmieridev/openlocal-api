@@ -173,9 +173,10 @@ func TestReconcileUsesRetrievedStripeState(t *testing.T) {
 	}
 	start := time.Now().Add(-time.Hour).Unix()
 	end := time.Now().AddDate(0, 1, 0).Unix()
+	subscriptionID := "sub_" + uuid.NewString()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"data":[{"id":"sub_test","customer":"`+customer+`","status":"active","metadata":{"base_module":"appointments"},"items":{"has_more":false,"data":[{"id":"si_test","quantity":1,"current_period_start":`+strconv.FormatInt(start, 10)+`,"current_period_end":`+strconv.FormatInt(end, 10)+`,"price":{"id":"price_e","currency":"mxn","active":true}}]}}],"has_more":false}`)
+		_, _ = io.WriteString(w, `{"data":[{"id":"`+subscriptionID+`","customer":"`+customer+`","status":"active","metadata":{"base_module":"appointments"},"items":{"has_more":false,"data":[{"id":"si_test","quantity":1,"current_period_start":`+strconv.FormatInt(start, 10)+`,"current_period_end":`+strconv.FormatInt(end, 10)+`,"price":{"id":"price_e","currency":"mxn","active":true}}]}}],"has_more":false}`)
 	}))
 	defer server.Close()
 	h := NewHandler(api.NewRuntime(logger.New("test"), pool, nil), config.Config{StripeSecretKey: "sk_test", StripeEssentialPrice: "price_e", StripeBusinessPrice: "price_b", StripeSecondModulePrice: "price_a"})
