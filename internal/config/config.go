@@ -40,6 +40,9 @@ type Config struct {
 	StripeSecondModulePrice   string
 	StripePortalConfiguration string
 	AppBaseURL                string
+	EssentialMonthlyCents     int64
+	BusinessMonthlyCents      int64
+	SecondModuleMonthlyCents  int64
 }
 
 func Load() (Config, error) {
@@ -71,6 +74,14 @@ func Load() (Config, error) {
 		AppBaseURL:                getenv("APP_BASE_URL", "http://localhost:4321"),
 	}
 	var err error
+	for name, dst := range map[string]*int64{"ESSENTIAL_MONTHLY_CENTS": &cfg.EssentialMonthlyCents, "BUSINESS_MONTHLY_CENTS": &cfg.BusinessMonthlyCents, "SECOND_MODULE_MONTHLY_CENTS": &cfg.SecondModuleMonthlyCents} {
+		defaults := map[string]int{"ESSENTIAL_MONTHLY_CENTS": 5900, "BUSINESS_MONTHLY_CENTS": 14900, "SECOND_MODULE_MONTHLY_CENTS": 4900}
+		n, e := positiveInt(name, defaults[name])
+		if e != nil {
+			return Config{}, e
+		}
+		*dst = int64(n)
+	}
 	if cfg.RateLimitWindow, err = positiveDuration("RATE_LIMIT_WINDOW", time.Minute); err != nil {
 		return Config{}, err
 	}
@@ -121,9 +132,6 @@ func validate(cfg Config) error {
 	if cfg.ModulesAllowTestChallenge {
 		return errors.New("MODULES_ALLOW_TEST_CHALLENGE cannot be enabled in production")
 	}
-	if cfg.StripeSecretKey != "" && (cfg.StripeWebhookSecret == "" || cfg.ModulesTokenKey == "" || !strings.HasPrefix(cfg.AppBaseURL, "https://")) {
-		return errors.New("production billing requires webhook secret, module key and HTTPS APP_BASE_URL")
-	}
 	if len(cfg.ClerkAuthorizedParties) == 0 {
 		return errors.New("CLERK_AUTHORIZED_PARTIES is required in production")
 	}
@@ -134,6 +142,13 @@ func validate(cfg Config) error {
 		if origin == "*" {
 			return errors.New("wildcard CORS origins are not allowed in production")
 		}
+	}
+	if cfg.ModulesTokenKey == "" || cfg.TurnstileSecret == "" || len(cfg.TurnstileHostnames) == 0 {
+		return errors.New("production operational modules require MODULES_TOKEN_KEY and Turnstile configuration")
+	}
+	stripeConfigured := cfg.StripeSecretKey != "" || cfg.StripeWebhookSecret != "" || cfg.StripeEssentialPrice != "" || cfg.StripeBusinessPrice != "" || cfg.StripeSecondModulePrice != "" || cfg.StripePortalConfiguration != ""
+	if stripeConfigured && (cfg.StripeSecretKey == "" || cfg.StripeWebhookSecret == "" || cfg.StripeEssentialPrice == "" || cfg.StripeBusinessPrice == "" || cfg.StripeSecondModulePrice == "" || cfg.StripePortalConfiguration == "" || !strings.HasPrefix(cfg.AppBaseURL, "https://")) {
+		return errors.New("production billing requires all Stripe IDs/secrets and HTTPS APP_BASE_URL")
 	}
 	return nil
 }

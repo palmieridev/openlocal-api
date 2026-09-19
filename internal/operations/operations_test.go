@@ -56,6 +56,16 @@ func setup(t *testing.T) fixture {
 	b, e := q.CreateBusiness(ctx, db.CreateBusinessParams{ClerkOrgID: sql.NullString{String: org, Valid: true}, Name: "Module test", Slug: "module-" + uuid.NewString(), BusinessType: "servicios", Status: "active", Timezone: "America/Mexico_City", LocationMode: "fixed"})
 	must(t, e)
 	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM request_history WHERE business_id=$1;
+DELETE FROM request_access WHERE business_id=$1;
+DELETE FROM module_usage_events WHERE business_id=$1;
+DELETE FROM preorder_items WHERE business_id=$1;
+DELETE FROM preorders WHERE business_id=$1;
+DELETE FROM preorder_pickup_windows WHERE business_id=$1;
+DELETE FROM appointments WHERE business_id=$1;
+DELETE FROM appointment_resources WHERE business_id=$1;
+DELETE FROM services WHERE business_id=$1;
+DELETE FROM module_customers WHERE business_id=$1`, b.ID)
 		_, _ = pool.Exec(ctx, "DELETE FROM businesses WHERE id=$1", b.ID)
 		_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id=$1", u.ID)
 	})

@@ -232,8 +232,10 @@ func (h *Handler) mutate(c *fiber.Ctx) error {
 			}
 		}
 	}
-	if e = addHistory(c.Context(), q, business, id, module, r.Status, status, actor); e != nil {
-		return e
+	if status != r.Status {
+		if e = addHistory(c.Context(), q, business, id, module, r.Status, status, actor); e != nil {
+			return e
+		}
 	}
 	out, e := h.record(c.Context(), q, business, id, module)
 	if e != nil {

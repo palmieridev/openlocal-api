@@ -143,6 +143,21 @@ func (q *Queries) CreateAppointment(ctx context.Context, arg CreateAppointmentPa
 	return i, err
 }
 
+const deactivateExtraAppointmentResources = `-- name: DeactivateExtraAppointmentResources :exec
+UPDATE appointment_resources SET active=false
+WHERE business_id=$1 AND id<>$2 AND active
+`
+
+type DeactivateExtraAppointmentResourcesParams struct {
+	BusinessID uuid.UUID `json:"business_id"`
+	ID         uuid.UUID `json:"id"`
+}
+
+func (q *Queries) DeactivateExtraAppointmentResources(ctx context.Context, arg DeactivateExtraAppointmentResourcesParams) error {
+	_, err := q.db.Exec(ctx, deactivateExtraAppointmentResources, arg.BusinessID, arg.ID)
+	return err
+}
+
 const dueAppointments = `-- name: DueAppointments :many
 SELECT id,business_id FROM appointments WHERE status='requested' AND expires_at<=now() ORDER BY expires_at LIMIT 100
 `

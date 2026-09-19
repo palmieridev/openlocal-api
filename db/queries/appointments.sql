@@ -49,3 +49,7 @@ SELECT count(*)::int FROM appointments WHERE business_id=$1 AND status='requeste
 AND (sqlc.arg(phone)::text='' OR customer_phone=sqlc.arg(phone));
 -- name: DueAppointments :many
 SELECT id,business_id FROM appointments WHERE status='requested' AND expires_at<=now() ORDER BY expires_at LIMIT 100;
+
+-- name: DeactivateExtraAppointmentResources :exec
+UPDATE appointment_resources SET active=false
+WHERE business_id=$1 AND id<>$2 AND active;

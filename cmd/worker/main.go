@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"github.com/palmieridev/openlocal-api/internal/api"
+	"github.com/palmieridev/openlocal-api/internal/billing"
 	"github.com/palmieridev/openlocal-api/internal/config"
 	"github.com/palmieridev/openlocal-api/internal/jobs"
 	"github.com/palmieridev/openlocal-api/internal/operations"
@@ -28,7 +29,8 @@ func main() {
 	defer pool.Close()
 	logger := logger.New(cfg.AppEnv)
 	rt := api.NewRuntime(logger, pool, nil)
-	worker := jobs.Worker{Q: rt.Q, Operations: operations.NewHandler(rt, cfg), Logger: logger}
+	billingHandler := billing.NewHandler(rt, cfg)
+	worker := jobs.Worker{Q: rt.Q, Operations: operations.NewHandler(rt, cfg), Reconcile: billingHandler.Reconcile, Logger: logger}
 	if e = worker.Run(ctx); e != nil {
 		log.Fatal(e)
 	}
