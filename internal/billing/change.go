@@ -148,11 +148,23 @@ func (h *Handler) change(c *fiber.Ctx, q *db.Queries, local db.BusinessSubscript
 	}
 
 	if immediate {
+		if sub.Schedule != nil {
+			var released any
+			if err = h.Stripe.call(c.Context(), http.MethodPost, "/subscription_schedules/"+url.PathEscape(*sub.Schedule)+"/release", key+":release", url.Values{}, &released); err != nil {
+				return nil, err
+			}
+		}
 		form := url.Values{"payment_behavior": {"pending_if_incomplete"}, "proration_behavior": {"always_invoice"}, "proration_date": {strconv.FormatInt(proration, 10)}, "metadata[openlocal_business_id]": {local.BusinessID.String()}, "metadata[tier]": {in.Tier}, "metadata[modules]": {strings.Join(in.Modules, ",")}, "metadata[base_module]": {in.Modules[0]}}
 		formItems(form, "items", sub.Items.Data, desiredPrices(h, in))
 		var updated subscription
 		if err = h.Stripe.call(c.Context(), http.MethodPost, "/subscriptions/"+url.PathEscape(sub.ID), key, form, &updated); err != nil {
 			return nil, err
+		}
+		if sub.Schedule != nil {
+			local.ScheduledChange = nil
+			if _, err = q.UpdateSubscription(c.Context(), updateParams(local)); err != nil {
+				return nil, err
+			}
 		}
 		return fiber.Map{"pending": updated.pending(), "timing": "immediate", "effective_at": time.Now()}, nil
 	}
