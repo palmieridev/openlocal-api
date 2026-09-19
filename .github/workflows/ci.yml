@@ -42,3 +42,36 @@ jobs:
           sqlc-version: "1.31.1"
 
       - run: sqlc diff
+
+  modules-integration:
+    name: PGMQ · module integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build and start PostgreSQL with PGMQ
+        run: |
+          docker build -f docker/postgres.Dockerfile -t openlocal-pgmq-test .
+          docker run -d --name openlocal-pgmq-test \
+            -e POSTGRES_USER=openlocal -e POSTGRES_PASSWORD=openlocal \
+            -e POSTGRES_DB=openlocal -p 5432:5432 openlocal-pgmq-test
+          for attempt in $(seq 1 30); do
+            docker exec openlocal-pgmq-test pg_isready -U openlocal -d openlocal && exit 0
+            sleep 1
+          done
+          exit 1
+      - name: Apply migrations
+        run: |
+          go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.3
+          migrate -path db/migrations -database "$DATABASE_URL" up
+        env:
+          DATABASE_URL: postgres://openlocal:openlocal@localhost:5432/openlocal?sslmode=disable
+      - name: Database integration tests
+        run: go test ./internal/integration ./internal/operations ./internal/billing
+        env:
+          OPENLOCAL_INTEGRATION_TESTS: "1"
+          DATABASE_URL: postgres://openlocal:openlocal@localhost:5432/openlocal?sslmode=disable
