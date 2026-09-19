@@ -24,6 +24,17 @@ go test ./...
 go run ./cmd/api
 ```
 
+For the complete local stack, including PostgreSQL with PGMQ, migrations, the
+API hot-reload process, and the background worker, run:
+
+```sh
+docker compose up --build
+```
+
+The migration service finishes before the API starts. Stripe configuration is
+optional locally; without it, module operations still work and only paid
+checkout and plan changes are unavailable.
+
 ## Security Defaults
 
 - Clerk bearer tokens are verified against issuer, JWKS, expiry, and configured authorized parties.
