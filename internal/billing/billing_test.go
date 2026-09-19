@@ -116,6 +116,24 @@ func TestChangeInputNormalizesModules(t *testing.T) {
 	}
 }
 
+func TestReconcilerRequiresCompleteBillingConfiguration(t *testing.T) {
+	partial := NewHandler(api.Runtime{}, config.Config{StripeSecretKey: "sk_test"})
+	if partial.Reconciler() != nil {
+		t.Fatal("partial Stripe configuration enabled background reconciliation")
+	}
+
+	complete := NewHandler(api.Runtime{}, config.Config{
+		StripeSecretKey:         "sk_test",
+		StripeWebhookSecret:     "whsec_test",
+		StripeEssentialPrice:    "price_e",
+		StripeBusinessPrice:     "price_b",
+		StripeSecondModulePrice: "price_a",
+	})
+	if complete.Reconciler() == nil {
+		t.Fatal("complete Stripe configuration disabled background reconciliation")
+	}
+}
+
 func TestReconcileUsesRetrievedStripeState(t *testing.T) {
 	if os.Getenv("OPENLOCAL_INTEGRATION_TESTS") != "1" {
 		t.Skip("requires isolated Docker PostgreSQL")

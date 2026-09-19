@@ -30,7 +30,7 @@ func main() {
 	logger := logger.New(cfg.AppEnv)
 	rt := api.NewRuntime(logger, pool, nil)
 	billingHandler := billing.NewHandler(rt, cfg)
-	worker := jobs.Worker{Q: rt.Q, Operations: operations.NewHandler(rt, cfg), Reconcile: billingHandler.Reconcile, Logger: logger}
+	worker := jobs.Worker{Q: rt.Q, Operations: operations.NewHandler(rt, cfg), Reconcile: billingHandler.Reconciler(), Logger: logger}
 	if e = worker.Run(ctx); e != nil {
 		log.Fatal(e)
 	}

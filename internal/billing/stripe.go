@@ -102,6 +102,17 @@ func (s subscription) pending() bool {
 func (h *Handler) available() bool {
 	return h.Config.StripeSecretKey != "" && h.Config.StripeWebhookSecret != "" && h.Config.StripeEssentialPrice != "" && h.Config.StripeBusinessPrice != "" && h.Config.StripeSecondModulePrice != ""
 }
+
+// Reconciler returns the provider-backed reconciliation function only when
+// billing is fully configured. This keeps deployments that intentionally run
+// without Stripe from polling the provider with partial credentials.
+func (h *Handler) Reconciler() func(context.Context, string) error {
+	if !h.available() {
+		return nil
+	}
+	return h.Reconcile
+}
+
 func (h *Handler) requireBilling() error {
 	if !h.available() {
 		return api.Fail(503, "billing_unavailable", "billing is not configured")
