@@ -35,6 +35,10 @@ The migration service finishes before the API starts. Stripe configuration is
 optional locally; without it, module operations still work and only paid
 checkout and plan changes are unavailable.
 
+Local Stripe sandbox values can be kept separately in the gitignored
+`.env.stripe.local` file. Compose loads it when present for the API and worker,
+so Clerk and database settings can remain in their existing environment files.
+
 ## Security Defaults
 
 - Clerk bearer tokens are verified against issuer, JWKS, expiry, and configured authorized parties.

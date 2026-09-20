@@ -5,6 +5,8 @@ services:
     env_file:
       - .env
       - .env.local
+      - path: .env.stripe.local
+        required: false
     environment:
       DATABASE_URL: postgres://${PGUSER:-openlocal}:${PGPASSWORD:-openlocal}@postgres:5432/${PGDATABASE:-openlocal}?sslmode=disable
       PORT: ${PORT:-8080}
@@ -25,6 +27,8 @@ services:
     env_file:
       - .env
       - .env.local
+      - path: .env.stripe.local
+        required: false
     environment:
       DATABASE_URL: postgres://${PGUSER:-openlocal}:${PGPASSWORD:-openlocal}@postgres:5432/${PGDATABASE:-openlocal}?sslmode=disable
     command: go run ./cmd/worker
