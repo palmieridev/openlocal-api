@@ -18,12 +18,14 @@ import (
 	"github.com/palmieridev/openlocal-api/internal/analytics"
 	"github.com/palmieridev/openlocal-api/internal/api"
 	"github.com/palmieridev/openlocal-api/internal/auth"
+	"github.com/palmieridev/openlocal-api/internal/billing"
 	"github.com/palmieridev/openlocal-api/internal/business"
 	"github.com/palmieridev/openlocal-api/internal/catalog"
 	"github.com/palmieridev/openlocal-api/internal/clerk"
 	"github.com/palmieridev/openlocal-api/internal/config"
 	"github.com/palmieridev/openlocal-api/internal/inventory"
 	"github.com/palmieridev/openlocal-api/internal/marketplace"
+	"github.com/palmieridev/openlocal-api/internal/operations"
 	v "github.com/palmieridev/openlocal-api/internal/platform/validator"
 	"github.com/palmieridev/openlocal-api/internal/support"
 	"github.com/palmieridev/openlocal-api/internal/users"
@@ -84,6 +86,7 @@ func New(deps Deps) *fiber.App {
 		return "webhook:" + c.IP()
 	}))
 	webhooks.NewHandler(s.rt, deps.Config.ClerkWebhookSecret).RegisterRoutes(webhookAPI)
+	billing.NewHandler(s.rt, deps.Config).RegisterWebhookRoutes(webhookAPI)
 
 	publicAPI := apiGroup.Group("", rateLimiter(deps.Config.PublicRateLimitMax, deps.Config.RateLimitWindow, func(c *fiber.Ctx) bool {
 		path := c.Path()
@@ -94,6 +97,8 @@ func New(deps Deps) *fiber.App {
 	marketplace.NewHandler(s.rt).RegisterPublicRoutes(publicAPI)
 	catalog.NewHandler(s.rt).RegisterPublicRoutes(publicAPI)
 	support.NewHandler(s.rt).RegisterPublicRoutes(publicAPI)
+	billing.NewHandler(s.rt, deps.Config).RegisterPublicRoutes(publicAPI)
+	operations.NewHandler(s.rt, deps.Config).RegisterPublicRoutes(publicAPI)
 
 	private := apiGroup.Group("", deps.Auth.RequireAuth(), rateLimiter(deps.Config.PrivateRateLimitMax, deps.Config.RateLimitWindow, nil, authenticatedRateLimitKey))
 	users.NewHandler(s.rt).RegisterRoutes(private)
@@ -101,6 +106,8 @@ func New(deps Deps) *fiber.App {
 	catalog.NewHandler(s.rt).RegisterPrivateRoutes(private)
 	inventory.NewHandler(s.rt).RegisterPrivateRoutes(private)
 	analytics.NewHandler(s.rt).RegisterPrivateRoutes(private)
+	operations.NewHandler(s.rt, deps.Config).RegisterPrivateRoutes(private)
+	billing.NewHandler(s.rt, deps.Config).RegisterPrivateRoutes(private)
 
 	return app
 }

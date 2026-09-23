@@ -23,7 +23,11 @@ tags:
   - name: Marketplace
     description: Public marketplace discovery.
   - name: Webhooks
-    description: Clerk webhook receiver.
+    description: Clerk and Stripe webhook receivers.
+  - name: Operational Modules
+    description: Appointment and preorder configuration, intake, and fulfillment.
+  - name: Billing
+    description: Direct Stripe subscriptions and module entitlements.
 security:
   - clerkBearer: []
 components:
@@ -1626,3 +1630,197 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/MarketplaceProduct"
+  /api/v1/public/plans:
+    get:
+      tags: [Billing]
+      security: []
+      summary: List MXN plans and operational limits
+      responses:
+        "200": {description: Plan catalog and billing availability}
+  /api/v1/webhooks/stripe:
+    post:
+      tags: [Webhooks]
+      security: []
+      summary: Verify and enqueue a Stripe billing event
+      responses:
+        "200": {description: Event accepted or previously accepted}
+        "400": {description: Invalid signature or payload}
+  /api/v1/public/businesses/{slug}/appointments/services:
+    get:
+      tags: [Operational Modules]
+      security: []
+      summary: List appointment services while intake is available
+      parameters:
+        - {name: slug, in: path, required: true, schema: {type: string}}
+      responses:
+        "200": {description: Public services}
+        "403": {description: Intake unavailable}
+  /api/v1/public/businesses/{slug}/appointments/availability:
+    get:
+      tags: [Operational Modules]
+      security: []
+      summary: List available appointment slots in the business timezone
+      parameters:
+        - {name: slug, in: path, required: true, schema: {type: string}}
+        - {name: service_id, in: query, required: true, schema: {type: string, format: uuid}}
+        - {name: resource_id, in: query, required: false, schema: {type: string, format: uuid}}
+        - {name: date, in: query, required: true, schema: {type: string, format: date}}
+      responses:
+        "200": {description: Timezone and conflict-free slots}
+  /api/v1/public/businesses/{slug}/appointments:
+    post:
+      tags: [Operational Modules]
+      security: []
+      summary: Save a pending appointment request
+      parameters:
+        - {name: slug, in: path, required: true, schema: {type: string}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      responses:
+        "201": {description: Persistent request and one-time management token}
+        "409": {description: Slot, quota, price, or idempotency conflict}
+  /api/v1/public/businesses/{slug}/preorders/catalog:
+    get:
+      tags: [Operational Modules]
+      security: []
+      summary: List products explicitly eligible for preorder
+      parameters:
+        - {name: slug, in: path, required: true, schema: {type: string}}
+      responses:
+        "200": {description: Snapshot-safe catalog with quantity rules}
+  /api/v1/public/businesses/{slug}/preorders/pickup-windows:
+    get:
+      tags: [Operational Modules]
+      security: []
+      summary: List available pickup windows
+      parameters:
+        - {name: slug, in: path, required: true, schema: {type: string}}
+        - {name: date, in: query, required: true, schema: {type: string, format: date}}
+      responses:
+        "200": {description: Timezone and pickup windows}
+  /api/v1/public/businesses/{slug}/preorders:
+    post:
+      tags: [Operational Modules]
+      security: []
+      summary: Save a pending preorder without changing inventory
+      parameters:
+        - {name: slug, in: path, required: true, schema: {type: string}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      responses:
+        "201": {description: Persistent request, item snapshots, and management token}
+  /api/v1/public/requests/{public_id}:
+    get:
+      tags: [Operational Modules]
+      security: []
+      summary: Read a request using its private management credential
+      parameters:
+        - {name: public_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: X-Openlocal-Management-Token, in: header, required: true, schema: {type: string}}
+      responses:
+        "200": {description: Request, status history, and allowed actions}
+        "404": {description: Request or credential not found}
+  /api/v1/public/requests/{public_id}/cancel:
+    post:
+      tags: [Operational Modules]
+      security: []
+      summary: Cancel a request using its private management credential
+      parameters:
+        - {name: public_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: X-Openlocal-Management-Token, in: header, required: true, schema: {type: string}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      responses:
+        "200": {description: Cancelled request}
+        "409": {description: Version, deadline, or state conflict}
+  /api/v1/businesses/{business_id}/entitlements:
+    get:
+      tags: [Billing]
+      summary: Resolve role-aware module capabilities and usage
+      parameters:
+        - {name: business_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        "200": {description: Per-module capabilities}
+  /api/v1/businesses/{business_id}/subscription:
+    get:
+      tags: [Billing]
+      summary: Read the owner subscription projection
+      parameters:
+        - {name: business_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        "200": {description: Subscription, pending change, and entitlements}
+  /api/v1/businesses/{business_id}/billing/{action}:
+    post:
+      tags: [Billing]
+      summary: Start Checkout, open the portal, preview, or apply a plan change
+      parameters:
+        - {name: business_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: action, in: path, required: true, schema: {type: string, enum: [checkout, portal, preview, change]}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      responses:
+        "200": {description: Hosted URL, authoritative preview, or scheduled change}
+        "503": {description: Billing not configured or temporarily unavailable}
+  /api/v1/businesses/{business_id}/{module}/settings:
+    get:
+      tags: [Operational Modules]
+      summary: Read complete module settings
+      parameters:
+        - {name: business_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: module, in: path, required: true, schema: {type: string, enum: [appointments, preorders]}}
+      responses:
+        "200": {description: Complete module settings}
+    patch:
+      tags: [Operational Modules]
+      summary: Merge and validate module settings
+      parameters:
+        - {name: business_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: module, in: path, required: true, schema: {type: string, enum: [appointments, preorders]}}
+      responses:
+        "200": {description: Updated settings}
+  /api/v1/businesses/{business_id}/{module}:
+    get:
+      tags: [Operational Modules]
+      summary: List persistent operational records
+      parameters:
+        - {name: business_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: module, in: path, required: true, schema: {type: string, enum: [appointments, preorders]}}
+      responses:
+        "200": {description: Bounded records and total count}
+    post:
+      tags: [Operational Modules]
+      summary: Save an owner-created pending record
+      parameters:
+        - {name: business_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: module, in: path, required: true, schema: {type: string, enum: [appointments, preorders]}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      responses:
+        "201": {description: Persistent pending record}
+  /api/v1/businesses/{business_id}/{module}/{record_id}:
+    get:
+      tags: [Operational Modules]
+      summary: Read an operational record with history
+      parameters:
+        - {name: business_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: module, in: path, required: true, schema: {type: string, enum: [appointments, preorders]}}
+        - {name: record_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        "200": {description: Record and allowed transitions}
+    patch:
+      tags: [Operational Modules]
+      summary: Edit a non-final operational record
+      parameters:
+        - {name: business_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: module, in: path, required: true, schema: {type: string, enum: [appointments, preorders]}}
+        - {name: record_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      responses:
+        "200": {description: Updated record}
+  /api/v1/businesses/{business_id}/{module}/{record_id}/transitions:
+    post:
+      tags: [Operational Modules]
+      summary: Apply a versioned status transition
+      parameters:
+        - {name: business_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: module, in: path, required: true, schema: {type: string, enum: [appointments, preorders]}}
+        - {name: record_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      responses:
+        "200": {description: Transitioned record}
+        "409": {description: Version, capacity, quota, or state conflict}
