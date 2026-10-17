@@ -39,6 +39,35 @@ func tierRank(tier string) int {
 	return 0
 }
 
+type changeResult struct {
+	Pending        bool      `json:"pending"`
+	Timing         string    `json:"timing"`
+	EffectiveAt    time.Time `json:"effective_at"`
+	PaymentStatus  string    `json:"payment_status,omitempty"`
+	AmountPaid     string    `json:"amount_paid,omitempty"`
+	AmountDeferred string    `json:"amount_deferred,omitempty"`
+	Currency       string    `json:"currency,omitempty"`
+}
+
+func immediateResult(s subscription) changeResult {
+	r := changeResult{Pending: s.pending(), Timing: "immediate", EffectiveAt: time.Now(), PaymentStatus: "processing", Currency: "MXN"}
+	if r.Pending || s.LatestInvoice.Status == "open" || s.LatestInvoice.Status == "uncollectible" {
+		r.PaymentStatus = "pending"
+	}
+	if !r.Pending && s.LatestInvoice.Status == "paid" {
+		r.PaymentStatus = "settled"
+		r.AmountPaid = cents(s.LatestInvoice.AmountPaid)
+		// A positive balance increase on a zero-due invoice is carried forward.
+		// Account credits can make starting_balance negative; don't count those
+		// consumed credits as an amount the customer still owes.
+		deferred := max(int64(0), s.LatestInvoice.EndingBalance) - max(int64(0), s.LatestInvoice.StartingBalance)
+		if s.LatestInvoice.AmountDue == 0 && deferred > 0 {
+			r.AmountDeferred = cents(deferred)
+		}
+	}
+	return r
+}
+
 func (h *Handler) subscription(ctx context.Context, id string) (subscription, error) {
 	var sub subscription
 	err := h.Stripe.call(ctx, http.MethodGet, "/subscriptions/"+url.PathEscape(id), "", url.Values{"expand[]": {"latest_invoice"}}, &sub)
@@ -156,6 +185,7 @@ func (h *Handler) change(c *fiber.Ctx, q *db.Queries, local db.BusinessSubscript
 		}
 		form := url.Values{"payment_behavior": {"pending_if_incomplete"}, "proration_behavior": {"always_invoice"}, "proration_date": {strconv.FormatInt(proration, 10)}, "metadata[openlocal_business_id]": {local.BusinessID.String()}, "metadata[tier]": {in.Tier}, "metadata[modules]": {strings.Join(in.Modules, ",")}, "metadata[base_module]": {in.Modules[0]}}
 		formItems(form, "items", sub.Items.Data, desiredPrices(h, in))
+		form.Set("expand[]", "latest_invoice")
 		var updated subscription
 		if err = h.Stripe.call(c.Context(), http.MethodPost, "/subscriptions/"+url.PathEscape(sub.ID), key, form, &updated); err != nil {
 			return nil, err
@@ -166,7 +196,7 @@ func (h *Handler) change(c *fiber.Ctx, q *db.Queries, local db.BusinessSubscript
 				return nil, err
 			}
 		}
-		return fiber.Map{"pending": updated.pending(), "timing": "immediate", "effective_at": time.Now()}, nil
+		return immediateResult(updated), nil
 	}
 
 	scheduleID := ""

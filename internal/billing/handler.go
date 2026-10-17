@@ -237,6 +237,15 @@ func (h *Handler) mutate(c *fiber.Ctx) error {
 	if e = tx.Commit(c.Context()); e != nil {
 		return e
 	}
+	// The provider mutation has succeeded and its result is persisted. Refresh
+	// access from verified Stripe state without depending on webhook delivery.
+	// A reconciliation failure must not turn an applied update into an error;
+	// webhook jobs and the periodic sweep will retry it.
+	if change, ok := result.(changeResult); ok && !change.Pending {
+		if reconcileErr := h.Reconcile(c.Context(), s.StripeCustomerID.String); reconcileErr != nil && h.RT.Logger != nil {
+			h.RT.Logger.Warn("billing change applied; access reconciliation will retry", "error", reconcileErr)
+		}
+	}
 	c.Set("Cache-Control", "no-store")
 	return c.JSON(result)
 }

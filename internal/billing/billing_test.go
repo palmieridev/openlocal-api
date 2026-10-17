@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/palmieridev/openlocal-api/internal/api"
 	"github.com/palmieridev/openlocal-api/internal/config"
+	"github.com/palmieridev/openlocal-api/internal/entitlements"
 	"github.com/palmieridev/openlocal-api/internal/platform/logger"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 )
@@ -194,5 +195,70 @@ func TestReconcileUsesRetrievedStripeState(t *testing.T) {
 	var status string
 	if err = pool.QueryRow(ctx, "SELECT status FROM billing_events WHERE id=$1", event).Scan(&status); err != nil || status != "processed" {
 		t.Fatalf("event=%q err=%v", status, err)
+	}
+}
+
+func TestReconcileOnlyGrantsProviderAppliedModules(t *testing.T) {
+	if os.Getenv("OPENLOCAL_INTEGRATION_TESTS") != "1" {
+		t.Skip("requires isolated Docker PostgreSQL")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	q := db.New(pool)
+	for _, pending := range []bool{false, true} {
+		t.Run(strconv.FormatBool(pending), func(t *testing.T) {
+			customer := "cus_" + uuid.NewString()
+			subscriptionID := "sub_" + uuid.NewString()
+			business, err := q.CreateBusiness(ctx, db.CreateBusinessParams{Name: "Billing access test", Slug: "billing-access-" + uuid.NewString(), BusinessType: "servicios", Status: "active", Timezone: "America/Mexico_City", LocationMode: "fixed"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM businesses WHERE id=$1", business.ID) })
+			if err = q.EnsureSubscription(ctx, business.ID); err != nil {
+				t.Fatal(err)
+			}
+			local, err := q.GetSubscription(ctx, business.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p := updateParams(local)
+			p.StripeCustomerID = sqlText(customer)
+			if _, err = q.UpdateSubscription(ctx, p); err != nil {
+				t.Fatal(err)
+			}
+			start, end := time.Now().Add(-time.Hour).Unix(), time.Now().AddDate(0, 1, 0).Unix()
+			items := `{"id":"si_base","quantity":1,"current_period_start":` + strconv.FormatInt(start, 10) + `,"current_period_end":` + strconv.FormatInt(end, 10) + `,"price":{"id":"price_e","currency":"mxn","active":true}}`
+			invoice, pendingUpdate := `{"status":"paid","amount_due":0,"amount_paid":0,"ending_balance":956}`, `null`
+			if pending {
+				invoice, pendingUpdate = `{"status":"open","amount_due":956}`, `{"subscription_items":[{"price":"price_a"}]}`
+			} else {
+				items += `,{"id":"si_addon","quantity":1,"price":{"id":"price_a","currency":"mxn","active":true}}`
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"data":[{"id":"`+subscriptionID+`","customer":"`+customer+`","status":"active","metadata":{"base_module":"appointments","modules":"appointments,preorders"},"pending_update":`+pendingUpdate+`,"latest_invoice":`+invoice+`,"items":{"data":[`+items+`]}}]}`)
+			}))
+			defer server.Close()
+			h := NewHandler(api.NewRuntime(logger.New("test"), pool, nil), config.Config{StripeEssentialPrice: "price_e", StripeBusinessPrice: "price_b", StripeSecondModulePrice: "price_a"})
+			h.Stripe = &Client{HTTP: server.Client(), BaseURL: server.URL, Secret: "sk_test"}
+			if err = h.Reconcile(ctx, customer); err != nil {
+				t.Fatal(err)
+			}
+			stored, err := q.GetSubscription(ctx, business.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			access, err := entitlements.Get(ctx, q, stored, "owner", time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if access.Modules["preorders"].Owned == pending {
+				t.Fatalf("pending=%v incorrectly grants preorder access: %+v", pending, access.Modules["preorders"])
+			}
+		})
 	}
 }

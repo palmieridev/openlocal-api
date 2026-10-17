@@ -3,6 +3,7 @@
 package billing
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -76,6 +77,33 @@ type item struct {
 	Start    int64  `json:"current_period_start"`
 	End      int64  `json:"current_period_end"`
 }
+
+// Stripe expandable fields are either an ID, an expanded object, or null.
+// Keep decoding tolerant even when a response wasn't requested with expand.
+type invoice struct {
+	ID              string `json:"id"`
+	Status          string `json:"status"`
+	Paid            bool   `json:"paid"`
+	Created         int64  `json:"created"`
+	AmountDue       int64  `json:"amount_due"`
+	AmountPaid      int64  `json:"amount_paid"`
+	StartingBalance int64  `json:"starting_balance"`
+	EndingBalance   int64  `json:"ending_balance"`
+}
+
+func (i *invoice) UnmarshalJSON(data []byte) error {
+	*i = invoice{}
+	data = bytes.TrimSpace(data)
+	if bytes.Equal(data, []byte("null")) {
+		return nil
+	}
+	if len(data) > 0 && data[0] == '"' {
+		return json.Unmarshal(data, &i.ID)
+	}
+	type expanded invoice
+	return json.Unmarshal(data, (*expanded)(i))
+}
+
 type subscription struct {
 	ID       string            `json:"id"`
 	Customer string            `json:"customer"`
@@ -89,11 +117,7 @@ type subscription struct {
 	CancelAtPeriodEnd bool            `json:"cancel_at_period_end"`
 	PendingUpdate     json.RawMessage `json:"pending_update"`
 	Schedule          *string         `json:"schedule"`
-	LatestInvoice     struct {
-		Status  string `json:"status"`
-		Paid    bool   `json:"paid"`
-		Created int64  `json:"created"`
-	} `json:"latest_invoice"`
+	LatestInvoice     invoice         `json:"latest_invoice"`
 }
 
 func (s subscription) pending() bool {
