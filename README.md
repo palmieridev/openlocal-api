@@ -39,6 +39,27 @@ Local Stripe sandbox values can be kept separately in the gitignored
 `.env.stripe.local` file. Compose loads it when present for the API and worker,
 so Clerk and database settings can remain in their existing environment files.
 
+## Production migrations
+
+Railway builds the API from `main` using the Dockerfile. Its entrypoint runs
+`migrate up` against `DATABASE_URL` before starting the API. Migration execution
+defaults to enabled (`RUN_MIGRATIONS=true`); a failure prevents the new API process
+from starting. Pending numbered `.up.sql` files are applied in order, while a
+database already at the latest version returns `no change` and starts normally.
+
+Keep Dockerfile builds enabled and leave the API start-command override unset.
+Commit each schema change as a new numbered migration pair in `db/migrations`;
+never edit an already released migration to introduce a new schema change.
+CI tests upgrades from version 18 using both the PGMQ extension on Postgres 17
+and SQL-only PGMQ on Postgres 18. CI databases are temporary, not production.
+
+Before merging a release, back up production and satisfy the prerequisites in
+[`docs/operational-modules.md`](docs/operational-modules.md). API startup owns
+migrations; workers use `RUN_MIGRATIONS=false` and start only after the API's
+migrations succeed. A code rollback does not roll back database migrations.
+If a migration fails, inspect the database version/dirty state and repair the
+failure before retrying; do not blindly force a version or run a down migration.
+
 ## Security Defaults
 
 - Clerk bearer tokens are verified against issuer, JWKS, expiry, and configured authorized parties.

@@ -1,4 +1,15 @@
-CREATE EXTENSION IF NOT EXISTS pgmq;
+-- Managed Postgres can use PGMQ's SQL-only installation instead of an extension.
+-- Keep the extension path for local/dev images that include its control files.
+DO $$ BEGIN
+  IF to_regprocedure('pgmq.create(text)') IS NULL THEN
+    IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'pgmq') THEN
+      CREATE EXTENSION IF NOT EXISTS pgmq;
+    ELSE
+      RAISE EXCEPTION 'PGMQ is not installed'
+        USING HINT = 'Install the pinned PGMQ SQL-only definitions or use a Postgres image with the PGMQ extension before running migrations.';
+    END IF;
+  END IF;
+END $$;
 SELECT pgmq.create('openlocal_jobs');
 SELECT pgmq.create('openlocal_failed');
 

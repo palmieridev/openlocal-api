@@ -44,32 +44,54 @@ jobs:
       - run: sqlc diff
 
   modules-integration:
-    name: PGMQ · module integration
+    name: PGMQ ${{ matrix.pgmq }} · module integration
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pgmq: extension
+            image: openlocal-pgmq-test
+          - pgmq: sql-only
+            image: postgres:18
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
-      - name: Build and start PostgreSQL with PGMQ
+      - name: Build PostgreSQL with the PGMQ extension
+        if: matrix.pgmq == 'extension'
+        run: docker build -f docker/postgres.Dockerfile -t openlocal-pgmq-test .
+      - name: Start PostgreSQL
         run: |
-          docker build -f docker/postgres.Dockerfile -t openlocal-pgmq-test .
           docker run -d --name openlocal-pgmq-test \
             -e POSTGRES_USER=openlocal -e POSTGRES_PASSWORD=openlocal \
-            -e POSTGRES_DB=openlocal -p 5432:5432 openlocal-pgmq-test
+            -e POSTGRES_DB=openlocal -p 5432:5432 ${{ matrix.image }}
           for attempt in $(seq 1 30); do
             docker exec openlocal-pgmq-test pg_isready -U openlocal -d openlocal && exit 0
             sleep 1
           done
           exit 1
-      - name: Apply migrations
+      - name: Install SQL-only PGMQ on PostgreSQL 18
+        if: matrix.pgmq == 'sql-only'
+        run: |
+          # Match the source revision in docker/postgres.Dockerfile.
+          curl --fail --silent --show-error --location \
+            https://raw.githubusercontent.com/pgmq/pgmq/9bb5ba79b30195e91e676d53e914fdc618ee41cd/pgmq-extension/sql/pgmq.sql \
+            --output /tmp/pgmq.sql
+          docker exec -i openlocal-pgmq-test psql -X -U openlocal -d openlocal \
+            --set ON_ERROR_STOP=on --single-transaction < /tmp/pgmq.sql
+      - name: Upgrade from migration 18 and verify repeat startup
         run: |
           go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.3
-          migrate -path db/migrations -database "$DATABASE_URL" up
+          migrate -path db/migrations -database "$DATABASE_URL" goto 18
+          sh scripts/docker-entrypoint.sh true
+          sh scripts/docker-entrypoint.sh true
         env:
           DATABASE_URL: postgres://openlocal:openlocal@localhost:5432/openlocal?sslmode=disable
+          MIGRATIONS_PATH: db/migrations
       - name: Database integration tests
         run: go test ./internal/integration ./internal/operations ./internal/billing
         env:
