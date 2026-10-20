@@ -10,6 +10,8 @@ Openlocal API is a Go/Fiber/PostgreSQL backend for local commerce: business prof
 - `golang-migrate` migrations
 - Clerk authentication, with one Clerk organization per business
 - Docker Compose for local Postgres
+- PGMQ for durable expiration and billing reconciliation jobs
+- Direct Stripe Billing in MXN; Clerk remains authentication and organization identity
 
 ## Local Setup
 
@@ -21,6 +23,21 @@ sqlc generate
 go test ./...
 go run ./cmd/api
 ```
+
+For the complete local stack, including PostgreSQL with PGMQ, migrations, the
+API hot-reload process, and the background worker, run:
+
+```sh
+docker compose up --build
+```
+
+The migration service finishes before the API starts. Stripe configuration is
+optional locally; without it, module operations still work and only paid
+checkout and plan changes are unavailable.
+
+Local Stripe sandbox values can be kept separately in the gitignored
+`.env.stripe.local` file. Compose loads it when present for the API and worker,
+so Clerk and database settings can remain in their existing environment files.
 
 ## Security Defaults
 
@@ -49,3 +66,8 @@ go test ./...
 go test -race ./...
 OPENLOCAL_INTEGRATION_TESTS=1 go test ./internal/integration
 ```
+
+The appointment/preorder API contract is documented in
+[`docs/modules-api.md`](docs/modules-api.md). Deployment, queue retention, local
+fixtures, and the non-secret Stripe setup are in
+[`docs/operational-modules.md`](docs/operational-modules.md).

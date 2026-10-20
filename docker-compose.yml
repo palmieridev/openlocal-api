@@ -5,22 +5,65 @@ services:
     env_file:
       - .env
       - .env.local
+      - path: .env.stripe.local
+        required: false
     environment:
       DATABASE_URL: postgres://${PGUSER:-openlocal}:${PGPASSWORD:-openlocal}@postgres:5432/${PGDATABASE:-openlocal}?sslmode=disable
       PORT: ${PORT:-8080}
+      MODULES_TOKEN_KEY: ${MODULES_TOKEN_KEY:-bG9jYWwtbW9kdWxlcy1vbmx5LXRlc3Qta2V5LTEyMzQ=}
+      MODULES_ALLOW_TEST_CHALLENGE: ${MODULES_ALLOW_TEST_CHALLENGE:-true}
     ports:
       - "${HTTP_PORT:-8080}:${PORT:-8080}"
     command: sh -c "go install github.com/air-verse/air@latest && air -c .air.toml"
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - .:/app
       - openlocal-go-build:/root/.cache/go-build
       - openlocal-go-mod:/go/pkg/mod
 
+  worker:
+    image: golang:1.26-alpine
+    working_dir: /app
+    env_file:
+      - .env
+      - .env.local
+      - path: .env.stripe.local
+        required: false
+    environment:
+      DATABASE_URL: postgres://${PGUSER:-openlocal}:${PGPASSWORD:-openlocal}@postgres:5432/${PGDATABASE:-openlocal}?sslmode=disable
+      MODULES_TOKEN_KEY: ${MODULES_TOKEN_KEY:-bG9jYWwtbW9kdWxlcy1vbmx5LXRlc3Qta2V5LTEyMzQ=}
+      MODULES_ALLOW_TEST_CHALLENGE: ${MODULES_ALLOW_TEST_CHALLENGE:-true}
+    command: go run ./cmd/worker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      api:
+        condition: service_started
+    volumes:
+      - .:/app
+      - openlocal-go-build:/root/.cache/go-build
+      - openlocal-go-mod:/go/pkg/mod
+
+  migrate:
+    image: migrate/migrate:v4.18.3
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://${PGUSER:-openlocal}:${PGPASSWORD:-openlocal}@postgres:5432/${PGDATABASE:-openlocal}?sslmode=disable
+    entrypoint: ["/bin/sh", "-c"]
+    command: ['migrate -path /migrations -database "$$DATABASE_URL" up']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./db/migrations:/migrations:ro
+
   postgres:
-    image: postgres:17-alpine
+    build:
+      context: .
+      dockerfile: docker/postgres.Dockerfile
     env_file:
       - .env
     environment:

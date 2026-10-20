@@ -12,6 +12,40 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+type Appointment struct {
+	ID              uuid.UUID           `json:"id"`
+	BusinessID      uuid.UUID           `json:"business_id"`
+	CustomerID      uuid.UUID           `json:"customer_id"`
+	ServiceID       uuid.UUID           `json:"service_id"`
+	ResourceID      uuid.UUID           `json:"resource_id"`
+	CustomerName    string              `json:"customer_name"`
+	CustomerPhone   string              `json:"customer_phone"`
+	Notes           string              `json:"notes"`
+	ServiceName     string              `json:"service_name"`
+	DurationMinutes int32               `json:"duration_minutes"`
+	BufferMinutes   int32               `json:"buffer_minutes"`
+	Price           decimal.NullDecimal `json:"price"`
+	StartsAt        pgtype.Timestamptz  `json:"starts_at"`
+	EndsAt          pgtype.Timestamptz  `json:"ends_at"`
+	Timezone        string              `json:"timezone"`
+	Status          string              `json:"status"`
+	Version         int32               `json:"version"`
+	ExpiresAt       pgtype.Timestamptz  `json:"expires_at"`
+	ConfirmedAt     pgtype.Timestamptz  `json:"confirmed_at"`
+	CreatedAt       pgtype.Timestamptz  `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz  `json:"updated_at"`
+}
+
+type AppointmentResource struct {
+	ID          uuid.UUID   `json:"id"`
+	BusinessID  uuid.UUID   `json:"business_id"`
+	Name        string      `json:"name"`
+	Active      bool        `json:"active"`
+	ServiceIds  []uuid.UUID `json:"service_ids"`
+	Hours       []byte      `json:"hours"`
+	ClosedDates []byte      `json:"closed_dates"`
+}
+
 type AuditLog struct {
 	ID          uuid.UUID          `json:"id"`
 	BusinessID  uuid.NullUUID      `json:"business_id"`
@@ -21,6 +55,22 @@ type AuditLog struct {
 	EntityID    uuid.NullUUID      `json:"entity_id"`
 	Metadata    []byte             `json:"metadata"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type BillingEvent struct {
+	ID          string             `json:"id"`
+	CustomerID  string             `json:"customer_id"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ProcessedAt pgtype.Timestamptz `json:"processed_at"`
+}
+
+type BillingOperation struct {
+	BusinessID uuid.UUID          `json:"business_id"`
+	Key        string             `json:"key"`
+	Digest     []byte             `json:"digest"`
+	Response   []byte             `json:"response"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
 type Business struct {
@@ -79,6 +129,13 @@ type BusinessMember struct {
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
+type BusinessModule struct {
+	BusinessID uuid.UUID `json:"business_id"`
+	Module     string    `json:"module"`
+	Enabled    bool      `json:"enabled"`
+	Settings   []byte    `json:"settings"`
+}
+
 // Structured public coverage for mobile and hybrid businesses; unrelated to business_categories taxonomy.
 type BusinessServiceArea struct {
 	ID              uuid.UUID          `json:"id"`
@@ -101,6 +158,21 @@ type BusinessServiceArea struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
+type BusinessSubscription struct {
+	BusinessID           uuid.UUID          `json:"business_id"`
+	Tier                 string             `json:"tier"`
+	Status               string             `json:"status"`
+	Modules              []string           `json:"modules"`
+	StripeCustomerID     sql.NullString     `json:"stripe_customer_id"`
+	StripeSubscriptionID sql.NullString     `json:"stripe_subscription_id"`
+	PeriodStart          pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd            pgtype.Timestamptz `json:"period_end"`
+	GraceUntil           pgtype.Timestamptz `json:"grace_until"`
+	CancelAtPeriodEnd    bool               `json:"cancel_at_period_end"`
+	ScheduledChange      []byte             `json:"scheduled_change"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Category struct {
 	ID         uuid.UUID          `json:"id"`
 	BusinessID uuid.UUID          `json:"business_id"`
@@ -115,6 +187,62 @@ type InventoryLocation struct {
 	Name       string             `json:"name"`
 	IsDefault  bool               `json:"is_default"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type ModuleCustomer struct {
+	ID         uuid.UUID `json:"id"`
+	BusinessID uuid.UUID `json:"business_id"`
+	Phone      string    `json:"phone"`
+	Name       string    `json:"name"`
+}
+
+type ModuleUsageEvent struct {
+	BusinessID  uuid.UUID          `json:"business_id"`
+	Module      string             `json:"module"`
+	RecordID    uuid.UUID          `json:"record_id"`
+	PeriodStart pgtype.Timestamptz `json:"period_start"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type Preorder struct {
+	ID             uuid.UUID           `json:"id"`
+	BusinessID     uuid.UUID           `json:"business_id"`
+	CustomerID     uuid.UUID           `json:"customer_id"`
+	PickupWindowID uuid.UUID           `json:"pickup_window_id"`
+	CustomerName   string              `json:"customer_name"`
+	CustomerPhone  string              `json:"customer_phone"`
+	Notes          string              `json:"notes"`
+	StartsAt       pgtype.Timestamptz  `json:"starts_at"`
+	EndsAt         pgtype.Timestamptz  `json:"ends_at"`
+	Timezone       string              `json:"timezone"`
+	EstimatedTotal decimal.Decimal     `json:"estimated_total"`
+	FinalTotal     decimal.NullDecimal `json:"final_total"`
+	Status         string              `json:"status"`
+	Version        int32               `json:"version"`
+	ExpiresAt      pgtype.Timestamptz  `json:"expires_at"`
+	ConfirmedAt    pgtype.Timestamptz  `json:"confirmed_at"`
+	CreatedAt      pgtype.Timestamptz  `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz  `json:"updated_at"`
+}
+
+type PreorderItem struct {
+	ID            uuid.UUID           `json:"id"`
+	BusinessID    uuid.UUID           `json:"business_id"`
+	PreorderID    uuid.UUID           `json:"preorder_id"`
+	VariantID     uuid.UUID           `json:"variant_id"`
+	Name          string              `json:"name"`
+	Unit          string              `json:"unit"`
+	Quantity      decimal.Decimal     `json:"quantity"`
+	UnitPrice     decimal.Decimal     `json:"unit_price"`
+	Total         decimal.Decimal     `json:"total"`
+	FinalQuantity decimal.NullDecimal `json:"final_quantity"`
+}
+
+type PreorderPickupWindow struct {
+	ID         uuid.UUID          `json:"id"`
+	BusinessID uuid.UUID          `json:"business_id"`
+	StartsAt   pgtype.Timestamptz `json:"starts_at"`
+	EndsAt     pgtype.Timestamptz `json:"ends_at"`
 }
 
 type Product struct {
@@ -180,6 +308,47 @@ type ProductVariant struct {
 	// Public qualification displayed beside the price, such as made-to-measure pricing conditions.
 	PriceNote sql.NullString `json:"price_note"`
 	IsPublic  bool           `json:"is_public"`
+}
+
+type RequestAccess struct {
+	PublicID   uuid.UUID          `json:"public_id"`
+	BusinessID uuid.UUID          `json:"business_id"`
+	Module     string             `json:"module"`
+	TokenHash  []byte             `json:"token_hash"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+}
+
+type RequestHistory struct {
+	ID            int64              `json:"id"`
+	BusinessID    uuid.UUID          `json:"business_id"`
+	AppointmentID uuid.NullUUID      `json:"appointment_id"`
+	PreorderID    uuid.NullUUID      `json:"preorder_id"`
+	FromStatus    string             `json:"from_status"`
+	ToStatus      string             `json:"to_status"`
+	Actor         string             `json:"actor"`
+	At            pgtype.Timestamptz `json:"at"`
+}
+
+type RequestIdempotency struct {
+	BusinessID uuid.UUID          `json:"business_id"`
+	Scope      string             `json:"scope"`
+	Key        string             `json:"key"`
+	Digest     []byte             `json:"digest"`
+	Response   []byte             `json:"response"`
+	StatusCode int32              `json:"status_code"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+}
+
+type Service struct {
+	ID              uuid.UUID           `json:"id"`
+	BusinessID      uuid.UUID           `json:"business_id"`
+	Name            string              `json:"name"`
+	Description     string              `json:"description"`
+	DurationMinutes int32               `json:"duration_minutes"`
+	Price           decimal.NullDecimal `json:"price"`
+	IsPublic        bool                `json:"is_public"`
+	Active          bool                `json:"active"`
+	BufferMinutes   int32               `json:"buffer_minutes"`
 }
 
 type StockLevel struct {
