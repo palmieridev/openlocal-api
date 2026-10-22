@@ -30,7 +30,17 @@ type Runtime struct {
 
 type ErrorResponse struct {
 	Error string `json:"error"`
+	Code  string `json:"code,omitempty"`
 }
+
+type DomainError struct {
+	Status  int
+	Code    string
+	Message string
+}
+
+func (e *DomainError) Error() string              { return e.Message }
+func Fail(status int, code, message string) error { return &DomainError{status, code, message} }
 
 func NewRuntime(logger *slog.Logger, pool *pgxpool.Pool, clerkClient clerk.OrganizationClient) Runtime {
 	rt := Runtime{Logger: logger, Pool: pool, Clerk: clerkClient}
@@ -43,6 +53,10 @@ func NewRuntime(logger *slog.Logger, pool *pgxpool.Pool, clerkClient clerk.Organ
 func ErrorHandler(c *fiber.Ctx, err error) error {
 	code := fiber.StatusInternalServerError
 	msg := "internal server error"
+	var domain *DomainError
+	if errors.As(err, &domain) {
+		return c.Status(domain.Status).JSON(ErrorResponse{Error: domain.Message, Code: domain.Code})
+	}
 	var fiberErr *fiber.Error
 	if errors.As(err, &fiberErr) {
 		code = fiberErr.Code

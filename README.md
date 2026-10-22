@@ -10,6 +10,8 @@ Openlocal API is a Go/Fiber/PostgreSQL backend for local commerce: business prof
 - `golang-migrate` migrations
 - Clerk authentication, with one Clerk organization per business
 - Docker Compose for local Postgres
+- PGMQ for durable expiration and billing reconciliation jobs
+- Direct Stripe Billing in MXN; Clerk remains authentication and organization identity
 
 ## Local Setup
 
@@ -21,6 +23,42 @@ sqlc generate
 go test ./...
 go run ./cmd/api
 ```
+
+For the complete local stack, including PostgreSQL with PGMQ, migrations, the
+API hot-reload process, and the background worker, run:
+
+```sh
+docker compose up --build
+```
+
+The migration service finishes before the API starts. Stripe configuration is
+optional locally; without it, module operations still work and only paid
+checkout and plan changes are unavailable.
+
+Local Stripe sandbox values can be kept separately in the gitignored
+`.env.stripe.local` file. Compose loads it when present for the API and worker,
+so Clerk and database settings can remain in their existing environment files.
+
+## Production migrations
+
+Railway builds the API from `main` using the Dockerfile. Its entrypoint runs
+`migrate up` against `DATABASE_URL` before starting the API. Migration execution
+defaults to enabled (`RUN_MIGRATIONS=true`); a failure prevents the new API process
+from starting. Pending numbered `.up.sql` files are applied in order, while a
+database already at the latest version returns `no change` and starts normally.
+
+Keep Dockerfile builds enabled and leave the API start-command override unset.
+Commit each schema change as a new numbered migration pair in `db/migrations`;
+never edit an already released migration to introduce a new schema change.
+CI tests upgrades from version 18 using both the PGMQ extension on Postgres 17
+and SQL-only PGMQ on Postgres 18. CI databases are temporary, not production.
+
+Before merging a release, back up production and satisfy the prerequisites in
+[`docs/operational-modules.md`](docs/operational-modules.md). API startup owns
+migrations; workers use `RUN_MIGRATIONS=false` and start only after the API's
+migrations succeed. A code rollback does not roll back database migrations.
+If a migration fails, inspect the database version/dirty state and repair the
+failure before retrying; do not blindly force a version or run a down migration.
 
 ## Security Defaults
 
@@ -49,3 +87,8 @@ go test ./...
 go test -race ./...
 OPENLOCAL_INTEGRATION_TESTS=1 go test ./internal/integration
 ```
+
+The appointment/preorder API contract is documented in
+[`docs/modules-api.md`](docs/modules-api.md). Deployment, queue retention, local
+fixtures, and the non-secret Stripe setup are in
+[`docs/operational-modules.md`](docs/operational-modules.md).

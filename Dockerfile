@@ -17,6 +17,9 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
 	go build -trimpath -ldflags="-s -w" -o /out/openlocal-api ./cmd/api
 
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+	go build -trimpath -ldflags="-s -w" -o /out/openlocal-worker ./cmd/worker
+
 RUN GOBIN=/out go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.3
 
 FROM alpine:3.22
@@ -28,6 +31,7 @@ RUN apk add --no-cache ca-certificates tzdata \
 WORKDIR /app
 
 COPY --from=builder /out/openlocal-api /usr/local/bin/openlocal-api
+COPY --from=builder /out/openlocal-worker /usr/local/bin/openlocal-worker
 COPY --from=builder /out/migrate /usr/local/bin/migrate
 COPY db/migrations ./db/migrations
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
