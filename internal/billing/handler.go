@@ -269,20 +269,37 @@ func (h *Handler) checkout(c *fiber.Ctx, s db.BusinessSubscription, in changeInp
 	}
 	var sessions struct {
 		Data []struct {
-			URL      string            `json:"url"`
-			Metadata map[string]string `json:"metadata"`
+			ID                  string            `json:"id"`
+			URL                 string            `json:"url"`
+			AllowPromotionCodes bool              `json:"allow_promotion_codes"`
+			Metadata            map[string]string `json:"metadata"`
 		} `json:"data"`
 	}
 	if e := h.Stripe.call(c.Context(), "GET", "/checkout/sessions", "", url.Values{"customer": {s.StripeCustomerID.String}, "status": {"open"}, "limit": {"100"}}, &sessions); e != nil {
 		return nil, e
 	}
+	// Never reuse a checkout for another selection or an ambiguous list.
+	if len(sessions.Data) > 1 {
+		return nil, api.Fail(409, "billing_unavailable", "multiple open checkouts require review")
+	}
 	for _, session := range sessions.Data {
-		if session.Metadata["tier"] == in.Tier && session.Metadata["modules"] == strings.Join(in.Modules, ",") {
+		if session.Metadata["tier"] != in.Tier || session.Metadata["modules"] != strings.Join(in.Modules, ",") {
+			return nil, api.Fail(409, "billing_unavailable", "an open checkout already exists")
+		}
+		if session.AllowPromotionCodes {
 			return fiber.Map{"url": session.URL}, nil
 		}
-		return nil, api.Fail(409, "billing_unavailable", "an open checkout already exists")
+		// This setting cannot be updated on an existing Checkout Session.
+		// Replace pre-feature sessions so returning buyers can redeem a code.
+		if session.ID == "" {
+			return nil, api.Fail(503, "billing_unavailable", "checkout session identifier missing")
+		}
+		var expired any
+		if e := h.Stripe.call(c.Context(), "POST", "/checkout/sessions/"+url.PathEscape(session.ID)+"/expire", key+":expire", url.Values{}, &expired); e != nil {
+			return nil, e
+		}
 	}
-	form := url.Values{"customer": {s.StripeCustomerID.String}, "mode": {"subscription"}, "payment_method_types[0]": {"card"}, "line_items[0][price]": {h.priceID(in.Tier)}, "line_items[0][quantity]": {"1"}, "success_url": {returnURL(h.Config.AppBaseURL, in.Locale) + "?checkout=success"}, "cancel_url": {returnURL(h.Config.AppBaseURL, in.Locale) + "?checkout=cancelled"}, "client_reference_id": {s.BusinessID.String()}, "subscription_data[metadata][openlocal_business_id]": {s.BusinessID.String()}, "subscription_data[metadata][base_module]": {in.Modules[0]}, "metadata[tier]": {in.Tier}, "metadata[modules]": {strings.Join(in.Modules, ",")}}
+	form := url.Values{"customer": {s.StripeCustomerID.String}, "mode": {"subscription"}, "allow_promotion_codes": {"true"}, "payment_method_types[0]": {"card"}, "line_items[0][price]": {h.priceID(in.Tier)}, "line_items[0][quantity]": {"1"}, "success_url": {returnURL(h.Config.AppBaseURL, in.Locale) + "?checkout=success"}, "cancel_url": {returnURL(h.Config.AppBaseURL, in.Locale) + "?checkout=cancelled"}, "client_reference_id": {s.BusinessID.String()}, "subscription_data[metadata][openlocal_business_id]": {s.BusinessID.String()}, "subscription_data[metadata][base_module]": {in.Modules[0]}, "metadata[tier]": {in.Tier}, "metadata[modules]": {strings.Join(in.Modules, ",")}}
 	if len(in.Modules) == 2 {
 		form.Set("line_items[1][price]", h.Config.StripeSecondModulePrice)
 		form.Set("line_items[1][quantity]", "1")
