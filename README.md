@@ -39,6 +39,21 @@ Local Stripe sandbox values can be kept separately in the gitignored
 `.env.stripe.local` file. Compose loads it when present for the API and worker,
 so Clerk and database settings can remain in their existing environment files.
 
+### Subscription discount codes
+
+New module subscriptions enable promotion-code entry in Stripe Checkout.
+Create a coupon and its customer-facing promotion code in the Stripe Dashboard
+for the same sandbox or live account used by the API. Stripe validates redemption
+restrictions, expiration, and limits and displays the discounted total before
+payment. The frontend's plan prices remain the monthly amounts before discounts.
+
+Codes are redeemed only when starting a subscription, not through the existing
+subscription preview/change endpoints. Matching open checkouts created without
+promotion-code support are expired and replaced; checkouts that already support
+codes are reused. Existing subscriptions still use the change flow or portal.
+Deploy this API change alongside the web branch `feat/subscription-discount-codes`
+to make the code-entry option available.
+
 ## Production migrations
 
 Railway builds the API from `main` using the Dockerfile. Its entrypoint runs

@@ -69,8 +69,10 @@ jobs:
           docker run -d --name openlocal-pgmq-test \
             -e POSTGRES_USER=openlocal -e POSTGRES_PASSWORD=openlocal \
             -e POSTGRES_DB=openlocal -p 5432:5432 ${{ matrix.image }}
+          # The entrypoint's temporary init server accepts socket connections
+          # before restarting. Only the final server listens on TCP.
           for attempt in $(seq 1 30); do
-            docker exec openlocal-pgmq-test pg_isready -U openlocal -d openlocal && exit 0
+            docker exec openlocal-pgmq-test pg_isready -h 127.0.0.1 -U openlocal -d openlocal && exit 0
             sleep 1
           done
           exit 1
@@ -81,7 +83,7 @@ jobs:
           curl --fail --silent --show-error --location \
             https://raw.githubusercontent.com/pgmq/pgmq/9bb5ba79b30195e91e676d53e914fdc618ee41cd/pgmq-extension/sql/pgmq.sql \
             --output /tmp/pgmq.sql
-          docker exec -i openlocal-pgmq-test psql -X -U openlocal -d openlocal \
+          docker exec -i -e PGPASSWORD=openlocal openlocal-pgmq-test psql -X -h 127.0.0.1 -U openlocal -d openlocal \
             --set ON_ERROR_STOP=on --single-transaction < /tmp/pgmq.sql
       - name: Upgrade from migration 18 and verify repeat startup
         run: |
@@ -97,3 +99,6 @@ jobs:
         env:
           OPENLOCAL_INTEGRATION_TESTS: "1"
           DATABASE_URL: postgres://openlocal:openlocal@localhost:5432/openlocal?sslmode=disable
+      - name: PostgreSQL logs on failure
+        if: failure()
+        run: docker logs openlocal-pgmq-test
