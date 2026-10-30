@@ -107,3 +107,30 @@ The appointment/preorder API contract is documented in
 [`docs/modules-api.md`](docs/modules-api.md). Deployment, queue retention, local
 fixtures, and the non-secret Stripe setup are in
 [`docs/operational-modules.md`](docs/operational-modules.md).
+
+## Delivery workflow and manual images
+
+Develop on feature branches and open pull requests directly into `main`. CI runs
+for pull requests targeting `main` and pushes to `main`. Railway production keeps
+its existing Dockerfile build and Wait for CI gate. There is no long-lived `dev`
+branch and no automatic GHCR image publishing.
+
+Use the localhost Compose stack above for development with the Clerk development
+instance. Cluster workloads are optional; build an image locally when needed:
+
+```sh
+docker build --platform linux/amd64 -t openlocal-api:local .
+```
+
+For a cluster that pulls images from GHCR, authenticate to the registry, then tag
+and push the local image manually:
+
+```sh
+docker tag openlocal-api:local ghcr.io/palmieridev/openlocal-api:dev
+docker push ghcr.io/palmieridev/openlocal-api:dev
+```
+
+Build for the cluster's CPU architecture and supply environment configuration and
+secrets at runtime. The image still includes the API, worker, and migration
+entrypoint; API startup applies migrations, while workers use
+`RUN_MIGRATIONS=false` as described above.

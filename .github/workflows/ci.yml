@@ -1,11 +1,12 @@
 name: CI
 
-# Gates every PR and every push to a long-lived branch. Railway's "Wait for CI"
+# Gates PRs targeting main and every push to main. Railway's "Wait for CI"
 # on production keys off this workflow, so a red run keeps main from deploying.
 on:
   pull_request:
+    branches: [main]
   push:
-    branches: [main, dev]
+    branches: [main]
 
 # One run per branch/PR; new pushes cancel the stale run.
 concurrency:
