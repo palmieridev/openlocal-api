@@ -14,11 +14,20 @@ import (
 
 func (h *Handler) mutate(c *fiber.Ctx) error {
 	public := c.Params("public_id") != ""
+	userID := personalUser(c)
+	personal := userID != uuid.Nil
+	customerFacing := public || personal
 	module := c.Params("module")
 	var business, id uuid.UUID
 	actor := "customer"
 	var e error
-	if public {
+	if personal {
+		access, err := h.personalAccess(c)
+		if err != nil {
+			return err
+		}
+		business, id, module = access.BusinessID, access.ID, access.Module
+	} else if public {
 		a, err := h.publicAccess(c)
 		if err != nil {
 			return err
@@ -41,7 +50,7 @@ func (h *Handler) mutate(c *fiber.Ctx) error {
 	var edit EditInput
 	if editing {
 		e = decode(c, &edit)
-	} else if public {
+	} else if customerFacing {
 		var input struct {
 			Version int32 `json:"version"`
 		}
@@ -61,6 +70,9 @@ func (h *Handler) mutate(c *fiber.Ctx) error {
 	scope := "mutate:" + module + ":" + id.String() + ":" + c.Method()
 	if public {
 		scope = "public:" + scope
+	}
+	if personal {
+		scope = "personal:" + userID.String() + ":" + scope
 	}
 	if replay, e := h.replay(c, q, business, scope); replay || e != nil {
 		return e
@@ -91,7 +103,7 @@ func (h *Handler) mutate(c *fiber.Ctx) error {
 		return e
 	}
 	b.Timezone = r.Timezone
-	if public && (!slices.Contains(next(module, r.Status), "cancelled") || !time.Now().Add(time.Duration(cfg.CancelBeforeMinutes)*time.Minute).Before(r.StartsAt)) {
+	if customerFacing && (!slices.Contains(next(module, r.Status), "cancelled") || !time.Now().Add(time.Duration(cfg.CancelBeforeMinutes)*time.Minute).Before(r.StartsAt)) {
 		return conflict("invalid_transition")
 	}
 	if !editing && !slices.Contains(next(module, r.Status), change.Status) {
@@ -244,13 +256,20 @@ func (h *Handler) mutate(c *fiber.Ctx) error {
 	if public {
 		out.AllowedTransitions = []string{}
 	}
-	if e = h.saveReplay(c, q, business, scope, out, 200); e != nil {
+	var response any = out
+	if personal {
+		response, e = h.personalProjection(c.Context(), q, business, out)
+		if e != nil {
+			return e
+		}
+	}
+	if e = h.saveReplay(c, q, business, scope, response, 200); e != nil {
 		return e
 	}
 	if e = tx.Commit(c.Context()); e != nil {
 		return e
 	}
-	return c.JSON(out)
+	return c.JSON(response)
 }
 
 // Expire is idempotent; queue delivery and recovery sweeps call the same transaction.

@@ -109,7 +109,7 @@ func must(t *testing.T, e error) {
 	}
 }
 func (f fixture) request(method, path, key string, body any, owner bool) (int, []byte) {
-	req := httptest.NewRequest(method, "/api/v1"+path, bytes.NewReader(jsonBytes(body)))
+	req := httptest.NewRequest(method, "/api/v1"+path, bytes.NewReader(requestBody(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Idempotency-Key", key)
 	if owner {
@@ -249,4 +249,11 @@ func TestPreorderCapacityPriceAndNoStockMutation(t *testing.T) {
 	if code != 409 {
 		t.Fatalf("stale price %d", code)
 	}
+}
+
+func requestBody(body any) []byte {
+	if body == nil {
+		return nil
+	}
+	return jsonBytes(body)
 }

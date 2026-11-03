@@ -34,6 +34,7 @@ type Appointment struct {
 	ConfirmedAt     pgtype.Timestamptz  `json:"confirmed_at"`
 	CreatedAt       pgtype.Timestamptz  `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz  `json:"updated_at"`
+	CustomerUserID  uuid.NullUUID       `json:"customer_user_id"`
 }
 
 type AppointmentResource struct {
@@ -223,6 +224,7 @@ type Preorder struct {
 	ConfirmedAt    pgtype.Timestamptz  `json:"confirmed_at"`
 	CreatedAt      pgtype.Timestamptz  `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz  `json:"updated_at"`
+	CustomerUserID uuid.NullUUID       `json:"customer_user_id"`
 }
 
 type PreorderItem struct {
@@ -337,6 +339,12 @@ type RequestIdempotency struct {
 	Response   []byte             `json:"response"`
 	StatusCode int32              `json:"status_code"`
 	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+}
+
+type SavedBusiness struct {
+	UserID     uuid.UUID          `json:"user_id"`
+	BusinessID uuid.UUID          `json:"business_id"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
 type Service struct {

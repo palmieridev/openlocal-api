@@ -74,8 +74,8 @@ func (q *Queries) CountAppointments(ctx context.Context, arg CountAppointmentsPa
 }
 
 const createAppointment = `-- name: CreateAppointment :one
-INSERT INTO appointments(id,business_id,customer_id,service_id,resource_id,customer_name,customer_phone,notes,service_name,duration_minutes,buffer_minutes,price,starts_at,ends_at,timezone,expires_at)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id, business_id, customer_id, service_id, resource_id, customer_name, customer_phone, notes, service_name, duration_minutes, buffer_minutes, price, starts_at, ends_at, timezone, status, version, expires_at, confirmed_at, created_at, updated_at
+INSERT INTO appointments(id,business_id,customer_id,service_id,resource_id,customer_name,customer_phone,notes,service_name,duration_minutes,buffer_minutes,price,starts_at,ends_at,timezone,expires_at,customer_user_id)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id, business_id, customer_id, service_id, resource_id, customer_name, customer_phone, notes, service_name, duration_minutes, buffer_minutes, price, starts_at, ends_at, timezone, status, version, expires_at, confirmed_at, created_at, updated_at, customer_user_id
 `
 
 type CreateAppointmentParams struct {
@@ -95,6 +95,7 @@ type CreateAppointmentParams struct {
 	EndsAt          pgtype.Timestamptz  `json:"ends_at"`
 	Timezone        string              `json:"timezone"`
 	ExpiresAt       pgtype.Timestamptz  `json:"expires_at"`
+	CustomerUserID  uuid.NullUUID       `json:"customer_user_id"`
 }
 
 func (q *Queries) CreateAppointment(ctx context.Context, arg CreateAppointmentParams) (Appointment, error) {
@@ -115,6 +116,7 @@ func (q *Queries) CreateAppointment(ctx context.Context, arg CreateAppointmentPa
 		arg.EndsAt,
 		arg.Timezone,
 		arg.ExpiresAt,
+		arg.CustomerUserID,
 	)
 	var i Appointment
 	err := row.Scan(
@@ -139,6 +141,7 @@ func (q *Queries) CreateAppointment(ctx context.Context, arg CreateAppointmentPa
 		&i.ConfirmedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CustomerUserID,
 	)
 	return i, err
 }
@@ -188,7 +191,7 @@ func (q *Queries) DueAppointments(ctx context.Context) ([]DueAppointmentsRow, er
 }
 
 const getAppointment = `-- name: GetAppointment :one
-SELECT id, business_id, customer_id, service_id, resource_id, customer_name, customer_phone, notes, service_name, duration_minutes, buffer_minutes, price, starts_at, ends_at, timezone, status, version, expires_at, confirmed_at, created_at, updated_at FROM appointments WHERE business_id=$1 AND id=$2
+SELECT id, business_id, customer_id, service_id, resource_id, customer_name, customer_phone, notes, service_name, duration_minutes, buffer_minutes, price, starts_at, ends_at, timezone, status, version, expires_at, confirmed_at, created_at, updated_at, customer_user_id FROM appointments WHERE business_id=$1 AND id=$2
 `
 
 type GetAppointmentParams struct {
@@ -221,6 +224,7 @@ func (q *Queries) GetAppointment(ctx context.Context, arg GetAppointmentParams) 
 		&i.ConfirmedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CustomerUserID,
 	)
 	return i, err
 }
@@ -308,7 +312,7 @@ func (q *Queries) ListAppointmentResources(ctx context.Context, businessID uuid.
 }
 
 const listAppointments = `-- name: ListAppointments :many
-SELECT id, business_id, customer_id, service_id, resource_id, customer_name, customer_phone, notes, service_name, duration_minutes, buffer_minutes, price, starts_at, ends_at, timezone, status, version, expires_at, confirmed_at, created_at, updated_at FROM appointments WHERE business_id=$1
+SELECT id, business_id, customer_id, service_id, resource_id, customer_name, customer_phone, notes, service_name, duration_minutes, buffer_minutes, price, starts_at, ends_at, timezone, status, version, expires_at, confirmed_at, created_at, updated_at, customer_user_id FROM appointments WHERE business_id=$1
 AND ($2::text='' OR status=$2)
 AND ($3::uuid IS NULL OR resource_id=$3)
 AND ($4::uuid IS NULL OR customer_id=$4)
@@ -368,6 +372,7 @@ func (q *Queries) ListAppointments(ctx context.Context, arg ListAppointmentsPara
 			&i.ConfirmedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.CustomerUserID,
 		); err != nil {
 			return nil, err
 		}
@@ -518,7 +523,7 @@ func (q *Queries) SaveService(ctx context.Context, arg SaveServiceParams) (Servi
 
 const updateAppointment = `-- name: UpdateAppointment :one
 UPDATE appointments SET resource_id=$3,notes=$4,starts_at=$5,ends_at=$6,status=$7,expires_at=$8,
-confirmed_at=$9,version=version+1,updated_at=now() WHERE business_id=$1 AND id=$2 RETURNING id, business_id, customer_id, service_id, resource_id, customer_name, customer_phone, notes, service_name, duration_minutes, buffer_minutes, price, starts_at, ends_at, timezone, status, version, expires_at, confirmed_at, created_at, updated_at
+confirmed_at=$9,version=version+1,updated_at=now() WHERE business_id=$1 AND id=$2 RETURNING id, business_id, customer_id, service_id, resource_id, customer_name, customer_phone, notes, service_name, duration_minutes, buffer_minutes, price, starts_at, ends_at, timezone, status, version, expires_at, confirmed_at, created_at, updated_at, customer_user_id
 `
 
 type UpdateAppointmentParams struct {
@@ -568,6 +573,7 @@ func (q *Queries) UpdateAppointment(ctx context.Context, arg UpdateAppointmentPa
 		&i.ConfirmedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CustomerUserID,
 	)
 	return i, err
 }

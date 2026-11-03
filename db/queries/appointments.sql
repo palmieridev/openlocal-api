@@ -39,8 +39,8 @@ AND status IN ('confirmed','completed','no_show')
 AND starts_at < sqlc.arg(occupied_end)::timestamptz
 AND ends_at + buffer_minutes * interval '1 minute' > sqlc.arg(starts_at)::timestamptz)::boolean AS overlaps;
 -- name: CreateAppointment :one
-INSERT INTO appointments(id,business_id,customer_id,service_id,resource_id,customer_name,customer_phone,notes,service_name,duration_minutes,buffer_minutes,price,starts_at,ends_at,timezone,expires_at)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *;
+INSERT INTO appointments(id,business_id,customer_id,service_id,resource_id,customer_name,customer_phone,notes,service_name,duration_minutes,buffer_minutes,price,starts_at,ends_at,timezone,expires_at,customer_user_id)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *;
 -- name: UpdateAppointment :one
 UPDATE appointments SET resource_id=$3,notes=$4,starts_at=$5,ends_at=$6,status=$7,expires_at=$8,
 confirmed_at=$9,version=version+1,updated_at=now() WHERE business_id=$1 AND id=$2 RETURNING *;

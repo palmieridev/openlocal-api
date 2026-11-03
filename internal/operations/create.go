@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/palmieridev/openlocal-api/internal/api"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	"github.com/shopspring/decimal"
 	"slices"
@@ -83,10 +84,22 @@ func pendingLimit(ctx context.Context, q *db.Queries, id uuid.UUID, module, phon
 func (h *Handler) create(c *fiber.Ctx) error {
 	module := c.Params("module")
 	public := c.Params("slug") != ""
+	userID := personalUser(c)
+	personal := userID != uuid.Nil
+	customerFacing := public || personal
 	var b db.Business
 	var e error
 	actor := "customer"
-	if public {
+	if personal {
+		var id uuid.UUID
+		id, e = parseID(c.Params("id"))
+		if e == nil {
+			b, e = h.RT.Q.ModuleBusiness(c.Context(), id)
+		}
+		if e == nil && b.Status != "active" {
+			return api.Fail(404, "not_found", "business not found")
+		}
+	} else if public {
 		b, _, e = h.publicBusiness(c)
 	} else {
 		var id uuid.UUID
@@ -123,17 +136,20 @@ func (h *Handler) create(c *fiber.Ctx) error {
 	if public {
 		scope = "public:" + scope
 	}
+	if personal {
+		scope = "personal:" + userID.String() + ":" + scope
+	}
 	if replay, e := h.replay(c, q, b.ID, scope); replay || e != nil {
 		return e
 	}
-	if public {
+	if customerFacing {
 		if e = h.challenge(c.Context(), input.ChallengeToken); e != nil {
 			return e
 		}
 	}
 	cfg, e := requireIntake(c.Context(), q, sub, module)
 	if e != nil {
-		if public {
+		if customerFacing {
 			return publicUnavailable(e)
 		}
 		return e
@@ -152,7 +168,7 @@ func (h *Handler) create(c *fiber.Ctx) error {
 		if e != nil {
 			return e
 		}
-		if !svc.Active || public && !svc.IsPublic {
+		if !svc.Active || customerFacing && !svc.IsPublic {
 			return bad("service is unavailable")
 		}
 		end, e = checkAppointment(c.Context(), q, b, cfg, svc, a.ResourceID, uuid.Nil, a.StartsAt)
@@ -160,7 +176,7 @@ func (h *Handler) create(c *fiber.Ctx) error {
 			return e
 		}
 		expiry = pendingExpiration(time.Now(), a.StartsAt, cfg.PendingTTLMinutes)
-		_, e = q.CreateAppointment(c.Context(), db.CreateAppointmentParams{ID: id, BusinessID: b.ID, CustomerID: customer.ID, ServiceID: svc.ID, ResourceID: a.ResourceID, CustomerName: input.CustomerName, CustomerPhone: input.CustomerPhone, Notes: input.Notes, ServiceName: svc.Name, DurationMinutes: svc.DurationMinutes, BufferMinutes: svc.BufferMinutes, Price: svc.Price, StartsAt: TS(a.StartsAt), EndsAt: TS(end), Timezone: b.Timezone, ExpiresAt: TS(expiry)})
+		_, e = q.CreateAppointment(c.Context(), db.CreateAppointmentParams{ID: id, BusinessID: b.ID, CustomerID: customer.ID, CustomerUserID: nullableID(userID), ServiceID: svc.ID, ResourceID: a.ResourceID, CustomerName: input.CustomerName, CustomerPhone: input.CustomerPhone, Notes: input.Notes, ServiceName: svc.Name, DurationMinutes: svc.DurationMinutes, BufferMinutes: svc.BufferMinutes, Price: svc.Price, StartsAt: TS(a.StartsAt), EndsAt: TS(end), Timezone: b.Timezone, ExpiresAt: TS(expiry)})
 		if e != nil {
 			return e
 		}
@@ -216,7 +232,7 @@ func (h *Handler) create(c *fiber.Ctx) error {
 		if total.GreaterThan(decimal.NewFromInt(9999999999)) {
 			return bad("total is too large")
 		}
-		_, e = q.CreatePreorder(c.Context(), db.CreatePreorderParams{ID: id, BusinessID: b.ID, CustomerID: customer.ID, PickupWindowID: window.ID, CustomerName: input.CustomerName, CustomerPhone: input.CustomerPhone, Notes: input.Notes, StartsAt: window.StartsAt, EndsAt: window.EndsAt, Timezone: b.Timezone, EstimatedTotal: total, ExpiresAt: TS(expiry)})
+		_, e = q.CreatePreorder(c.Context(), db.CreatePreorderParams{ID: id, BusinessID: b.ID, CustomerID: customer.ID, CustomerUserID: nullableID(userID), PickupWindowID: window.ID, CustomerName: input.CustomerName, CustomerPhone: input.CustomerPhone, Notes: input.Notes, StartsAt: window.StartsAt, EndsAt: window.EndsAt, Timezone: b.Timezone, EstimatedTotal: total, ExpiresAt: TS(expiry)})
 		if e != nil {
 			return e
 		}
@@ -229,9 +245,12 @@ func (h *Handler) create(c *fiber.Ctx) error {
 	if e = addHistory(c.Context(), q, b.ID, id, module, "", "requested", actor); e != nil {
 		return e
 	}
-	token, e := createAccess(c.Context(), q, id, b.ID, module, end)
-	if e != nil {
-		return e
+	var token string
+	if !personal {
+		token, e = createAccess(c.Context(), q, id, b.ID, module, end)
+		if e != nil {
+			return e
+		}
 	}
 	if e = enqueueExpiration(c.Context(), q, b.ID, id, module, expiry); e != nil {
 		return e
@@ -241,12 +260,19 @@ func (h *Handler) create(c *fiber.Ctx) error {
 		return e
 	}
 	r.ManagementToken = token
-	if e = h.saveReplay(c, q, b.ID, scope, r, 201); e != nil {
+	var response any = r
+	if personal {
+		response, e = h.personalProjection(c.Context(), q, b.ID, r)
+		if e != nil {
+			return e
+		}
+	}
+	if e = h.saveReplay(c, q, b.ID, scope, response, 201); e != nil {
 		return e
 	}
 	if e = tx.Commit(c.Context()); e != nil {
 		return e
 	}
 	c.Set("Cache-Control", "no-store")
-	return c.Status(201).JSON(r)
+	return c.Status(201).JSON(response)
 }

@@ -43,8 +43,8 @@ func (q *Queries) CountPreorders(ctx context.Context, arg CountPreordersParams) 
 }
 
 const createPreorder = `-- name: CreatePreorder :one
-INSERT INTO preorders(id,business_id,customer_id,pickup_window_id,customer_name,customer_phone,notes,starts_at,ends_at,timezone,estimated_total,expires_at)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id, business_id, customer_id, pickup_window_id, customer_name, customer_phone, notes, starts_at, ends_at, timezone, estimated_total, final_total, status, version, expires_at, confirmed_at, created_at, updated_at
+INSERT INTO preorders(id,business_id,customer_id,pickup_window_id,customer_name,customer_phone,notes,starts_at,ends_at,timezone,estimated_total,expires_at,customer_user_id)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id, business_id, customer_id, pickup_window_id, customer_name, customer_phone, notes, starts_at, ends_at, timezone, estimated_total, final_total, status, version, expires_at, confirmed_at, created_at, updated_at, customer_user_id
 `
 
 type CreatePreorderParams struct {
@@ -60,6 +60,7 @@ type CreatePreorderParams struct {
 	Timezone       string             `json:"timezone"`
 	EstimatedTotal decimal.Decimal    `json:"estimated_total"`
 	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	CustomerUserID uuid.NullUUID      `json:"customer_user_id"`
 }
 
 func (q *Queries) CreatePreorder(ctx context.Context, arg CreatePreorderParams) (Preorder, error) {
@@ -76,6 +77,7 @@ func (q *Queries) CreatePreorder(ctx context.Context, arg CreatePreorderParams) 
 		arg.Timezone,
 		arg.EstimatedTotal,
 		arg.ExpiresAt,
+		arg.CustomerUserID,
 	)
 	var i Preorder
 	err := row.Scan(
@@ -97,6 +99,7 @@ func (q *Queries) CreatePreorder(ctx context.Context, arg CreatePreorderParams) 
 		&i.ConfirmedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CustomerUserID,
 	)
 	return i, err
 }
@@ -195,7 +198,7 @@ func (q *Queries) GetPickupWindow(ctx context.Context, arg GetPickupWindowParams
 }
 
 const getPreorder = `-- name: GetPreorder :one
-SELECT id, business_id, customer_id, pickup_window_id, customer_name, customer_phone, notes, starts_at, ends_at, timezone, estimated_total, final_total, status, version, expires_at, confirmed_at, created_at, updated_at FROM preorders WHERE business_id=$1 AND id=$2
+SELECT id, business_id, customer_id, pickup_window_id, customer_name, customer_phone, notes, starts_at, ends_at, timezone, estimated_total, final_total, status, version, expires_at, confirmed_at, created_at, updated_at, customer_user_id FROM preorders WHERE business_id=$1 AND id=$2
 `
 
 type GetPreorderParams struct {
@@ -225,12 +228,13 @@ func (q *Queries) GetPreorder(ctx context.Context, arg GetPreorderParams) (Preor
 		&i.ConfirmedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CustomerUserID,
 	)
 	return i, err
 }
 
 const listPreorders = `-- name: ListPreorders :many
-SELECT id, business_id, customer_id, pickup_window_id, customer_name, customer_phone, notes, starts_at, ends_at, timezone, estimated_total, final_total, status, version, expires_at, confirmed_at, created_at, updated_at FROM preorders WHERE business_id=$1
+SELECT id, business_id, customer_id, pickup_window_id, customer_name, customer_phone, notes, starts_at, ends_at, timezone, estimated_total, final_total, status, version, expires_at, confirmed_at, created_at, updated_at, customer_user_id FROM preorders WHERE business_id=$1
 AND ($2::text='' OR status=$2)
 AND ($3::uuid IS NULL OR customer_id=$3)
 AND ($4::timestamptz IS NULL OR starts_at>=$4)
@@ -284,6 +288,7 @@ func (q *Queries) ListPreorders(ctx context.Context, arg ListPreordersParams) ([
 			&i.ConfirmedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.CustomerUserID,
 		); err != nil {
 			return nil, err
 		}
@@ -485,7 +490,7 @@ func (q *Queries) PreorderVariants(ctx context.Context, businessID uuid.UUID) ([
 
 const updatePreorder = `-- name: UpdatePreorder :one
 UPDATE preorders SET pickup_window_id=$3,notes=$4,starts_at=$5,ends_at=$6,status=$7,expires_at=$8,
-confirmed_at=$9,final_total=$10,version=version+1,updated_at=now() WHERE business_id=$1 AND id=$2 RETURNING id, business_id, customer_id, pickup_window_id, customer_name, customer_phone, notes, starts_at, ends_at, timezone, estimated_total, final_total, status, version, expires_at, confirmed_at, created_at, updated_at
+confirmed_at=$9,final_total=$10,version=version+1,updated_at=now() WHERE business_id=$1 AND id=$2 RETURNING id, business_id, customer_id, pickup_window_id, customer_name, customer_phone, notes, starts_at, ends_at, timezone, estimated_total, final_total, status, version, expires_at, confirmed_at, created_at, updated_at, customer_user_id
 `
 
 type UpdatePreorderParams struct {
@@ -534,6 +539,7 @@ func (q *Queries) UpdatePreorder(ctx context.Context, arg UpdatePreorderParams) 
 		&i.ConfirmedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CustomerUserID,
 	)
 	return i, err
 }

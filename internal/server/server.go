@@ -27,6 +27,7 @@ import (
 	"github.com/palmieridev/openlocal-api/internal/marketplace"
 	"github.com/palmieridev/openlocal-api/internal/operations"
 	v "github.com/palmieridev/openlocal-api/internal/platform/validator"
+	"github.com/palmieridev/openlocal-api/internal/savedbusinesses"
 	"github.com/palmieridev/openlocal-api/internal/support"
 	"github.com/palmieridev/openlocal-api/internal/users"
 	"github.com/palmieridev/openlocal-api/internal/webhooks"
@@ -63,7 +64,7 @@ func New(deps Deps) *fiber.App {
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: strings.Join(deps.Config.CORSAllowedOrigins, ","),
 		AllowHeaders: allowHeaders,
-		AllowMethods: "GET,POST,PATCH,DELETE,OPTIONS",
+		AllowMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
 	}))
 	app.Use(rateLimiter(deps.Config.GlobalRateLimitMax, deps.Config.RateLimitWindow, nil, func(c *fiber.Ctx) string {
 		return "ip:" + c.IP()
@@ -102,6 +103,7 @@ func New(deps Deps) *fiber.App {
 
 	private := apiGroup.Group("", deps.Auth.RequireAuth(), rateLimiter(deps.Config.PrivateRateLimitMax, deps.Config.RateLimitWindow, nil, authenticatedRateLimitKey))
 	users.NewHandler(s.rt).RegisterRoutes(private)
+	savedbusinesses.NewHandler(s.rt).RegisterRoutes(private)
 	business.NewHandler(s.rt).RegisterPrivateRoutes(private)
 	catalog.NewHandler(s.rt).RegisterPrivateRoutes(private)
 	inventory.NewHandler(s.rt).RegisterPrivateRoutes(private)
