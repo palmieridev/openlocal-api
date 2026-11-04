@@ -21,6 +21,11 @@ func moduleRoute(fn fiber.Handler) fiber.Handler {
 	}
 }
 func (h *Handler) RegisterPrivateRoutes(r fiber.Router) {
+	personal := r.Group("/me", h.personalAuth)
+	personal.Get("/activity", h.personalActivity)
+	personal.Get("/activity/:module/:record_id", moduleRoute(h.personalDetail))
+	personal.Post("/activity/:module/:record_id/cancel", moduleRoute(h.mutate))
+	personal.Post("/businesses/:id/:module", moduleRoute(h.create))
 	r.Get("/businesses/:id/services", h.services)
 	r.Post("/businesses/:id/services", h.services)
 	r.Patch("/businesses/:id/services/:service_id", h.services)

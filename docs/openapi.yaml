@@ -6,6 +6,8 @@ info:
 servers:
   - url: http://localhost:8080
 tags:
+  - name: Personal Account
+    description: Saved businesses and verified customer request activity.
   - name: Health
     description: Service health and database readiness.
   - name: Users
@@ -918,6 +920,367 @@ components:
       required:
         - type
         - data
+    PersonalBusiness:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type:
+          - string
+          - 'null'
+        available:
+          type: boolean
+        logo_url:
+          type:
+          - string
+          - 'null'
+      required:
+      - id
+      - name
+      - slug
+      - available
+      - logo_url
+    PersonalActivityItem:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        module:
+          type: string
+          enum:
+          - appointments
+          - preorders
+        reference:
+          type: string
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+        business:
+          $ref: '#/components/schemas/PersonalBusiness'
+      required:
+      - id
+      - module
+      - reference
+      - status
+      - created_at
+      - starts_at
+      - ends_at
+      - timezone
+      - business
+    PersonalPreorderItem:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        variant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        unit:
+          type: string
+        quantity:
+          type: string
+        unit_price:
+          type: string
+        total:
+          type: string
+        final_quantity:
+          type:
+          - string
+          - 'null'
+      required:
+      - id
+      - variant_id
+      - name
+      - unit
+      - quantity
+      - unit_price
+      - total
+      - final_quantity
+    PersonalStatusHistory:
+      type: object
+      additionalProperties: false
+      properties:
+        from_status:
+          type: string
+        to_status:
+          type: string
+        at:
+          type: string
+          format: date-time
+        actor:
+          type: string
+      required:
+      - from_status
+      - to_status
+      - at
+      - actor
+    PersonalRequestDetail:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        module:
+          type: string
+          enum:
+          - appointments
+          - preorders
+        reference:
+          type: string
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+        business:
+          $ref: '#/components/schemas/PersonalBusiness'
+        version:
+          type: integer
+        expires_at:
+          type: string
+          format: date-time
+        customer_name:
+          type: string
+        customer_phone:
+          type: string
+        service_id:
+          type: string
+          format: uuid
+        service_name:
+          type: string
+        duration_minutes:
+          type: integer
+        price:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PersonalPreorderItem'
+        estimated_total:
+          type: string
+        final_total:
+          type: string
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/PersonalStatusHistory'
+        allowed_transitions:
+          type: array
+          items:
+            type: string
+            enum:
+            - cancelled
+      required:
+      - id
+      - module
+      - reference
+      - status
+      - created_at
+      - starts_at
+      - ends_at
+      - timezone
+      - business
+      - version
+      - expires_at
+      - customer_name
+      - customer_phone
+      - history
+      - allowed_transitions
+    PersonalAppointmentInput:
+      type: object
+      additionalProperties: false
+      properties:
+        customer_name:
+          type: string
+          minLength: 2
+          maxLength: 120
+        customer_phone:
+          type: string
+          description: International phone; contact data only, never identity proof.
+        notes:
+          type: string
+          maxLength: 1280
+        challenge_token:
+          type: string
+          description: Turnstile request challenge, required in production.
+        locale:
+          type: string
+        service_id:
+          type: string
+          format: uuid
+        resource_id:
+          type: string
+          format: uuid
+        starts_at:
+          type: string
+          format: date-time
+      required:
+      - customer_name
+      - customer_phone
+      - service_id
+      - resource_id
+      - starts_at
+    PersonalPreorderInput:
+      type: object
+      additionalProperties: false
+      properties:
+        customer_name:
+          type: string
+          minLength: 2
+          maxLength: 120
+        customer_phone:
+          type: string
+          description: International phone; contact data only, never identity proof.
+        notes:
+          type: string
+          maxLength: 1280
+        challenge_token:
+          type: string
+          description: Turnstile request challenge, required in production.
+        locale:
+          type: string
+        pickup_window_id:
+          type: string
+          format: uuid
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              variant_id:
+                type: string
+                format: uuid
+              quantity:
+                type: string
+              unit_price:
+                type: string
+            required:
+            - variant_id
+            - quantity
+            - unit_price
+      required:
+      - customer_name
+      - customer_phone
+      - pickup_window_id
+      - items
+    SavedState:
+      type: object
+      additionalProperties: false
+      properties:
+        saved:
+          type: boolean
+      required:
+      - saved
+    SavedBusiness:
+      type: object
+      additionalProperties: false
+      properties:
+        business_id:
+          type: string
+          format: uuid
+        saved_at:
+          type: string
+          format: date-time
+        available:
+          type: boolean
+        name:
+          type:
+          - string
+          - 'null'
+        slug:
+          type:
+          - string
+          - 'null'
+        logo_url:
+          type:
+          - string
+          - 'null'
+      required:
+      - business_id
+      - saved_at
+      - available
+      - name
+      - slug
+      - logo_url
+    PersonalActivityPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PersonalActivityItem'
+        next_cursor:
+          type:
+          - string
+          - 'null'
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+      required:
+      - items
+      - next_cursor
+      - limit
+    SavedBusinessPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SavedBusiness'
+        next_cursor:
+          type:
+          - string
+          - 'null'
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+      required:
+      - items
+      - next_cursor
+      - limit
+    PersonalCancelInput:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: {type: integer, minimum: 1}
 paths:
   /healthz:
     get:
@@ -1824,3 +2187,345 @@ paths:
       responses:
         "200": {description: Transitioned record}
         "409": {description: Version, capacity, quota, or state conflict}
+  /api/v1/me/saved-businesses:
+    get:
+      tags:
+      - Personal Account
+      summary: List saved businesses
+      description: Requires Clerk bearer identity; no active organization required.
+        See docs/personal-account-api.md for error and lifecycle semantics.
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 25
+          minimum: 1
+          maximum: 100
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          description: Opaque cursor; keep module filter unchanged. Null next_cursor
+            ends pagination.
+      responses:
+        '200':
+          description: 'Success. Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedBusinessPage'
+        '400':
+          description: Invalid input or cursor
+        '401':
+          description: Missing or invalid bearer token
+        '404':
+          description: Missing or unowned resource
+        '429':
+          description: Rate limit exceeded
+  /api/v1/me/saved-businesses/{business_id}:
+    get:
+      tags:
+      - Personal Account
+      summary: Read saved state
+      description: Requires Clerk bearer identity; no active organization required.
+        See docs/personal-account-api.md for error and lifecycle semantics.
+      parameters:
+      - name: business_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 'Success. Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedState'
+        '400':
+          description: Invalid input or cursor
+        '401':
+          description: Missing or invalid bearer token
+        '404':
+          description: Missing or unowned resource
+        '429':
+          description: Rate limit exceeded
+    put:
+      tags:
+      - Personal Account
+      summary: Save an active business; empty body, idempotent
+      description: Requires Clerk bearer identity; no active organization required.
+        See docs/personal-account-api.md for error and lifecycle semantics.
+      parameters:
+      - name: business_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 'Success. Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedState'
+        '400':
+          description: Invalid input or cursor
+        '401':
+          description: Missing or invalid bearer token
+        '404':
+          description: Missing or unowned resource
+        '429':
+          description: Rate limit exceeded
+    delete:
+      tags:
+      - Personal Account
+      summary: Remove saved business idempotently
+      parameters:
+      - name: business_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Removed or already absent
+        '401':
+          description: Authentication required
+        '400':
+          description: Invalid UUID
+  /api/v1/me/activity:
+    get:
+      tags:
+      - Personal Account
+      summary: List customer requests across businesses
+      description: Requires Clerk bearer identity; no active organization required.
+        See docs/personal-account-api.md for error and lifecycle semantics.
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 25
+          minimum: 1
+          maximum: 100
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          description: Opaque cursor; keep module filter unchanged. Null next_cursor
+            ends pagination.
+      - name: module
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - appointments
+          - preorders
+      responses:
+        '200':
+          description: 'Success. Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonalActivityPage'
+        '400':
+          description: Invalid input or cursor
+        '401':
+          description: Missing or invalid bearer token
+        '404':
+          description: Missing or unowned resource
+        '429':
+          description: Rate limit exceeded
+  /api/v1/me/activity/{module}/{request_id}:
+    get:
+      tags:
+      - Personal Account
+      summary: Read a customer-owned request and history
+      description: Requires Clerk bearer identity; no active organization required.
+        See docs/personal-account-api.md for error and lifecycle semantics.
+      parameters:
+      - name: module
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - appointments
+          - preorders
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 'Success. Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonalRequestDetail'
+        '400':
+          description: Invalid input or cursor
+        '401':
+          description: Missing or invalid bearer token
+        '404':
+          description: Missing or unowned resource
+        '429':
+          description: Rate limit exceeded
+  /api/v1/me/activity/{module}/{request_id}/cancel:
+    post:
+      tags:
+      - Personal Account
+      summary: Cancel a customer-owned request
+      description: Requires Clerk bearer identity; no active organization required.
+        See docs/personal-account-api.md for error and lifecycle semantics.
+      parameters:
+      - name: module
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - appointments
+          - preorders
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      responses:
+        '200':
+          description: 'Success. Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonalRequestDetail'
+        '400':
+          description: Invalid input or cursor
+        '401':
+          description: Missing or invalid bearer token
+        '404':
+          description: Missing or unowned resource
+        '429':
+          description: Rate limit exceeded
+        '403':
+          description: Intake unavailable
+        '409':
+          description: Version, state, capacity, price or idempotency conflict
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PersonalCancelInput'
+  /api/v1/me/businesses/{business_id}/appointments:
+    post:
+      tags:
+      - Personal Account
+      summary: Create a customer-owned appointment
+      description: Requires Clerk bearer identity; no active organization required.
+        See docs/personal-account-api.md for error and lifecycle semantics.
+      parameters:
+      - name: business_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      responses:
+        '201':
+          description: 'Success. Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonalRequestDetail'
+        '400':
+          description: Invalid input or cursor
+        '401':
+          description: Missing or invalid bearer token
+        '404':
+          description: Missing or unowned resource
+        '429':
+          description: Rate limit exceeded
+        '403':
+          description: Intake unavailable
+        '409':
+          description: Version, state, capacity, price or idempotency conflict
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PersonalAppointmentInput'
+  /api/v1/me/businesses/{business_id}/preorders:
+    post:
+      tags:
+      - Personal Account
+      summary: Create a customer-owned preorder
+      description: Requires Clerk bearer identity; no active organization required.
+        See docs/personal-account-api.md for error and lifecycle semantics.
+      parameters:
+      - name: business_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      responses:
+        '201':
+          description: 'Success. Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonalRequestDetail'
+        '400':
+          description: Invalid input or cursor
+        '401':
+          description: Missing or invalid bearer token
+        '404':
+          description: Missing or unowned resource
+        '429':
+          description: Rate limit exceeded
+        '403':
+          description: Intake unavailable
+        '409':
+          description: Version, state, capacity, price or idempotency conflict
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PersonalPreorderInput'

@@ -12,8 +12,8 @@ SELECT * FROM preorder_pickup_windows WHERE business_id=$1 AND id=$2;
 SELECT count(*)::int FROM preorders WHERE business_id=$1 AND pickup_window_id=$2 AND id<>$3
 AND status IN ('confirmed','preparing','ready','collected','uncollected');
 -- name: CreatePreorder :one
-INSERT INTO preorders(id,business_id,customer_id,pickup_window_id,customer_name,customer_phone,notes,starts_at,ends_at,timezone,estimated_total,expires_at)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *;
+INSERT INTO preorders(id,business_id,customer_id,pickup_window_id,customer_name,customer_phone,notes,starts_at,ends_at,timezone,estimated_total,expires_at,customer_user_id)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *;
 -- name: CreatePreorderItem :one
 INSERT INTO preorder_items(business_id,preorder_id,variant_id,name,unit,quantity,unit_price,total)
 VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *;

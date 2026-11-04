@@ -143,10 +143,7 @@ func (h *Handler) publicRecord(c *fiber.Ctx) error {
 	if e != nil {
 		return e
 	}
-	r.AllowedTransitions = []string{}
-	if slices.Contains(next(r.Module, r.Status), "cancelled") && time.Now().Add(time.Duration(cfg.CancelBeforeMinutes)*time.Minute).Before(r.StartsAt) {
-		r.AllowedTransitions = []string{"cancelled"}
-	}
+	r.AllowedTransitions = customerTransitions(r, cfg)
 	return c.JSON(r)
 }
 func (h *Handler) ownerRecord(c *fiber.Ctx) error {
@@ -163,4 +160,11 @@ func (h *Handler) ownerRecord(c *fiber.Ctx) error {
 		return e
 	}
 	return c.JSON(r)
+}
+
+func customerTransitions(r Record, cfg Settings) []string {
+	if slices.Contains(next(r.Module, r.Status), "cancelled") && time.Now().Add(time.Duration(cfg.CancelBeforeMinutes)*time.Minute).Before(r.StartsAt) {
+		return []string{"cancelled"}
+	}
+	return []string{}
 }
