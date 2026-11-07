@@ -114,7 +114,7 @@ func (h *Handler) list(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"items": rows, "total": total, "limit": f.Limit, "offset": f.Offset})
 }
 func (h *Handler) customerHistory(c *fiber.Ctx) error {
-	business, _, e := h.authorize(c, false)
+	business, role, e := h.authorize(c, false)
 	if e != nil {
 		return e
 	}
@@ -122,8 +122,19 @@ func (h *Handler) customerHistory(c *fiber.Ctx) error {
 	if e != nil {
 		return e
 	}
+	sub, e := h.RT.Q.GetSubscription(c.Context(), business)
+	if e != nil {
+		return e
+	}
+	access, e := entitlements.Get(c.Context(), h.RT.Q, sub, role, time.Now())
+	if e != nil {
+		return e
+	}
 	out := map[string][]Record{}
 	for _, module := range []string{"appointments", "preorders"} {
+		if !access.Modules[module].CanManageExisting {
+			continue
+		}
 		rows, _, e := h.records(c.Context(), h.RT.Q, business, module, filters{Customer: nullableID(id), Limit: 100})
 		if e != nil {
 			return e
@@ -133,7 +144,7 @@ func (h *Handler) customerHistory(c *fiber.Ctx) error {
 	return c.JSON(out)
 }
 func (h *Handler) reportAccess(c *fiber.Ctx) (uuid.UUID, error) {
-	id, role, e := h.authorize(c, true)
+	id, role, e := h.authorize(c, true, c.Params("module", "preorders"))
 	if e != nil {
 		return id, e
 	}
@@ -141,11 +152,12 @@ func (h *Handler) reportAccess(c *fiber.Ctx) (uuid.UUID, error) {
 	if e != nil {
 		return id, e
 	}
-	if role == "staff" || sub.Tier != "business" || !entitlements.Paid(sub, time.Now()) {
-		return id, api.Fail(403, "module_unavailable", "Business reports required")
-	}
-	if e = requirePaid(sub, c.Params("module", "preorders")); e != nil {
+	access, e := entitlements.Get(c.Context(), h.RT.Q, sub, role, time.Now())
+	if e != nil {
 		return id, e
+	}
+	if !access.Modules[c.Params("module", "preorders")].CanExport {
+		return id, api.Fail(403, "module_unavailable", "Business reports required for this module")
 	}
 	return id, nil
 }

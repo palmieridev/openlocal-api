@@ -104,6 +104,24 @@ type Business struct {
 	LocationMode      string              `json:"location_mode"`
 }
 
+type BusinessAccessGrant struct {
+	ID               uuid.UUID          `json:"id"`
+	BusinessID       uuid.UUID          `json:"business_id"`
+	Module           string             `json:"module"`
+	Tier             string             `json:"tier"`
+	StartsAt         pgtype.Timestamptz `json:"starts_at"`
+	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+	InternalReason   string             `json:"internal_reason"`
+	OwnerMessage     sql.NullString     `json:"owner_message"`
+	CreatedBy        uuid.UUID          `json:"created_by"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	Version          int32              `json:"version"`
+	RevokedAt        pgtype.Timestamptz `json:"revoked_at"`
+	RevokedBy        uuid.NullUUID      `json:"revoked_by"`
+	RevocationReason sql.NullString     `json:"revocation_reason"`
+}
+
 type BusinessCategory struct {
 	ID         uuid.UUID `json:"id"`
 	BusinessID uuid.UUID `json:"business_id"`

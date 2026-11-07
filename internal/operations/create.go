@@ -147,6 +147,11 @@ func (h *Handler) create(c *fiber.Ctx) error {
 			return e
 		}
 	}
+	if !customerFacing {
+		if e = requirePaid(c.Context(), q, sub, module, actor); e != nil {
+			return e
+		}
+	}
 	cfg, e := requireIntake(c.Context(), q, sub, module)
 	if e != nil {
 		if customerFacing {

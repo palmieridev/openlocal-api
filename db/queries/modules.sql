@@ -29,7 +29,7 @@ ON CONFLICT(business_id,module) DO UPDATE SET enabled=EXCLUDED.enabled,settings=
 SELECT count(*)::int FROM module_usage_events WHERE business_id=$1 AND module=$2 AND period_start=$3;
 
 -- name: ConsumeModuleUsage :exec
-INSERT INTO module_usage_events(business_id,module,record_id,period_start) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING;
+INSERT INTO module_usage_events(business_id,module,record_id,period_start,created_at) VALUES($1,$2,$3,$4,clock_timestamp()) ON CONFLICT DO NOTHING;
 
 -- name: UpsertModuleCustomer :one
 INSERT INTO module_customers(business_id,phone,name) VALUES($1,$2,$3)

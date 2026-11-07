@@ -3,27 +3,33 @@ package entitlements
 import (
 	"context"
 	"errors"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/palmieridev/openlocal-api/internal/accessgrants"
 	"github.com/palmieridev/openlocal-api/internal/api"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
-	"slices"
-	"time"
 )
 
+type Source = accessgrants.Source
+
 type Access struct {
-	Owned             bool   `json:"owned"`
-	Enabled           bool   `json:"enabled"`
-	CanAcceptNew      bool   `json:"can_accept_new"`
-	CanManageExisting bool   `json:"can_manage_existing"`
-	CanConfigure      bool   `json:"can_configure"`
-	CanOperate        bool   `json:"can_operate"`
-	CanExport         bool   `json:"can_export"`
-	Reason            string `json:"reason"`
-	Usage             int32  `json:"usage"`
-	Limit             int32  `json:"limit"`
-	MaxResources      int    `json:"max_resources"`
-	Advanced          bool   `json:"advanced"`
+	Tier              string   `json:"tier"`
+	Sources           []Source `json:"sources"`
+	Owned             bool     `json:"owned"`
+	Enabled           bool     `json:"enabled"`
+	CanAcceptNew      bool     `json:"can_accept_new"`
+	CanManageExisting bool     `json:"can_manage_existing"`
+	CanConfigure      bool     `json:"can_configure"`
+	CanOperate        bool     `json:"can_operate"`
+	CanExport         bool     `json:"can_export"`
+	Reason            string   `json:"reason"`
+	Usage             int32    `json:"usage"`
+	Limit             int32    `json:"limit"`
+	MaxResources      int      `json:"max_resources"`
+	Advanced          bool     `json:"advanced"`
 }
 type Result struct {
 	Tier        string            `json:"tier"`
@@ -33,33 +39,47 @@ type Result struct {
 	Modules     map[string]Access `json:"modules"`
 }
 
-func Paid(s db.BusinessSubscription, now time.Time) bool {
-	return s.Tier != "free" && ((s.Status == "active" || s.Status == "pilot") && now.Before(s.PeriodEnd.Time) || s.Status == "past_due" && s.GraceUntil.Valid && now.Before(s.GraceUntil.Time))
-}
+func Paid(s db.BusinessSubscription, now time.Time) bool { return accessgrants.Paid(s, now) }
 func Limits(tier string) (int32, int) {
-	if tier == "business" {
+	switch tier {
+	case "business":
 		return 1000, 5
-	}
-	if tier == "essential" {
+	case "essential":
 		return 50, 1
 	}
 	return 0, 0
 }
+func stamp(t time.Time) pgtype.Timestamptz { return pgtype.Timestamptz{Time: t, Valid: true} }
+func Capability(ctx context.Context, q *db.Queries, s db.BusinessSubscription, module string, now time.Time) (accessgrants.Capability, error) {
+	grants, err := q.AccessGrantsForResolution(ctx, db.AccessGrantsForResolutionParams{BusinessID: s.BusinessID, At: stamp(now)})
+	if err != nil {
+		return accessgrants.Capability{}, err
+	}
+	return accessgrants.Resolve(s, grants, module, now), nil
+}
 func Get(ctx context.Context, q *db.Queries, s db.BusinessSubscription, role string, now time.Time) (Result, error) {
-	r := Result{Tier: s.Tier, Role: role, PeriodStart: s.PeriodStart.Time, PeriodEnd: s.PeriodEnd.Time, Modules: map[string]Access{}}
-	limit, resources := Limits(s.Tier)
+	start, end := accessgrants.Window(s, now)
+	r := Result{Tier: s.Tier, Role: role, PeriodStart: start, PeriodEnd: end, Modules: map[string]Access{}}
+	grants, err := q.AccessGrantsForResolution(ctx, db.AccessGrantsForResolutionParams{BusinessID: s.BusinessID, At: stamp(now)})
+	if err != nil {
+		return r, err
+	}
 	for _, module := range []string{"appointments", "preorders"} {
 		m, err := q.GetModule(ctx, db.GetModuleParams{BusinessID: s.BusinessID, Module: module})
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return r, err
 		}
-		used, err := q.ModuleUsage(ctx, db.ModuleUsageParams{BusinessID: s.BusinessID, Module: module, PeriodStart: s.PeriodStart})
+		used, err := q.ModuleUsageInWindow(ctx, db.ModuleUsageInWindowParams{BusinessID: s.BusinessID, Module: module, WindowStart: stamp(start), WindowEnd: stamp(end)})
 		if err != nil {
 			return r, err
 		}
-		owned := Paid(s, now) && slices.Contains(s.Modules, module)
-		operator := role == "owner" || s.Tier == "business" && (role == "manager" || role == "staff")
-		a := Access{Owned: owned, Enabled: m.Enabled, CanManageExisting: operator, CanOperate: operator, CanConfigure: owned && (role == "owner" || s.Tier == "business" && role == "manager"), CanExport: owned && s.Tier == "business" && (role == "owner" || role == "manager"), Usage: used, Limit: limit, MaxResources: resources, Advanced: s.Tier == "business"}
+		capability := accessgrants.Resolve(s, grants, module, now)
+		limit, resources := Limits(capability.Tier)
+		owned := capability.Tier != "free"
+		operator := role == "owner" || capability.TeamHistory && (role == "manager" || role == "staff")
+		a := Access{Tier: capability.Tier, Sources: capability.Sources, Owned: owned, Enabled: m.Enabled, CanManageExisting: operator, CanOperate: operator,
+			CanConfigure: owned && (role == "owner" || capability.Tier == "business" && role == "manager"),
+			CanExport:    owned && capability.Tier == "business" && (role == "owner" || role == "manager"), Usage: used, Limit: limit, MaxResources: resources, Advanced: capability.Tier == "business"}
 		switch {
 		case !owned:
 			a.Reason = "module_unavailable"
@@ -75,18 +95,24 @@ func Get(ctx context.Context, q *db.Queries, s db.BusinessSubscription, role str
 	return r, nil
 }
 
-// Caller must hold the subscription row lock throughout the confirmation transaction.
+// Caller must hold LockSubscription throughout the transaction, as must grant writers.
 func Consume(ctx context.Context, q *db.Queries, s db.BusinessSubscription, module string, id uuid.UUID) error {
-	if !Paid(s, time.Now()) || !slices.Contains(s.Modules, module) {
-		return api.Fail(403, "module_unavailable", "module is not subscribed")
-	}
-	limit, _ := Limits(s.Tier)
-	used, err := q.ModuleUsage(ctx, db.ModuleUsageParams{BusinessID: s.BusinessID, Module: module, PeriodStart: s.PeriodStart})
+	now := time.Now()
+	capability, err := Capability(ctx, q, s, module, now)
 	if err != nil {
 		return err
 	}
+	if capability.Tier == "free" {
+		return api.Fail(403, "module_unavailable", "module access is unavailable")
+	}
+	start, end := accessgrants.Window(s, now)
+	used, err := q.ModuleUsageInWindow(ctx, db.ModuleUsageInWindowParams{BusinessID: s.BusinessID, Module: module, WindowStart: stamp(start), WindowEnd: stamp(end)})
+	if err != nil {
+		return err
+	}
+	limit, _ := Limits(capability.Tier)
 	if used >= limit {
 		return api.Fail(409, "quota_exceeded", "confirmation limit reached")
 	}
-	return q.ConsumeModuleUsage(ctx, db.ConsumeModuleUsageParams{BusinessID: s.BusinessID, Module: module, RecordID: id, PeriodStart: s.PeriodStart})
+	return q.ConsumeModuleUsage(ctx, db.ConsumeModuleUsageParams{BusinessID: s.BusinessID, Module: module, RecordID: id, PeriodStart: stamp(start)})
 }

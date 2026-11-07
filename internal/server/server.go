@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/palmieridev/openlocal-api/docs"
+	"github.com/palmieridev/openlocal-api/internal/accessgrants"
 	"github.com/palmieridev/openlocal-api/internal/analytics"
 	"github.com/palmieridev/openlocal-api/internal/api"
 	"github.com/palmieridev/openlocal-api/internal/auth"
@@ -102,6 +103,7 @@ func New(deps Deps) *fiber.App {
 	operations.NewHandler(s.rt, deps.Config).RegisterPublicRoutes(publicAPI)
 
 	private := apiGroup.Group("", deps.Auth.RequireAuth(), rateLimiter(deps.Config.PrivateRateLimitMax, deps.Config.RateLimitWindow, nil, authenticatedRateLimitKey))
+	accessgrants.NewHandler(s.rt, deps.Config.PlatformAdminUserIDs).RegisterRoutes(private)
 	users.NewHandler(s.rt).RegisterRoutes(private)
 	savedbusinesses.NewHandler(s.rt).RegisterRoutes(private)
 	business.NewHandler(s.rt).RegisterPrivateRoutes(private)

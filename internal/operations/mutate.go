@@ -121,6 +121,11 @@ func (h *Handler) mutate(c *fiber.Ctx) error {
 	}
 	confirm := r.Status == "requested" && status == "confirmed"
 	if confirm {
+		if !customerFacing {
+			if e = requirePaid(c.Context(), q, sub, module, actor); e != nil {
+				return e
+			}
+		}
 		if e = entitlements.Consume(c.Context(), q, sub, module, id); e != nil {
 			return e
 		}
@@ -143,7 +148,7 @@ func (h *Handler) mutate(c *fiber.Ctx) error {
 			}
 		}
 		if confirm || changed {
-			if e = requirePaid(sub, module); e != nil {
+			if e = requirePaid(c.Context(), q, sub, module, actor); e != nil {
 				return e
 			}
 			// Use the original service duration/buffer, not subsequently changed prices or duration.
@@ -190,7 +195,7 @@ func (h *Handler) mutate(c *fiber.Ctx) error {
 			p.PickupWindowID = *edit.PickupWindowID
 		}
 		if confirm || changed {
-			if e = requirePaid(sub, module); e != nil {
+			if e = requirePaid(c.Context(), q, sub, module, actor); e != nil {
 				return e
 			}
 			window, e := checkPickup(c.Context(), q, b, cfg, p.PickupWindowID, id)
