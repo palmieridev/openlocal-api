@@ -7,7 +7,7 @@ servers:
   - url: http://localhost:8080
 tags:
   - name: Platform Administration
-    description: Private allowlisted platform business inspection and audit activity.
+    description: Private allowlisted platform business inspection, complimentary access grants, and audit activity.
   - name: Personal Account
     description: Saved businesses and verified customer request activity.
   - name: Health
@@ -1394,6 +1394,16 @@ components:
       type: object
       additionalProperties: false
       properties:
+        tier:
+          type: string
+          enum:
+          - free
+          - essential
+          - business
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccessSource'
         owned:
           type: boolean
         enabled:
@@ -1419,6 +1429,8 @@ components:
         advanced:
           type: boolean
       required:
+      - tier
+      - sources
       - owned
       - enabled
       - can_accept_new
@@ -1543,6 +1555,452 @@ components:
       - items
       - next_cursor
       - limit
+    AccessSource:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum:
+          - subscription
+          - pilot
+          - grant
+        tier:
+          type: string
+          enum:
+          - essential
+          - business
+        grant_id:
+          type: string
+          format: uuid
+        starts_at:
+          type: string
+          format: date-time
+        expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        owner_message:
+          type: string
+          minLength: 1
+          maxLength: 2000
+      required:
+      - kind
+      - tier
+      - starts_at
+      - expires_at
+    ModuleAccess:
+      type: object
+      additionalProperties: false
+      properties:
+        tier:
+          type: string
+          enum:
+          - free
+          - essential
+          - business
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccessSource'
+        owned:
+          type: boolean
+        enabled:
+          type: boolean
+        can_accept_new:
+          type: boolean
+        can_manage_existing:
+          type: boolean
+        can_configure:
+          type: boolean
+        can_operate:
+          type: boolean
+        can_export:
+          type: boolean
+        reason:
+          type: string
+        usage:
+          type: integer
+        limit:
+          type: integer
+        max_resources:
+          type: integer
+        advanced:
+          type: boolean
+      required:
+      - tier
+      - sources
+      - owned
+      - enabled
+      - can_accept_new
+      - can_manage_existing
+      - can_configure
+      - can_operate
+      - can_export
+      - reason
+      - usage
+      - limit
+      - max_resources
+      - advanced
+    EffectiveEntitlements:
+      type: object
+      additionalProperties: false
+      properties:
+        tier:
+          type: string
+          description: Stored subscription tier; use each module tier for capability.
+        role:
+          type: string
+        period_start:
+          type: string
+          format: date-time
+        period_end:
+          type: string
+          format: date-time
+        modules:
+          type: object
+          additionalProperties: false
+          properties:
+            appointments:
+              $ref: '#/components/schemas/ModuleAccess'
+            preorders:
+              $ref: '#/components/schemas/ModuleAccess'
+          required:
+          - appointments
+          - preorders
+      required:
+      - tier
+      - role
+      - period_start
+      - period_end
+      - modules
+    AccessGrant:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        business_id:
+          type: string
+          format: uuid
+        module:
+          type: string
+          enum:
+          - appointments
+          - preorders
+        tier:
+          type: string
+          enum:
+          - essential
+          - business
+        starts_at:
+          type: string
+          format: date-time
+        expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        indefinite:
+          type: boolean
+        status:
+          type: string
+          enum:
+          - scheduled
+          - active
+          - expired
+          - revoked
+        internal_reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        owner_message:
+          type:
+          - string
+          - 'null'
+        created_by:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
+          format: int32
+        revoked_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        revoked_by:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        revocation_reason:
+          type:
+          - string
+          - 'null'
+      required:
+      - id
+      - business_id
+      - module
+      - tier
+      - starts_at
+      - expires_at
+      - indefinite
+      - status
+      - internal_reason
+      - owner_message
+      - created_by
+      - created_at
+      - updated_at
+      - version
+      - revoked_at
+      - revoked_by
+      - revocation_reason
+    AccessGrantCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        module:
+          type: string
+          enum:
+          - appointments
+          - preorders
+        tier:
+          type: string
+          enum:
+          - essential
+          - business
+        starts_at:
+          type: string
+          format: date-time
+        expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        indefinite:
+          type: boolean
+          default: false
+        internal_reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        owner_message:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          maxLength: 2000
+      required:
+      - module
+      - tier
+      - starts_at
+      - internal_reason
+      oneOf:
+      - required:
+        - expires_at
+        properties:
+          expires_at:
+            type: string
+            format: date-time
+          indefinite:
+            const: false
+      - required:
+        - indefinite
+        properties:
+          indefinite:
+            const: true
+          expires_at:
+            type: 'null'
+    AccessGrantExtend:
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          type: integer
+          minimum: 1
+          format: int32
+        expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        indefinite:
+          type: boolean
+          default: false
+        internal_reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+      required:
+      - version
+      - internal_reason
+      oneOf:
+      - required:
+        - expires_at
+        properties:
+          expires_at:
+            type: string
+            format: date-time
+          indefinite:
+            const: false
+      - required:
+        - indefinite
+        properties:
+          indefinite:
+            const: true
+          expires_at:
+            type: 'null'
+    AccessGrantRevoke:
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          type: integer
+          minimum: 1
+          format: int32
+        internal_reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+      required:
+      - version
+      - internal_reason
+    AccessGrantHistory:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        actor_user_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        action:
+          type: string
+          enum:
+          - access_grant.created
+          - access_grant.extended
+          - access_grant.revoked
+        at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: false
+          properties:
+            internal_reason:
+              type: string
+              minLength: 1
+              maxLength: 2000
+            before:
+              oneOf:
+              - $ref: '#/components/schemas/AccessGrant'
+              - type: 'null'
+            after:
+              $ref: '#/components/schemas/AccessGrant'
+          required:
+          - internal_reason
+          - before
+          - after
+      required:
+      - id
+      - actor_user_id
+      - action
+      - at
+      - metadata
+    AccessGrantPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccessGrant'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+      required:
+      - items
+      - total
+      - limit
+      - offset
+    AccessGrantHistoryPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccessGrantHistory'
+        limit:
+          type: integer
+        offset:
+          type: integer
+      required:
+      - items
+      - limit
+      - offset
+    OwnerSubscription:
+      type: object
+      additionalProperties: false
+      properties:
+        tier:
+          type: string
+        status:
+          type: string
+        modules:
+          type: array
+          items:
+            type: string
+            enum:
+            - appointments
+            - preorders
+        period_start:
+          type: string
+          format: date-time
+        period_end:
+          type: string
+          format: date-time
+        grace_until:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        cancel_at_period_end:
+          type: boolean
+        scheduled_change: {}
+        billing_available:
+          type: boolean
+        entitlements:
+          $ref: '#/components/schemas/EffectiveEntitlements'
+      required:
+      - tier
+      - status
+      - modules
+      - period_start
+      - period_end
+      - grace_until
+      - cancel_at_period_end
+      - scheduled_change
+      - billing_available
+      - entitlements
 paths:
   /healthz:
     get:
@@ -2362,7 +2820,11 @@ paths:
       parameters:
         - {name: business_id, in: path, required: true, schema: {type: string, format: uuid}}
       responses:
-        "200": {description: Per-module capabilities}
+        "200":
+          description: Effective per-module capabilities and active sources; see access-grants-api.md
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EffectiveEntitlements'}
   /api/v1/businesses/{business_id}/subscription:
     get:
       tags: [Billing]
@@ -2370,7 +2832,11 @@ paths:
       parameters:
         - {name: business_id, in: path, required: true, schema: {type: string, format: uuid}}
       responses:
-        "200": {description: Subscription, pending change, and entitlements}
+        "200":
+          description: Stored billing state with effective per-module entitlements
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OwnerSubscription'}
   /api/v1/businesses/{business_id}/billing/{action}:
     post:
       tags: [Billing]
@@ -2970,6 +3436,381 @@ paths:
                 $ref: '#/components/schemas/Error'
         '503':
           description: Database not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/admin/businesses/{business_id}/grants:
+    get:
+      tags:
+      - Platform Administration
+      summary: List persistent complimentary grants
+      description: Requires the platform allowlist independently of org membership.
+        See docs/access-grants-api.md for dates, expiry, versions, audit history, and
+        effective access semantics.
+      parameters:
+      - name: business_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/LimitQuery'
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 2000000000
+          default: 0
+      responses:
+        '200':
+          description: 'Success. Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessGrantPage'
+        '400':
+          description: Invalid JSON, identifier, enum, date, reason, or pagination
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Clerk token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Platform administrator required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Business or grant not found in scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Stale version, revoked grant, or indefinite extension
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Persistence failure; mutation rolled back
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      tags:
+      - Platform Administration
+      summary: Grant complimentary module access
+      description: Requires the platform allowlist independently of org membership.
+        See docs/access-grants-api.md for dates, expiry, versions, audit history, and
+        effective access semantics.
+      parameters:
+      - name: business_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '201':
+          description: 'Success. Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessGrant'
+        '400':
+          description: Invalid JSON, identifier, enum, date, reason, or pagination
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Clerk token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Platform administrator required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Business or grant not found in scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Stale version, revoked grant, or indefinite extension
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Persistence failure; mutation rolled back
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccessGrantCreate'
+  /api/v1/admin/businesses/{business_id}/grants/{grant_id}/extend:
+    post:
+      tags:
+      - Platform Administration
+      summary: Extend a finite grant, optionally indefinitely
+      description: Requires the platform allowlist independently of org membership.
+        See docs/access-grants-api.md for dates, expiry, versions, audit history, and
+        effective access semantics.
+      parameters:
+      - name: business_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: grant_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 'Success. Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessGrant'
+        '400':
+          description: Invalid JSON, identifier, enum, date, reason, or pagination
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Clerk token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Platform administrator required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Business or grant not found in scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Stale version, revoked grant, or indefinite extension
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Persistence failure; mutation rolled back
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccessGrantExtend'
+  /api/v1/admin/businesses/{business_id}/grants/{grant_id}/revoke:
+    post:
+      tags:
+      - Platform Administration
+      summary: Revoke a grant immediately
+      description: Requires the platform allowlist independently of org membership.
+        See docs/access-grants-api.md for dates, expiry, versions, audit history, and
+        effective access semantics.
+      parameters:
+      - name: business_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: grant_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 'Success. Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessGrant'
+        '400':
+          description: Invalid JSON, identifier, enum, date, reason, or pagination
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Clerk token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Platform administrator required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Business or grant not found in scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Stale version, revoked grant, or indefinite extension
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Persistence failure; mutation rolled back
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccessGrantRevoke'
+  /api/v1/admin/businesses/{business_id}/grants/{grant_id}/history:
+    get:
+      tags:
+      - Platform Administration
+      summary: Read private grant mutation history in version order
+      description: Requires the platform allowlist independently of org membership.
+        See docs/access-grants-api.md for dates, expiry, versions, audit history, and
+        effective access semantics.
+      parameters:
+      - name: business_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: grant_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/LimitQuery'
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 2000000000
+          default: 0
+      responses:
+        '200':
+          description: 'Success. Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessGrantHistoryPage'
+        '400':
+          description: Invalid JSON, identifier, enum, date, reason, or pagination
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Clerk token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Platform administrator required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Business or grant not found in scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Stale version, revoked grant, or indefinite extension
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Persistence failure; mutation rolled back
           content:
             application/json:
               schema:
