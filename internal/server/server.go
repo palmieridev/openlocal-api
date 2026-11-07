@@ -28,6 +28,7 @@ import (
 	"github.com/palmieridev/openlocal-api/internal/marketplace"
 	"github.com/palmieridev/openlocal-api/internal/operations"
 	v "github.com/palmieridev/openlocal-api/internal/platform/validator"
+	"github.com/palmieridev/openlocal-api/internal/platformadmin"
 	"github.com/palmieridev/openlocal-api/internal/savedbusinesses"
 	"github.com/palmieridev/openlocal-api/internal/support"
 	"github.com/palmieridev/openlocal-api/internal/users"
@@ -104,6 +105,7 @@ func New(deps Deps) *fiber.App {
 
 	private := apiGroup.Group("", deps.Auth.RequireAuth(), rateLimiter(deps.Config.PrivateRateLimitMax, deps.Config.RateLimitWindow, nil, authenticatedRateLimitKey))
 	accessgrants.NewHandler(s.rt, deps.Config.PlatformAdminUserIDs).RegisterRoutes(private)
+	platformadmin.NewHandler(s.rt, deps.Config).RegisterPrivateRoutes(private)
 	users.NewHandler(s.rt).RegisterRoutes(private)
 	savedbusinesses.NewHandler(s.rt).RegisterRoutes(private)
 	business.NewHandler(s.rt).RegisterPrivateRoutes(private)
