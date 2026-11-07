@@ -290,6 +290,7 @@ func (h *Handler) resources(c *fiber.Ctx) error {
 		return err
 	}
 	in := Resource{Active: true, ServiceIDs: []uuid.UUID{}, Hours: []scheduling.Hour{}, ClosedDates: []string{}}
+	wasActive := false
 	rid := uuid.New()
 	if c.Method() == "PATCH" {
 		rid, err = parseID(c.Params("resource_id"))
@@ -301,6 +302,7 @@ func (h *Handler) resources(c *fiber.Ctx) error {
 			return err
 		}
 		in = mapResource(r)
+		wasActive = in.Active
 	}
 	if err = merge(c, &in); err != nil {
 		return err
@@ -334,7 +336,7 @@ func (h *Handler) resources(c *fiber.Ctx) error {
 		}
 	}
 	_, limit := entitlements.Limits(capability.Tier)
-	if in.Active && n >= limit {
+	if in.Active && !wasActive && n >= limit {
 		return api.Fail(409, "quota_exceeded", "resource limit reached")
 	}
 	r, err := q.SaveAppointmentResource(c.Context(), db.SaveAppointmentResourceParams{ID: rid, BusinessID: id, Name: strings.TrimSpace(in.Name), Active: in.Active, ServiceIds: in.ServiceIDs, Hours: jsonBytes(in.Hours), ClosedDates: jsonBytes(in.ClosedDates)})

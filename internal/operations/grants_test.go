@@ -427,6 +427,77 @@ func TestGrantFallbackRestrictsIntakeResourcesAndAdvancedSettings(t *testing.T) 
 	}
 }
 
+func TestGrantFallbackAllowsResourceEditsWithoutIncreasingCapacity(t *testing.T) {
+	for _, state := range []string{"expired", "revoked"} {
+		t.Run(state, func(t *testing.T) {
+			f := setupGrants(t)
+			ctx := context.Background()
+			_, err := f.h.RT.Pool.Exec(ctx, "UPDATE business_subscriptions SET tier='essential',status='active',modules=ARRAY['appointments'] WHERE business_id=$1", f.b.ID)
+			must(t, err)
+			g := f.grant(t, "appointments", "business", nil)
+			base := "/businesses/" + f.b.ID.String() + "/appointment-resources"
+			createResource := func(name string, active bool) Resource {
+				t.Helper()
+				code, data := f.request("POST", base, uuid.NewString(), map[string]any{"name": name, "active": active}, true)
+				if code != 200 {
+					t.Fatalf("create resource %d %s", code, data)
+				}
+				var resource Resource
+				must(t, json.Unmarshal(data, &resource))
+				return resource
+			}
+			extra := createResource("ZZZ extra", true)
+			inactive := createResource("ZZZ inactive", false)
+			if state == "expired" {
+				_, err = f.h.RT.Pool.Exec(ctx, "UPDATE business_access_grants SET expires_at=$1 WHERE id=$2", time.Now().Add(-time.Minute), g.ID)
+				must(t, err)
+			} else {
+				code, data := f.adminRequest("POST", "/"+g.ID.String()+"/revoke", accessgrants.RevokeInput{Version: 1, InternalReason: "fallback"})
+				if code != 200 {
+					t.Fatalf("revoke %d %s", code, data)
+				}
+			}
+			if access := f.access(t, "owner"); access.Modules["appointments"].MaxResources != 1 {
+				t.Fatalf("expected Essential fallback: %+v", access)
+			}
+			for _, resource := range []Resource{{ID: f.resource.ID, Name: f.resource.Name}, extra} {
+				code, data := f.request("PATCH", base+"/"+resource.ID.String(), uuid.NewString(), map[string]any{"name": "Renamed " + resource.Name, "active": true}, true)
+				if code != 200 {
+					t.Fatalf("edit retained active resource %d %s", code, data)
+				}
+				var saved Resource
+				must(t, json.Unmarshal(data, &saved))
+				if saved.Name != "Renamed "+resource.Name || !saved.Active {
+					t.Fatalf("basic edit was not saved: %+v", saved)
+				}
+			}
+			for _, c := range []struct {
+				method string
+				path   string
+				body   any
+			}{
+				{"POST", base, map[string]any{"name": "New active"}},
+				{"PATCH", base + "/" + inactive.ID.String(), map[string]any{"active": true}},
+			} {
+				code, data := f.request(c.method, c.path, uuid.NewString(), c.body, true)
+				if code != 409 {
+					t.Fatalf("capacity increase %s %d %s", c.method, code, data)
+				}
+			}
+			for _, id := range []uuid.UUID{extra.ID, f.resource.ID} {
+				code, data := f.request("PATCH", base+"/"+id.String(), uuid.NewString(), map[string]any{"active": false}, true)
+				if code != 200 {
+					t.Fatalf("deactivate retained resource %d %s", code, data)
+				}
+			}
+			code, data := f.request("PATCH", base+"/"+inactive.ID.String(), uuid.NewString(), map[string]any{"active": true}, true)
+			if code != 200 {
+				t.Fatalf("activate within Essential limit %d %s", code, data)
+			}
+		})
+	}
+}
+
 func TestEssentialCanEditBasicFieldsWhileRetainingBusinessConfiguration(t *testing.T) {
 	f := setupGrants(t)
 	ctx := context.Background()
