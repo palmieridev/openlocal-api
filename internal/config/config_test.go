@@ -117,3 +117,24 @@ func TestIssuerFromPublishableKeyAcceptsPaddedClerkKey(t *testing.T) {
 		t.Fatalf("issuer = %q, want %q", issuer, "https://"+host)
 	}
 }
+
+func TestLoadPlatformAdminAllowlist(t *testing.T) {
+	t.Setenv("AUTH_TEST_BYPASS", "true")
+	t.Setenv("APP_ENV", "test")
+	for _, tc := range []struct {
+		raw  string
+		want int
+	}{{"", 0}, {" , , ", 0}, {" user_one, user_two ,,", 2}} {
+		t.Setenv("PLATFORM_ADMIN_USER_IDS", tc.raw)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(cfg.PlatformAdminUserIDs) != tc.want {
+			t.Fatalf("allowlist=%v want length %d", cfg.PlatformAdminUserIDs, tc.want)
+		}
+		if tc.want == 2 && (cfg.PlatformAdminUserIDs[0] != "user_one" || cfg.PlatformAdminUserIDs[1] != "user_two") {
+			t.Fatalf("allowlist=%v", cfg.PlatformAdminUserIDs)
+		}
+	}
+}

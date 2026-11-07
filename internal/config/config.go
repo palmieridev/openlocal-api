@@ -22,6 +22,7 @@ type Config struct {
 	ClerkIssuerURL            string
 	ClerkJWKSURL              string
 	ClerkAuthorizedParties    []string
+	PlatformAdminUserIDs      []string
 	CORSAllowedOrigins        []string
 	AuthTestBypass            bool
 	RateLimitWindow           time.Duration
@@ -59,6 +60,7 @@ func Load() (Config, error) {
 		ClerkIssuerURL:            os.Getenv("CLERK_ISSUER_URL"),
 		ClerkJWKSURL:              os.Getenv("CLERK_JWKS_URL"),
 		ClerkAuthorizedParties:    splitCSV(os.Getenv("CLERK_AUTHORIZED_PARTIES")),
+		PlatformAdminUserIDs:      splitCSV(os.Getenv("PLATFORM_ADMIN_USER_IDS")),
 		CORSAllowedOrigins:        splitCSV(getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173")),
 		AuthTestBypass:            getbool("AUTH_TEST_BYPASS", false),
 		ModulesTokenKey:           os.Getenv("MODULES_TOKEN_KEY"),

@@ -6,6 +6,8 @@ info:
 servers:
   - url: http://localhost:8080
 tags:
+  - name: Platform Administration
+    description: Private allowlisted platform business inspection and audit activity.
   - name: Personal Account
     description: Saved businesses and verified customer request activity.
   - name: Health
@@ -39,6 +41,14 @@ components:
       scheme: bearer
       bearerFormat: JWT
   parameters:
+    AdminCursorQuery:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 1024
+      description: Opaque continuation cursor. Keep search/filters unchanged between pages.
     BusinessIDQuery:
       name: business_id
       in: query
@@ -139,6 +149,9 @@ components:
       properties:
         error:
           type: string
+        code:
+          type: string
+          description: Optional machine-readable code; clients also handle errors by HTTP status.
       required:
         - error
     Health:
@@ -1281,6 +1294,255 @@ components:
       required: [version]
       properties:
         version: {type: integer, minimum: 1}
+    AdminBusiness:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        clerk_org_id:
+          type:
+          - string
+          - 'null'
+        business_type:
+          type: string
+        status:
+          type: string
+        timezone:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - name
+      - slug
+      - clerk_org_id
+      - business_type
+      - status
+      - timezone
+      - created_at
+      - updated_at
+    AdminSubscription:
+      type: object
+      additionalProperties: false
+      properties:
+        tier:
+          type: string
+        status:
+          type: string
+        modules:
+          type: array
+          items:
+            type: string
+            enum:
+            - appointments
+            - preorders
+        stripe_customer_id:
+          type:
+          - string
+          - 'null'
+        stripe_subscription_id:
+          type:
+          - string
+          - 'null'
+        period_start:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        period_end:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        grace_until:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        cancel_at_period_end:
+          type: boolean
+        scheduled_change:
+          type:
+          - object
+          - 'null'
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - tier
+      - status
+      - modules
+      - stripe_customer_id
+      - stripe_subscription_id
+      - period_start
+      - period_end
+      - grace_until
+      - cancel_at_period_end
+      - scheduled_change
+      - updated_at
+    AdminModuleAccess:
+      type: object
+      additionalProperties: false
+      properties:
+        owned:
+          type: boolean
+        enabled:
+          type: boolean
+        can_accept_new:
+          type: boolean
+        can_manage_existing:
+          type: boolean
+        can_configure:
+          type: boolean
+        can_operate:
+          type: boolean
+        can_export:
+          type: boolean
+        reason:
+          type: string
+        usage:
+          type: integer
+        limit:
+          type: integer
+        max_resources:
+          type: integer
+        advanced:
+          type: boolean
+      required:
+      - owned
+      - enabled
+      - can_accept_new
+      - can_manage_existing
+      - can_configure
+      - can_operate
+      - can_export
+      - reason
+      - usage
+      - limit
+      - max_resources
+      - advanced
+    AdminBusinessDetail:
+      type: object
+      additionalProperties: false
+      properties:
+        business:
+          $ref: '#/components/schemas/AdminBusiness'
+        subscription:
+          oneOf:
+          - $ref: '#/components/schemas/AdminSubscription'
+          - type: 'null'
+        access_role:
+          type: string
+          enum:
+          - owner
+          description: Capabilities evaluated as business owner; does not grant membership.
+        modules:
+          type: object
+          properties:
+            appointments:
+              $ref: '#/components/schemas/AdminModuleAccess'
+            preorders:
+              $ref: '#/components/schemas/AdminModuleAccess'
+          required:
+          - appointments
+          - preorders
+          additionalProperties: false
+      required:
+      - business
+      - subscription
+      - access_role
+      - modules
+    AdminActivity:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        business_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        actor_user_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        action:
+          type: string
+        entity_type:
+          type: string
+        entity_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - business_id
+      - actor_user_id
+      - action
+      - entity_type
+      - entity_id
+      - metadata
+      - created_at
+    AdminBusinessPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminBusiness'
+        next_cursor:
+          type:
+          - string
+          - 'null'
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+      required:
+      - items
+      - next_cursor
+      - limit
+    AdminActivityPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminActivity'
+        next_cursor:
+          type:
+          - string
+          - 'null'
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+      required:
+      - items
+      - next_cursor
+      - limit
 paths:
   /healthz:
     get:
@@ -2529,3 +2791,186 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/PersonalPreorderInput'
+  /api/v1/admin/businesses:
+    get:
+      tags:
+      - Platform Administration
+      summary: Search businesses across the platform
+      description: Ordered by created_at DESC, id DESC. Requires an exact allowlisted
+        verified Clerk user ID; organization roles do not grant access. Empty PLATFORM_ADMIN_USER_IDS
+        denies all. See docs/platform-admin-api.md.
+      parameters:
+      - $ref: '#/components/parameters/LimitQuery'
+      - $ref: '#/components/parameters/AdminCursorQuery'
+      - name: q
+        in: query
+        schema:
+          type: string
+          maxLength: 200
+        description: Trimmed literal case-insensitive name/slug substring, or exact
+          canonical UUID/Clerk organization ID. Empty lists all statuses.
+      responses:
+        '200':
+          description: 'Success. Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBusinessPage'
+        '400':
+          description: Invalid input or cursor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Clerk bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Identity is not in PLATFORM_ADMIN_USER_IDS
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Private rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Database not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/admin/businesses/{id}:
+    get:
+      tags:
+      - Platform Administration
+      summary: Inspect private business subscription and module access
+      description: Returns both module capabilities and current billing-period usage
+        evaluated as owner. Missing subscription is null with free capabilities; does
+        not create a subscription. Requires an exact allowlisted verified Clerk user
+        ID; organization roles do not grant access. Empty PLATFORM_ADMIN_USER_IDS denies
+        all. See docs/platform-admin-api.md.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 'Success. Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBusinessDetail'
+        '400':
+          description: Invalid input or cursor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Clerk bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Identity is not in PLATFORM_ADMIN_USER_IDS
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Private rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Database not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Business not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/admin/activity:
+    get:
+      tags:
+      - Platform Administration
+      summary: Read private audit activity
+      description: Reads existing audit_logs for business and platform mutations. All
+        filters combine. Metadata may include internal reasons and before/after state.
+        Ordered by created_at DESC, id DESC. Requires an exact allowlisted verified
+        Clerk user ID; organization roles do not grant access. Empty PLATFORM_ADMIN_USER_IDS
+        denies all. See docs/platform-admin-api.md.
+      parameters:
+      - $ref: '#/components/parameters/LimitQuery'
+      - $ref: '#/components/parameters/AdminCursorQuery'
+      - name: business_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+        description: Exact local UUID filter.
+      - name: actor_user_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+        description: Exact local UUID filter.
+      - name: action
+        in: query
+        schema:
+          type: string
+          maxLength: 120
+        description: Exact trimmed action filter.
+      responses:
+        '200':
+          description: 'Success. Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminActivityPage'
+        '400':
+          description: Invalid input or cursor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid Clerk bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Identity is not in PLATFORM_ADMIN_USER_IDS
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Private rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Database not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
