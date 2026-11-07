@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/palmieridev/openlocal-api/internal/auth"
 	"github.com/palmieridev/openlocal-api/internal/config"
 )
 
@@ -121,5 +122,40 @@ func TestCORSDoesNotAdvertiseTestAuthHeaders(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(res.Header.Get(fiber.HeaderAccessControlAllowHeaders)), "x-test-clerk") {
 		t.Fatalf("test auth header was advertised: %q", res.Header.Get(fiber.HeaderAccessControlAllowHeaders))
+	}
+}
+
+func TestPlatformAdminRoutesRejectBeforeValidationOrDatabaseAccess(t *testing.T) {
+	paths := []string{"/api/v1/admin/businesses?limit=invalid", "/api/v1/admin/businesses/not-a-uuid", "/api/v1/admin/activity?business_id=invalid"}
+	for _, tc := range []struct {
+		name, user, role string
+		allowlist        []string
+		want             int
+	}{
+		{name: "anonymous", allowlist: []string{"user_admin"}, want: 401},
+		{name: "unverified test header", user: "user_admin", allowlist: []string{"user_admin"}, want: 401},
+		{name: "empty allowlist", user: "user_admin", want: 403},
+		{name: "organization admin", user: "user_owner", role: "org:admin", allowlist: []string{"user_admin"}, want: 403},
+		{name: "allowlisted reaches actor lookup", user: "user_admin", allowlist: []string{"user_admin"}, want: 503},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := secureTestConfig()
+			cfg.PlatformAdminUserIDs = tc.allowlist
+			app := New(Deps{Config: cfg, Auth: auth.Middleware{AllowTestAuth: tc.name != "unverified test header"}})
+			for _, path := range paths {
+				req := httptest.NewRequest("GET", path, nil)
+				req.Header.Set("X-Test-Clerk-User-ID", tc.user)
+				req.Header.Set("X-Test-Clerk-Org-ID", "org_unrelated")
+				req.Header.Set("X-Test-Clerk-Org-Role", tc.role)
+				res, err := app.Test(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				res.Body.Close()
+				if res.StatusCode != tc.want {
+					t.Fatalf("%s status=%d want %d", path, res.StatusCode, tc.want)
+				}
+			}
+		})
 	}
 }
