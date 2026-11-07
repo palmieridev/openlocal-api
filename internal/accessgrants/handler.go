@@ -23,12 +23,12 @@ type Handler struct {
 func NewHandler(rt api.Runtime, allowed []string) *Handler { return &Handler{rt, allowed} }
 func (h *Handler) RegisterRoutes(r fiber.Router) {
 	group := r.Group("/admin/businesses/:id/grants", func(c *fiber.Ctx) error {
+		c.Set("Cache-Control", "no-store")
 		_, actor, err := h.RT.RequirePlatformAdmin(c, h.AllowedClerkUserIDs)
 		if err != nil {
 			return err
 		}
 		c.Locals("grant_actor", actor.ID)
-		c.Set("Cache-Control", "no-store")
 		return c.Next()
 	})
 	group.Get("/", h.list)

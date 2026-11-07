@@ -293,9 +293,15 @@ func TestGrantEditsVersionsHistoryAndAuditRollback(t *testing.T) {
 	if code != 500 {
 		t.Fatalf("audit rejection %d %s", code, data)
 	}
+
+	evenLater := later.Add(time.Hour)
+	code, data = f.adminRequest("POST", "/"+g.ID.String()+"/extend", accessgrants.ExtendInput{Version: 2, ExpiresAt: &evenLater, InternalReason: "rollback extension"})
+	if code != 500 {
+		t.Fatalf("extension audit rejection %d %s", code, data)
+	}
 	stored, err := f.h.RT.Q.GetAccessGrant(ctx, db.GetAccessGrantParams{BusinessID: f.b.ID, ID: g.ID})
 	must(t, err)
-	if stored.RevokedAt.Valid || stored.Version != 2 {
+	if stored.RevokedAt.Valid || stored.Version != 2 || !stored.ExpiresAt.Time.Equal(later.Truncate(time.Microsecond)) {
 		t.Fatalf("audit failed to rollback %+v", stored)
 	}
 	code, _ = f.adminRequest("POST", "", accessgrants.CreateInput{Module: "preorders", Tier: "essential", StartsAt: time.Now(), Indefinite: true, InternalReason: "rollback create"})
@@ -418,5 +424,66 @@ func TestGrantFallbackRestrictsIntakeResourcesAndAdvancedSettings(t *testing.T) 
 	must(t, err)
 	if len(resources) != 2 || !resources[1].Active {
 		t.Fatal("fallback deleted or disabled saved resource")
+	}
+}
+
+func TestEssentialCanEditBasicFieldsWhileRetainingBusinessConfiguration(t *testing.T) {
+	f := setupGrants(t)
+	ctx := context.Background()
+	_, err := f.h.RT.Pool.Exec(ctx, "UPDATE business_subscriptions SET tier='essential',status='active',modules=ARRAY['appointments','preorders'] WHERE business_id=$1", f.b.ID)
+	must(t, err)
+	_, err = f.h.RT.Pool.Exec(ctx, "UPDATE services SET buffer_minutes=10 WHERE id=$1", f.svc.ID)
+	must(t, err)
+	_, err = f.h.RT.Pool.Exec(ctx, "UPDATE appointment_resources SET service_ids=ARRAY[$1]::uuid[] WHERE id=$2", f.svc.ID, f.resource.ID)
+	must(t, err)
+	base := "/businesses/" + f.b.ID.String()
+	for _, c := range []struct {
+		path string
+		body any
+		want int
+	}{
+		{base + "/preorders/settings", map[string]any{"enabled": false}, 200},
+		{base + "/preorders/settings", map[string]any{"max_orders_per_slot": 2}, 403},
+		{base + "/services/" + f.svc.ID.String(), map[string]any{"name": "Renamed service"}, 200},
+		{base + "/services/" + f.svc.ID.String(), map[string]any{"buffer_minutes": 15}, 403},
+		{base + "/appointment-resources/" + f.resource.ID.String(), map[string]any{"active": false}, 200},
+	} {
+		code, data := f.request("PATCH", c.path, uuid.NewString(), c.body, true)
+		if code != c.want {
+			t.Fatalf("%s %d want %d %s", c.path, code, c.want, data)
+		}
+	}
+	saved, err := settings(ctx, f.h.RT.Q, f.b.ID, "preorders")
+	must(t, err)
+	if saved.MaxOrdersPerSlot != 1 {
+		t.Fatal("basic edit erased advanced settings")
+	}
+}
+
+func TestGrantAPIRevocationWaitsForOperationalLock(t *testing.T) {
+	f := setupGrants(t)
+	g := f.grant(t, "appointments", "business", nil)
+	ctx := context.Background()
+	tx, err := f.h.RT.Pool.Begin(ctx)
+	must(t, err)
+	defer tx.Rollback(ctx)
+	_, err = f.h.RT.Q.WithTx(tx).LockSubscription(ctx, f.b.ID)
+	must(t, err)
+	done := make(chan int, 1)
+	started := make(chan struct{})
+	go func() {
+		close(started)
+		code, _ := f.adminRequest("POST", "/"+g.ID.String()+"/revoke", accessgrants.RevokeInput{Version: 1, InternalReason: "serialized revoke"})
+		done <- code
+	}()
+	<-started
+	select {
+	case code := <-done:
+		t.Fatalf("grant API bypassed operational lock: %d", code)
+	case <-time.After(30 * time.Millisecond):
+	}
+	must(t, tx.Commit(ctx))
+	if code := <-done; code != 200 {
+		t.Fatalf("revoke after unlock %d", code)
 	}
 }

@@ -22,3 +22,4 @@ CREATE TABLE business_access_grants (
 CREATE INDEX access_grants_business ON business_access_grants(business_id, created_at DESC, id DESC);
 CREATE INDEX access_grants_resolution ON business_access_grants(business_id, module, starts_at);
 CREATE INDEX audit_logs_grant_history ON audit_logs(business_id, entity_id, created_at, id) WHERE entity_type = 'access_grant';
+CREATE INDEX module_usage_calendar_window ON module_usage_events(business_id, module, created_at);

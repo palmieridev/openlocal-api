@@ -37,6 +37,12 @@ func merge(c *fiber.Ctx, value any) error {
 	}
 	return nil
 }
+func hasField(c *fiber.Ctx, name string) bool {
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(c.Body(), &fields)
+	_, ok := fields[name]
+	return ok
+}
 func validateSettings(s Settings, tier, module string) error {
 	if err := scheduling.Validate(s.Hours, s.ClosedDates); err != nil {
 		return bad(err.Error())
@@ -135,7 +141,17 @@ func (h *Handler) configuration(c *fiber.Ctx) error {
 	if err = merge(c, &s); err != nil {
 		return err
 	}
-	if err = validateSettings(s, capability.Tier, module); err != nil {
+	validation := s
+	// Advanced values remain saved after downgrade, but only Business can set them.
+	if capability.Tier != "business" {
+		if !hasField(c, "daily_cutoff") {
+			validation.DailyCutoff = ""
+		}
+		if !hasField(c, "max_orders_per_slot") {
+			validation.MaxOrdersPerSlot = 0
+		}
+	}
+	if err = validateSettings(validation, capability.Tier, module); err != nil {
 		return err
 	}
 	for _, r := range s.VariantRules {
@@ -225,7 +241,7 @@ func (h *Handler) services(c *fiber.Ctx) error {
 	if len(strings.TrimSpace(in.Name)) < 2 || len(in.Name) > 180 || len(in.Description) > 4000 || in.DurationMinutes < 5 || in.DurationMinutes > 720 || in.BufferMinutes < 0 || in.BufferMinutes > 240 {
 		return bad("invalid service")
 	}
-	if in.BufferMinutes > 0 && capability.Tier != "business" {
+	if in.BufferMinutes > 0 && capability.Tier != "business" && (c.Method() == "POST" || hasField(c, "buffer_minutes")) {
 		return api.Fail(403, "module_unavailable", "buffers require Business")
 	}
 	price := decimal.NullDecimal{}
@@ -296,7 +312,10 @@ func (h *Handler) resources(c *fiber.Ctx) error {
 	if err = scheduling.Validate(in.Hours, in.ClosedDates); err != nil {
 		return bad(err.Error())
 	}
-	if capability.Tier != "business" && (len(in.Hours) > 0 || len(in.ClosedDates) > 0 || len(in.ServiceIDs) > 0) {
+	advancedChange := len(in.Hours) > 0 && (c.Method() == "POST" || hasField(c, "hours")) ||
+		len(in.ClosedDates) > 0 && (c.Method() == "POST" || hasField(c, "closed_dates")) ||
+		len(in.ServiceIDs) > 0 && (c.Method() == "POST" || hasField(c, "service_ids"))
+	if capability.Tier != "business" && advancedChange {
 		return api.Fail(403, "module_unavailable", "resource schedules and assignment require Business")
 	}
 	for _, sid := range in.ServiceIDs {
