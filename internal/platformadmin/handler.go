@@ -83,7 +83,7 @@ func (h *Handler) detail(c *fiber.Ctx) error {
 	response := BusinessDetailResponse{Business: mapBusiness(business), AccessRole: "owner"}
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Inspection must not create subscriptions. Missing subscription is explicitly
-		// null and uses free access; invalid periods match no usage events.
+		// null. Grants and UTC-month usage can still contribute to effective access.
 		subscription = db.BusinessSubscription{BusinessID: id, Tier: "free", Status: "inactive"}
 	} else if err != nil {
 		return err

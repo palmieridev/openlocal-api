@@ -50,7 +50,7 @@ func parseID(s string) (uuid.UUID, error) {
 func nullableID(id uuid.UUID) uuid.NullUUID { return uuid.NullUUID{UUID: id, Valid: id != uuid.Nil} }
 func validModule(m string) bool             { return m == "appointments" || m == "preorders" }
 
-func (h *Handler) authorize(c *fiber.Ctx, configure bool) (uuid.UUID, string, error) {
+func (h *Handler) authorize(c *fiber.Ctx, configure bool, modules ...string) (uuid.UUID, string, error) {
 	id, err := parseID(c.Params("id"))
 	if err != nil {
 		return id, "", err
@@ -75,8 +75,18 @@ func (h *Handler) authorize(c *fiber.Ctx, configure bool) (uuid.UUID, string, er
 	if err != nil {
 		return id, "", err
 	}
-	if role != "owner" && s.Tier != "business" {
-		return id, "", api.Fail(403, "module_unavailable", "team access requires Business")
+	module := c.Params("module")
+	if len(modules) > 0 {
+		module = modules[0]
+	}
+	if role != "owner" && module != "" {
+		capability, err := entitlements.Capability(c.Context(), h.RT.Q, s, module, time.Now())
+		if err != nil {
+			return id, "", err
+		}
+		if !capability.TeamHistory {
+			return id, "", api.Fail(403, "module_unavailable", "team access requires Business for this module")
+		}
 	}
 	return id, role, nil
 }
@@ -111,9 +121,15 @@ func settings(ctx context.Context, q *db.Queries, id uuid.UUID, module string) (
 	s.Enabled = r.Enabled
 	return s, nil
 }
-func requirePaid(s db.BusinessSubscription, module string) error {
-	if !entitlements.Paid(s, time.Now()) || !slices.Contains(s.Modules, module) {
-		return api.Fail(403, "module_unavailable", "module is not subscribed")
+
+// requirePaid resolves effective module capability inside the caller's transaction.
+func requirePaid(ctx context.Context, q *db.Queries, s db.BusinessSubscription, module, role string) error {
+	capability, err := entitlements.Capability(ctx, q, s, module, time.Now())
+	if err != nil {
+		return err
+	}
+	if capability.Tier == "free" || role != "owner" && capability.Tier != "business" {
+		return api.Fail(403, "module_unavailable", "module capability is unavailable for this role")
 	}
 	return nil
 }
@@ -122,21 +138,32 @@ func requireIntake(ctx context.Context, q *db.Queries, s db.BusinessSubscription
 	if err != nil {
 		return cfg, err
 	}
-	if err = requirePaid(s, module); err != nil {
-		return cfg, err
-	}
-	if !cfg.Enabled || len(cfg.Hours) == 0 {
-		return cfg, api.Fail(403, "module_unavailable", "requests are currently unavailable")
-	}
-	used, err := q.ModuleUsage(ctx, db.ModuleUsageParams{BusinessID: s.BusinessID, Module: module, PeriodStart: s.PeriodStart})
+	now := time.Now()
+	capability, err := entitlements.Capability(ctx, q, s, module, now)
 	if err != nil {
 		return cfg, err
 	}
-	limit, _ := entitlements.Limits(s.Tier)
+	if capability.Tier == "free" || !cfg.Enabled || len(cfg.Hours) == 0 {
+		return cfg, api.Fail(403, "module_unavailable", "requests are currently unavailable")
+	}
+	used, err := entitlements.Usage(ctx, q, s, module, now)
+	if err != nil {
+		return cfg, err
+	}
+	limit, _ := entitlements.Limits(capability.Tier)
 	if used >= limit {
 		return cfg, api.Fail(409, "quota_exceeded", "requests are currently unavailable")
 	}
-	return cfg, nil
+	return effectiveSettings(cfg, capability.Tier), nil
+}
+
+// Retain saved advanced configuration while applying the current capability to intake.
+func effectiveSettings(cfg Settings, tier string) Settings {
+	if tier != "business" {
+		cfg.DailyCutoff = ""
+		cfg.MaxOrdersPerSlot = 0
+	}
+	return cfg
 }
 func publicUnavailable(err error) error {
 	var e *api.DomainError

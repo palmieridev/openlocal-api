@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/palmieridev/openlocal-api/internal/api"
+	"github.com/palmieridev/openlocal-api/internal/entitlements"
 	"github.com/palmieridev/openlocal-api/internal/operations"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 )
@@ -160,7 +161,12 @@ func (h *Handler) change(c *fiber.Ctx, q *db.Queries, local db.BusinessSubscript
 				active++
 			}
 		}
-		if active > 1 && in.RetainedResourceID == nil {
+		// A grant may preserve Business resources after the requested paid downgrade.
+		grantBusiness, e := businessAppointmentGrant(c.Context(), q, local.BusinessID, effective)
+		if e != nil {
+			return nil, e
+		}
+		if active > 1 && !grantBusiness && in.RetainedResourceID == nil {
 			return nil, api.Fail(400, "invalid_request", "choose the appointment resource to retain")
 		}
 		if in.RetainedResourceID != nil {
@@ -334,7 +340,11 @@ func (h *Handler) Reconcile(ctx context.Context, customer string) error {
 		}
 		if json.Unmarshal(local.ScheduledChange, &change) == nil && change.Tier == p.Tier && slices.Equal(change.Modules, p.Modules) {
 			p.ScheduledChange = nil
-			if change.Retained != "" {
+			grantBusiness, e := businessAppointmentGrant(ctx, q, local.BusinessID, time.Now())
+			if e != nil {
+				return e
+			}
+			if change.Retained != "" && !grantBusiness {
 				id, e := uuid.Parse(change.Retained)
 				if e == nil {
 					if e = q.DeactivateExtraAppointmentResources(ctx, db.DeactivateExtraAppointmentResourcesParams{BusinessID: local.BusinessID, ID: id}); e != nil {
@@ -402,3 +412,10 @@ func boolInt(v bool) int {
 	return 0
 }
 func sqlText(v string) sql.NullString { return sql.NullString{String: v, Valid: v != ""} }
+
+// Provider prices and subscription composition remain billing-only. This guard
+// keeps local resource side effects from removing an active grant's capability.
+func businessAppointmentGrant(ctx context.Context, q *db.Queries, business uuid.UUID, at time.Time) (bool, error) {
+	capability, err := entitlements.Capability(ctx, q, db.BusinessSubscription{BusinessID: business, Tier: "free"}, "appointments", at)
+	return capability.Tier == "business", err
+}

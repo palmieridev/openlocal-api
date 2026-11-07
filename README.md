@@ -141,3 +141,5 @@ entrypoint; API startup applies migrations, while workers use
 ## Isolated local demos
 
 For isolated Spanish/MXN shop, bakery and salon fixtures, run `python3 scripts/demo.py --help`. The guarded runner creates a separate `openlocal_demo` database, links real Clerk development organizations, and provides repeatable seed, explicit reset, consistency checks and in-process HTTP verification. It does not redirect existing services.
+
+Complimentary appointments/pickup-order grants and effective entitlement contracts: [access-grants API](docs/access-grants-api.md).
