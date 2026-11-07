@@ -60,6 +60,15 @@ func TestResolveIndependentLevelsAndSources(t *testing.T) {
 	if got = Resolve(sub, []db.BusinessAccessGrant{grant}, "appointments", now); got.Tier != "essential" || len(got.Sources) != 1 || !got.TeamHistory {
 		t.Fatalf("%+v", got)
 	}
+	sub.Tier = "business"
+	grant.Tier = "essential"
+	grant.RevokedAt = pgtype.Timestamptz{}
+	if got = Resolve(sub, []db.BusinessAccessGrant{grant}, "appointments", now); got.Tier != "business" || len(got.Sources) != 2 {
+		t.Fatalf("weaker grant reduced paid capability %+v", got)
+	}
+	sub.Tier = "essential"
+	grant.Tier = "business"
+	grant.RevokedAt = ts(now)
 	grant.StartsAt = ts(now.Add(time.Minute))
 	if Resolve(sub, []db.BusinessAccessGrant{grant}, "appointments", now).TeamHistory {
 		t.Fatal("scheduled grant granted team history")
@@ -84,6 +93,11 @@ func TestPilotGraceAndStableWindow(t *testing.T) {
 	sub.GraceUntil = ts(now)
 	if Paid(sub, now) {
 		t.Fatal("grace boundary")
+	}
+	edge := time.Date(2026, 11, 1, 0, 0, 0, 0, time.FixedZone("+14", 14*60*60))
+	emptyStart, _ := Window(db.BusinessSubscription{}, edge)
+	if !emptyStart.Equal(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatal("complimentary window followed caller timezone")
 	}
 	for _, status := range []string{"inactive", "cancelled", "past_due"} {
 		sub.Status = status
