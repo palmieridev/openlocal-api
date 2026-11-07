@@ -22,7 +22,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/palmieridev/openlocal-api/internal/accessgrants"
 	"github.com/palmieridev/openlocal-api/internal/api"
 	"github.com/palmieridev/openlocal-api/internal/config"
 	"github.com/palmieridev/openlocal-api/internal/entitlements"
@@ -147,8 +146,7 @@ func requireIntake(ctx context.Context, q *db.Queries, s db.BusinessSubscription
 	if capability.Tier == "free" || !cfg.Enabled || len(cfg.Hours) == 0 {
 		return cfg, api.Fail(403, "module_unavailable", "requests are currently unavailable")
 	}
-	start, end := accessgrants.Window(s, now)
-	used, err := q.ModuleUsageInWindow(ctx, db.ModuleUsageInWindowParams{BusinessID: s.BusinessID, Module: module, WindowStart: TS(start), WindowEnd: TS(end)})
+	used, err := entitlements.Usage(ctx, q, s, module, now)
 	if err != nil {
 		return cfg, err
 	}
@@ -156,7 +154,16 @@ func requireIntake(ctx context.Context, q *db.Queries, s db.BusinessSubscription
 	if used >= limit {
 		return cfg, api.Fail(409, "quota_exceeded", "requests are currently unavailable")
 	}
-	return cfg, nil
+	return effectiveSettings(cfg, capability.Tier), nil
+}
+
+// Retain saved advanced configuration while applying the current capability to intake.
+func effectiveSettings(cfg Settings, tier string) Settings {
+	if tier != "business" {
+		cfg.DailyCutoff = ""
+		cfg.MaxOrdersPerSlot = 0
+	}
+	return cfg
 }
 func publicUnavailable(err error) error {
 	var e *api.DomainError

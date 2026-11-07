@@ -374,3 +374,49 @@ func TestGrantRevocationSerializesWithConfirmation(t *testing.T) {
 		t.Fatal("rejected confirmation consumed quota")
 	}
 }
+
+func TestGrantFallbackRestrictsIntakeResourcesAndAdvancedSettings(t *testing.T) {
+	f := setupGrants(t)
+	ctx := context.Background()
+	_, err := f.h.RT.Pool.Exec(ctx, "UPDATE business_subscriptions SET tier='essential',status='active',modules=ARRAY['appointments','preorders'] WHERE business_id=$1", f.b.ID)
+	must(t, err)
+	g := f.grant(t, "appointments", "business", nil)
+	extra, err := f.h.RT.Q.SaveAppointmentResource(ctx, db.SaveAppointmentResourceParams{ID: uuid.New(), BusinessID: f.b.ID, Name: "ZZZ extra", Active: true, ServiceIds: []uuid.UUID{}, Hours: []byte("[]"), ClosedDates: []byte("[]")})
+	must(t, err)
+	_, err = f.h.RT.Pool.Exec(ctx, "UPDATE services SET buffer_minutes=10 WHERE id=$1", f.svc.ID)
+	must(t, err)
+	code, data := f.adminRequest("POST", "/"+g.ID.String()+"/revoke", accessgrants.RevokeInput{Version: 1, InternalReason: "fallback"})
+	if code != 200 {
+		t.Fatalf("revoke %d %s", code, data)
+	}
+	svc, err := f.h.RT.Q.GetService(ctx, db.GetServiceParams{BusinessID: f.b.ID, ID: f.svc.ID})
+	must(t, err)
+	slots, err := appointmentSlots(ctx, f.h.RT.Q, f.b, f.cfg, svc, f.start.Format("2006-01-02"), extra.ID, uuid.Nil)
+	must(t, err)
+	if len(slots) != 0 {
+		t.Fatal("extra resource still contributes to Essential intake")
+	}
+	r := f.appointment(t, "+525555551301", f.start)
+	stored, err := f.h.RT.Q.GetAppointment(ctx, db.GetAppointmentParams{BusinessID: f.b.ID, ID: r.ID})
+	must(t, err)
+	if stored.BufferMinutes != 0 {
+		t.Fatal("advanced buffer still contributes to Essential intake")
+	}
+	sub, err := f.h.RT.Q.GetSubscription(ctx, f.b.ID)
+	must(t, err)
+	cfg, err := requireIntake(ctx, f.h.RT.Q, sub, "preorders")
+	must(t, err)
+	if cfg.MaxOrdersPerSlot != 0 || cfg.DailyCutoff != "" {
+		t.Fatal("advanced preorder settings active on Essential")
+	}
+	saved, err := settings(ctx, f.h.RT.Q, f.b.ID, "preorders")
+	must(t, err)
+	if saved.MaxOrdersPerSlot != 1 {
+		t.Fatal("downgrade rewrote saved settings")
+	}
+	resources, err := f.h.RT.Q.ListAppointmentResources(ctx, f.b.ID)
+	must(t, err)
+	if len(resources) != 2 || !resources[1].Active {
+		t.Fatal("fallback deleted or disabled saved resource")
+	}
+}

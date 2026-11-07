@@ -83,6 +83,9 @@ func reason(value *string) error {
 }
 func validDate(t time.Time) bool { return !t.IsZero() && t.Year() >= 2000 && t.Year() <= 9999 }
 func validateExpiry(start time.Time, end *time.Time, indefinite bool) error {
+	if end != nil {
+		*end = end.UTC().Truncate(time.Microsecond)
+	}
 	if indefinite != (end == nil) {
 		return invalid("provide expires_at or explicitly set indefinite to true")
 	}
@@ -92,6 +95,7 @@ func validateExpiry(start time.Time, end *time.Time, indefinite bool) error {
 	return nil
 }
 func (in *CreateInput) validate(now time.Time) error {
+	in.StartsAt = in.StartsAt.UTC().Truncate(time.Microsecond)
 	if in.Module != "appointments" && in.Module != "preorders" {
 		return invalid("invalid module")
 	}
@@ -131,7 +135,7 @@ type Grant struct {
 	Status           string     `json:"status"`
 	InternalReason   string     `json:"internal_reason"`
 	OwnerMessage     *string    `json:"owner_message"`
-	CreatedBy        uuid.UUID  `json:"created_by"`
+	CreatedBy        *uuid.UUID `json:"created_by"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 	Version          int32      `json:"version"`
@@ -141,7 +145,7 @@ type Grant struct {
 }
 
 func project(g db.BusinessAccessGrant, now time.Time) Grant {
-	return Grant{ID: g.ID, BusinessID: g.BusinessID, Module: g.Module, Tier: g.Tier, StartsAt: g.StartsAt.Time, ExpiresAt: api.TSP(g.ExpiresAt), Indefinite: !g.ExpiresAt.Valid, Status: Status(g, now), InternalReason: g.InternalReason, OwnerMessage: api.StringPtr(g.OwnerMessage), CreatedBy: g.CreatedBy, CreatedAt: g.CreatedAt.Time, UpdatedAt: g.UpdatedAt.Time, Version: g.Version, RevokedAt: api.TSP(g.RevokedAt), RevokedBy: api.UUIDPtr(g.RevokedBy), RevocationReason: api.StringPtr(g.RevocationReason)}
+	return Grant{ID: g.ID, BusinessID: g.BusinessID, Module: g.Module, Tier: g.Tier, StartsAt: g.StartsAt.Time, ExpiresAt: api.TSP(g.ExpiresAt), Indefinite: !g.ExpiresAt.Valid, Status: Status(g, now), InternalReason: g.InternalReason, OwnerMessage: api.StringPtr(g.OwnerMessage), CreatedBy: api.UUIDPtr(g.CreatedBy), CreatedAt: g.CreatedAt.Time, UpdatedAt: g.UpdatedAt.Time, Version: g.Version, RevokedAt: api.TSP(g.RevokedAt), RevokedBy: api.UUIDPtr(g.RevokedBy), RevocationReason: api.StringPtr(g.RevocationReason)}
 }
 func (h *Handler) business(c *fiber.Ctx) (uuid.UUID, error) {
 	business, err := id(c.Params("id"))
@@ -215,7 +219,7 @@ func (h *Handler) create(c *fiber.Ctx) error {
 	if err = in.validate(time.Now()); err != nil {
 		return err
 	}
-	g, err := q.CreateAccessGrant(c.Context(), db.CreateAccessGrantParams{BusinessID: business, Module: in.Module, Tier: in.Tier, StartsAt: stamp(in.StartsAt), ExpiresAt: expiry(in.ExpiresAt), InternalReason: in.InternalReason, OwnerMessage: api.NullString(in.OwnerMessage), CreatedBy: c.Locals("grant_actor").(uuid.UUID)})
+	g, err := q.CreateAccessGrant(c.Context(), db.CreateAccessGrantParams{BusinessID: business, Module: in.Module, Tier: in.Tier, StartsAt: stamp(in.StartsAt), ExpiresAt: expiry(in.ExpiresAt), InternalReason: in.InternalReason, OwnerMessage: api.NullString(in.OwnerMessage), CreatedBy: uuid.NullUUID{UUID: c.Locals("grant_actor").(uuid.UUID), Valid: true}})
 	if err != nil {
 		return err
 	}

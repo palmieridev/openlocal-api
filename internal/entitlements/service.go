@@ -57,6 +57,16 @@ func Capability(ctx context.Context, q *db.Queries, s db.BusinessSubscription, m
 	}
 	return accessgrants.Resolve(s, grants, module, now), nil
 }
+
+// Usage preserves existing paid-period accounting. Complimentary-only access counts
+// all confirmations in the current UTC month, regardless of their original period marker.
+func Usage(ctx context.Context, q *db.Queries, s db.BusinessSubscription, module string, now time.Time) (int32, error) {
+	if Paid(s, now) {
+		return q.ModuleUsage(ctx, db.ModuleUsageParams{BusinessID: s.BusinessID, Module: module, PeriodStart: s.PeriodStart})
+	}
+	start, end := accessgrants.Window(s, now)
+	return q.ModuleUsageInWindow(ctx, db.ModuleUsageInWindowParams{BusinessID: s.BusinessID, Module: module, WindowStart: stamp(start), WindowEnd: stamp(end)})
+}
 func Get(ctx context.Context, q *db.Queries, s db.BusinessSubscription, role string, now time.Time) (Result, error) {
 	start, end := accessgrants.Window(s, now)
 	r := Result{Tier: s.Tier, Role: role, PeriodStart: start, PeriodEnd: end, Modules: map[string]Access{}}
@@ -69,7 +79,7 @@ func Get(ctx context.Context, q *db.Queries, s db.BusinessSubscription, role str
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return r, err
 		}
-		used, err := q.ModuleUsageInWindow(ctx, db.ModuleUsageInWindowParams{BusinessID: s.BusinessID, Module: module, WindowStart: stamp(start), WindowEnd: stamp(end)})
+		used, err := Usage(ctx, q, s, module, now)
 		if err != nil {
 			return r, err
 		}
@@ -105,8 +115,8 @@ func Consume(ctx context.Context, q *db.Queries, s db.BusinessSubscription, modu
 	if capability.Tier == "free" {
 		return api.Fail(403, "module_unavailable", "module access is unavailable")
 	}
-	start, end := accessgrants.Window(s, now)
-	used, err := q.ModuleUsageInWindow(ctx, db.ModuleUsageInWindowParams{BusinessID: s.BusinessID, Module: module, WindowStart: stamp(start), WindowEnd: stamp(end)})
+	start, _ := accessgrants.Window(s, now)
+	used, err := Usage(ctx, q, s, module, now)
 	if err != nil {
 		return err
 	}

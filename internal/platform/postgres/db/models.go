@@ -113,7 +113,7 @@ type BusinessAccessGrant struct {
 	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
 	InternalReason   string             `json:"internal_reason"`
 	OwnerMessage     sql.NullString     `json:"owner_message"`
-	CreatedBy        uuid.UUID          `json:"created_by"`
+	CreatedBy        uuid.NullUUID      `json:"created_by"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 	Version          int32              `json:"version"`

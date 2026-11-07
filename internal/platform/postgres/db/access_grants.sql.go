@@ -135,7 +135,7 @@ type CreateAccessGrantParams struct {
 	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
 	InternalReason string             `json:"internal_reason"`
 	OwnerMessage   sql.NullString     `json:"owner_message"`
-	CreatedBy      uuid.UUID          `json:"created_by"`
+	CreatedBy      uuid.NullUUID      `json:"created_by"`
 }
 
 func (q *Queries) CreateAccessGrant(ctx context.Context, arg CreateAccessGrantParams) (BusinessAccessGrant, error) {

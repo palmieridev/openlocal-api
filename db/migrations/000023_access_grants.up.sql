@@ -7,15 +7,16 @@ CREATE TABLE business_access_grants (
     expires_at timestamptz,
     internal_reason text NOT NULL CHECK (char_length(btrim(internal_reason)) BETWEEN 1 AND 2000),
     owner_message text CHECK (char_length(owner_message) BETWEEN 1 AND 2000),
-    created_by uuid NOT NULL REFERENCES users(id),
+    created_by uuid REFERENCES users(id) ON DELETE SET NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     version integer NOT NULL DEFAULT 1 CHECK (version > 0),
     revoked_at timestamptz,
-    revoked_by uuid REFERENCES users(id),
+    revoked_by uuid REFERENCES users(id) ON DELETE SET NULL,
     revocation_reason text CHECK (char_length(btrim(revocation_reason)) BETWEEN 1 AND 2000),
     CHECK (expires_at IS NULL OR expires_at > starts_at),
-    CHECK (num_nonnulls(revoked_at, revoked_by, revocation_reason) IN (0, 3)),
+    CHECK ((revoked_at IS NULL AND revoked_by IS NULL AND revocation_reason IS NULL)
+        OR (revoked_at IS NOT NULL AND revocation_reason IS NOT NULL)),
     UNIQUE(business_id, id)
 );
 CREATE INDEX access_grants_business ON business_access_grants(business_id, created_at DESC, id DESC);

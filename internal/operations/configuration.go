@@ -384,6 +384,17 @@ func (h *Handler) selectionBusiness(c *fiber.Ctx, module string) (db.Business, S
 		return b, Settings{}, err
 	}
 	cfg, err := settings(c.Context(), h.RT.Q, id, module)
+	if err != nil {
+		return b, cfg, err
+	}
+	sub, err := h.RT.Q.GetSubscription(c.Context(), id)
+	if err != nil {
+		return b, cfg, err
+	}
+	capability, err := entitlements.Capability(c.Context(), h.RT.Q, sub, module, time.Now())
+	if capability.Tier != "free" {
+		cfg = effectiveSettings(cfg, capability.Tier)
+	}
 	return b, cfg, err
 }
 
@@ -397,17 +408,43 @@ func appointmentSlots(ctx context.Context, q *db.Queries, b db.Business, s Setti
 	if err != nil {
 		return nil, err
 	}
+	sub, err := q.GetSubscription(ctx, b.ID)
+	if err != nil {
+		return nil, err
+	}
+	capability, err := entitlements.Capability(ctx, q, sub, "appointments", time.Now())
+	if err != nil {
+		return nil, err
+	}
+	_, maxResources := entitlements.Limits(capability.Tier)
+	// Existing selectors remain readable without access; writes independently require access.
+	// With access, only the first N active resources (name,id) contribute to intake.
+	count := 0
 	out := []availableSlot{}
 	for _, r := range rows {
-		if !r.Active || resource != uuid.Nil && r.ID != resource || len(r.ServiceIds) > 0 && !slices.Contains(r.ServiceIds, service.ID) {
+		if !r.Active {
+			continue
+		}
+		count++
+		if maxResources > 0 && count > maxResources {
+			continue
+		}
+
+		if resource != uuid.Nil && r.ID != resource || capability.Tier == "business" && len(r.ServiceIds) > 0 && !slices.Contains(r.ServiceIds, service.ID) {
 			continue
 		}
 		res := mapResource(r)
 		hours := s.Hours
-		if len(res.Hours) > 0 {
+		if capability.Tier == "business" && len(res.Hours) > 0 {
 			hours = res.Hours
 		}
-		closed := append(slices.Clone(s.ClosedDates), res.ClosedDates...)
+		closed := slices.Clone(s.ClosedDates)
+		if capability.Tier == "business" {
+			closed = append(closed, res.ClosedDates...)
+		}
+		if capability.Tier != "business" && exclude == uuid.Nil {
+			service.BufferMinutes = 0
+		}
 		slots, err := scheduling.Slots(date, b.Timezone, hours, closed, s.SlotMinutes, int(service.DurationMinutes), int(service.BufferMinutes), time.Now(), s.LeadMinutes, s.HorizonDays)
 		if err != nil {
 			return nil, bad(err.Error())
