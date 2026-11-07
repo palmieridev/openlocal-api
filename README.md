@@ -134,3 +134,7 @@ Build for the cluster's CPU architecture and supply environment configuration an
 secrets at runtime. The image still includes the API, worker, and migration
 entrypoint; API startup applies migrations, while workers use
 `RUN_MIGRATIONS=false` as described above.
+
+## Isolated local demos
+
+For isolated Spanish/MXN shop, bakery and salon fixtures, run `python3 scripts/demo.py --help`. The guarded runner creates a separate `openlocal_demo` database, links real Clerk development organizations, and provides repeatable seed, explicit reset, consistency checks and in-process HTTP verification. It does not redirect existing services.
