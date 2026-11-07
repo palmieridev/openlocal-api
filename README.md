@@ -103,6 +103,9 @@ go test -race ./...
 OPENLOCAL_INTEGRATION_TESTS=1 go test ./internal/integration
 ```
 
+Private platform administration and `PLATFORM_ADMIN_USER_IDS` are documented in
+[`docs/platform-admin-api.md`](docs/platform-admin-api.md).
+
 The appointment/preorder API contract is documented in
 [`docs/modules-api.md`](docs/modules-api.md). Deployment, queue retention, local
 fixtures, and the non-secret Stripe setup are in
