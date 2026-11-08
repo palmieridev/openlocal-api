@@ -5,6 +5,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/palmieridev/openlocal-api/internal/api"
+	"github.com/palmieridev/openlocal-api/internal/entitlements"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	"github.com/shopspring/decimal"
 	"slices"
@@ -147,6 +148,11 @@ func (h *Handler) create(c *fiber.Ctx) error {
 			return e
 		}
 	}
+	if !customerFacing {
+		if e = requirePaid(c.Context(), q, sub, module, actor); e != nil {
+			return e
+		}
+	}
 	cfg, e := requireIntake(c.Context(), q, sub, module)
 	if e != nil {
 		if customerFacing {
@@ -170,6 +176,13 @@ func (h *Handler) create(c *fiber.Ctx) error {
 		}
 		if !svc.Active || customerFacing && !svc.IsPublic {
 			return bad("service is unavailable")
+		}
+		capability, err := entitlements.Capability(c.Context(), q, sub, module, time.Now())
+		if err != nil {
+			return err
+		}
+		if capability.Tier != "business" {
+			svc.BufferMinutes = 0
 		}
 		end, e = checkAppointment(c.Context(), q, b, cfg, svc, a.ResourceID, uuid.Nil, a.StartsAt)
 		if e != nil {

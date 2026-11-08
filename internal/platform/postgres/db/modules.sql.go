@@ -77,7 +77,7 @@ func (q *Queries) CleanRequestReplay(ctx context.Context) error {
 }
 
 const consumeModuleUsage = `-- name: ConsumeModuleUsage :exec
-INSERT INTO module_usage_events(business_id,module,record_id,period_start) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING
+INSERT INTO module_usage_events(business_id,module,record_id,period_start,created_at) VALUES($1,$2,$3,$4,clock_timestamp()) ON CONFLICT DO NOTHING
 `
 
 type ConsumeModuleUsageParams struct {

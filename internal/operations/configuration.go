@@ -37,6 +37,12 @@ func merge(c *fiber.Ctx, value any) error {
 	}
 	return nil
 }
+func hasField(c *fiber.Ctx, name string) bool {
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(c.Body(), &fields)
+	_, ok := fields[name]
+	return ok
+}
 func validateSettings(s Settings, tier, module string) error {
 	if err := scheduling.Validate(s.Hours, s.ClosedDates); err != nil {
 		return bad(err.Error())
@@ -118,7 +124,11 @@ func (h *Handler) configuration(c *fiber.Ctx) error {
 		return err
 	}
 	defer tx.Rollback(c.Context())
-	if err = requirePaid(sub, module); err != nil {
+	capability, err := entitlements.Capability(c.Context(), q, sub, module, time.Now())
+	if err != nil {
+		return err
+	}
+	if err = requirePaid(c.Context(), q, sub, module, role); err != nil {
 		return err
 	}
 	if role == "staff" {
@@ -131,7 +141,17 @@ func (h *Handler) configuration(c *fiber.Ctx) error {
 	if err = merge(c, &s); err != nil {
 		return err
 	}
-	if err = validateSettings(s, sub.Tier, module); err != nil {
+	validation := s
+	// Advanced values remain saved after downgrade, but only Business can set them.
+	if capability.Tier != "business" {
+		if !hasField(c, "daily_cutoff") {
+			validation.DailyCutoff = ""
+		}
+		if !hasField(c, "max_orders_per_slot") {
+			validation.MaxOrdersPerSlot = 0
+		}
+	}
+	if err = validateSettings(validation, capability.Tier, module); err != nil {
 		return err
 	}
 	for _, r := range s.VariantRules {
@@ -174,7 +194,7 @@ func mapResource(r db.AppointmentResource) Resource {
 	return out
 }
 func (h *Handler) services(c *fiber.Ctx) error {
-	id, _, err := h.authorize(c, c.Method() != "GET")
+	id, role, err := h.authorize(c, c.Method() != "GET", "appointments")
 	if err != nil {
 		return err
 	}
@@ -194,7 +214,11 @@ func (h *Handler) services(c *fiber.Ctx) error {
 		return err
 	}
 	defer tx.Rollback(c.Context())
-	if err = requirePaid(sub, "appointments"); err != nil {
+	capability, err := entitlements.Capability(c.Context(), q, sub, "appointments", time.Now())
+	if err != nil {
+		return err
+	}
+	if err = requirePaid(c.Context(), q, sub, "appointments", role); err != nil {
 		return err
 	}
 	in := Service{Active: true, IsPublic: true, DurationMinutes: 30}
@@ -217,7 +241,7 @@ func (h *Handler) services(c *fiber.Ctx) error {
 	if len(strings.TrimSpace(in.Name)) < 2 || len(in.Name) > 180 || len(in.Description) > 4000 || in.DurationMinutes < 5 || in.DurationMinutes > 720 || in.BufferMinutes < 0 || in.BufferMinutes > 240 {
 		return bad("invalid service")
 	}
-	if in.BufferMinutes > 0 && sub.Tier != "business" {
+	if in.BufferMinutes > 0 && capability.Tier != "business" && (c.Method() == "POST" || hasField(c, "buffer_minutes")) {
 		return api.Fail(403, "module_unavailable", "buffers require Business")
 	}
 	price := decimal.NullDecimal{}
@@ -238,7 +262,7 @@ func (h *Handler) services(c *fiber.Ctx) error {
 	return c.JSON(mapService(r))
 }
 func (h *Handler) resources(c *fiber.Ctx) error {
-	id, _, err := h.authorize(c, c.Method() != "GET")
+	id, role, err := h.authorize(c, c.Method() != "GET", "appointments")
 	if err != nil {
 		return err
 	}
@@ -258,10 +282,15 @@ func (h *Handler) resources(c *fiber.Ctx) error {
 		return err
 	}
 	defer tx.Rollback(c.Context())
-	if err = requirePaid(sub, "appointments"); err != nil {
+	capability, err := entitlements.Capability(c.Context(), q, sub, "appointments", time.Now())
+	if err != nil {
+		return err
+	}
+	if err = requirePaid(c.Context(), q, sub, "appointments", role); err != nil {
 		return err
 	}
 	in := Resource{Active: true, ServiceIDs: []uuid.UUID{}, Hours: []scheduling.Hour{}, ClosedDates: []string{}}
+	wasActive := false
 	rid := uuid.New()
 	if c.Method() == "PATCH" {
 		rid, err = parseID(c.Params("resource_id"))
@@ -273,6 +302,7 @@ func (h *Handler) resources(c *fiber.Ctx) error {
 			return err
 		}
 		in = mapResource(r)
+		wasActive = in.Active
 	}
 	if err = merge(c, &in); err != nil {
 		return err
@@ -284,7 +314,10 @@ func (h *Handler) resources(c *fiber.Ctx) error {
 	if err = scheduling.Validate(in.Hours, in.ClosedDates); err != nil {
 		return bad(err.Error())
 	}
-	if sub.Tier != "business" && (len(in.Hours) > 0 || len(in.ClosedDates) > 0 || len(in.ServiceIDs) > 0) {
+	advancedChange := len(in.Hours) > 0 && (c.Method() == "POST" || hasField(c, "hours")) ||
+		len(in.ClosedDates) > 0 && (c.Method() == "POST" || hasField(c, "closed_dates")) ||
+		len(in.ServiceIDs) > 0 && (c.Method() == "POST" || hasField(c, "service_ids"))
+	if capability.Tier != "business" && advancedChange {
 		return api.Fail(403, "module_unavailable", "resource schedules and assignment require Business")
 	}
 	for _, sid := range in.ServiceIDs {
@@ -302,8 +335,8 @@ func (h *Handler) resources(c *fiber.Ctx) error {
 			n++
 		}
 	}
-	_, limit := entitlements.Limits(sub.Tier)
-	if in.Active && n >= limit {
+	_, limit := entitlements.Limits(capability.Tier)
+	if in.Active && !wasActive && n >= limit {
 		return api.Fail(409, "quota_exceeded", "resource limit reached")
 	}
 	r, err := q.SaveAppointmentResource(c.Context(), db.SaveAppointmentResourceParams{ID: rid, BusinessID: id, Name: strings.TrimSpace(in.Name), Active: in.Active, ServiceIds: in.ServiceIDs, Hours: jsonBytes(in.Hours), ClosedDates: jsonBytes(in.ClosedDates)})
@@ -363,7 +396,7 @@ func (h *Handler) selectionBusiness(c *fiber.Ctx, module string) (db.Business, S
 		cfg, err := requireIntake(c.Context(), h.RT.Q, sub, module)
 		return b, cfg, publicUnavailable(err)
 	}
-	id, _, err := h.authorize(c, false)
+	id, _, err := h.authorize(c, false, module)
 	if err != nil {
 		return db.Business{}, Settings{}, err
 	}
@@ -372,6 +405,17 @@ func (h *Handler) selectionBusiness(c *fiber.Ctx, module string) (db.Business, S
 		return b, Settings{}, err
 	}
 	cfg, err := settings(c.Context(), h.RT.Q, id, module)
+	if err != nil {
+		return b, cfg, err
+	}
+	sub, err := h.RT.Q.GetSubscription(c.Context(), id)
+	if err != nil {
+		return b, cfg, err
+	}
+	capability, err := entitlements.Capability(c.Context(), h.RT.Q, sub, module, time.Now())
+	if capability.Tier != "free" {
+		cfg = effectiveSettings(cfg, capability.Tier)
+	}
 	return b, cfg, err
 }
 
@@ -385,17 +429,43 @@ func appointmentSlots(ctx context.Context, q *db.Queries, b db.Business, s Setti
 	if err != nil {
 		return nil, err
 	}
+	sub, err := q.GetSubscription(ctx, b.ID)
+	if err != nil {
+		return nil, err
+	}
+	capability, err := entitlements.Capability(ctx, q, sub, "appointments", time.Now())
+	if err != nil {
+		return nil, err
+	}
+	_, maxResources := entitlements.Limits(capability.Tier)
+	// Existing selectors remain readable without access; writes independently require access.
+	// With access, only the first N active resources (name,id) contribute to intake.
+	count := 0
 	out := []availableSlot{}
 	for _, r := range rows {
-		if !r.Active || resource != uuid.Nil && r.ID != resource || len(r.ServiceIds) > 0 && !slices.Contains(r.ServiceIds, service.ID) {
+		if !r.Active {
+			continue
+		}
+		count++
+		if maxResources > 0 && count > maxResources {
+			continue
+		}
+
+		if resource != uuid.Nil && r.ID != resource || capability.Tier == "business" && len(r.ServiceIds) > 0 && !slices.Contains(r.ServiceIds, service.ID) {
 			continue
 		}
 		res := mapResource(r)
 		hours := s.Hours
-		if len(res.Hours) > 0 {
+		if capability.Tier == "business" && len(res.Hours) > 0 {
 			hours = res.Hours
 		}
-		closed := append(slices.Clone(s.ClosedDates), res.ClosedDates...)
+		closed := slices.Clone(s.ClosedDates)
+		if capability.Tier == "business" {
+			closed = append(closed, res.ClosedDates...)
+		}
+		if capability.Tier != "business" && exclude == uuid.Nil {
+			service.BufferMinutes = 0
+		}
 		slots, err := scheduling.Slots(date, b.Timezone, hours, closed, s.SlotMinutes, int(service.DurationMinutes), int(service.BufferMinutes), time.Now(), s.LeadMinutes, s.HorizonDays)
 		if err != nil {
 			return nil, bad(err.Error())

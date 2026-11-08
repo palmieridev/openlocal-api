@@ -61,6 +61,8 @@ Returns:
   "access_role": "owner",
   "modules": {
     "appointments": {
+      "tier": "free",
+      "sources": [],
       "owned": false,
       "enabled": false,
       "can_accept_new": false,
@@ -83,16 +85,19 @@ shows one entry for brevity. Capabilities and usage come from the existing
 entitlement service evaluated as a business owner, indicated by `access_role`.
 These flags describe business-owner capabilities; they do not authorize the admin
 to act through normal business routes. Enabled configuration is distinct from
-subscription ownership. Usage counts confirmed records for the subscription's
-exact stored billing-period start, rather than counting every appointment/order.
+effective module ownership. Each module has its own effective `tier` and active
+`sources`, including complimentary grants. Usage uses the exact stored period
+start while paid/pilot/grace access is active, otherwise a stable UTC calendar
+month. See [access-grants-api.md](access-grants-api.md) for source, quota, and
+permission semantics.
 
 When present, `subscription` contains `tier`, `status`, `modules`, nullable
 `stripe_customer_id`, nullable `stripe_subscription_id`, nullable `period_start`,
 nullable `period_end`, nullable `grace_until`, `cancel_at_period_end`, nullable
 `scheduled_change`, and `updated_at`. It reflects the stored subscription. An absent
-subscription returns null and free capabilities with zero usage; inspection does
-not create a subscription or enable a module. No customer names, phones, request
-notes, or module settings are included.
+subscription returns null; grants and UTC-month usage can still contribute to
+effective access. Inspection does not create a subscription or enable a module.
+No customer names, phones, request notes, or module settings are included.
 
 ## Read activity
 

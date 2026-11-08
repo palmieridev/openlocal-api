@@ -41,18 +41,20 @@ type SubscriptionResponse struct {
 // ModuleResponse evaluates capabilities as a business owner for inspection; it
 // never authorizes the platform administrator to use ordinary business routes.
 type ModuleResponse struct {
-	Owned             bool   `json:"owned"`
-	Enabled           bool   `json:"enabled"`
-	CanAcceptNew      bool   `json:"can_accept_new"`
-	CanManageExisting bool   `json:"can_manage_existing"`
-	CanConfigure      bool   `json:"can_configure"`
-	CanOperate        bool   `json:"can_operate"`
-	CanExport         bool   `json:"can_export"`
-	Reason            string `json:"reason"`
-	Usage             int32  `json:"usage"`
-	Limit             int32  `json:"limit"`
-	MaxResources      int    `json:"max_resources"`
-	Advanced          bool   `json:"advanced"`
+	Tier              string                `json:"tier"`
+	Sources           []entitlements.Source `json:"sources"`
+	Owned             bool                  `json:"owned"`
+	Enabled           bool                  `json:"enabled"`
+	CanAcceptNew      bool                  `json:"can_accept_new"`
+	CanManageExisting bool                  `json:"can_manage_existing"`
+	CanConfigure      bool                  `json:"can_configure"`
+	CanOperate        bool                  `json:"can_operate"`
+	CanExport         bool                  `json:"can_export"`
+	Reason            string                `json:"reason"`
+	Usage             int32                 `json:"usage"`
+	Limit             int32                 `json:"limit"`
+	MaxResources      int                   `json:"max_resources"`
+	Advanced          bool                  `json:"advanced"`
 }
 
 type BusinessDetailResponse struct {
@@ -83,7 +85,7 @@ func mapSubscription(row db.BusinessSubscription) *SubscriptionResponse {
 func mapModules(result entitlements.Result) map[string]ModuleResponse {
 	modules := make(map[string]ModuleResponse, len(result.Modules))
 	for name, a := range result.Modules {
-		modules[name] = ModuleResponse{Owned: a.Owned, Enabled: a.Enabled, CanAcceptNew: a.CanAcceptNew, CanManageExisting: a.CanManageExisting, CanConfigure: a.CanConfigure, CanOperate: a.CanOperate, CanExport: a.CanExport, Reason: a.Reason, Usage: a.Usage, Limit: a.Limit, MaxResources: a.MaxResources, Advanced: a.Advanced}
+		modules[name] = ModuleResponse{Tier: a.Tier, Sources: a.Sources, Owned: a.Owned, Enabled: a.Enabled, CanAcceptNew: a.CanAcceptNew, CanManageExisting: a.CanManageExisting, CanConfigure: a.CanConfigure, CanOperate: a.CanOperate, CanExport: a.CanExport, Reason: a.Reason, Usage: a.Usage, Limit: a.Limit, MaxResources: a.MaxResources, Advanced: a.Advanced}
 	}
 	return modules
 }
