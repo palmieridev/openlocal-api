@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"strings"
@@ -93,6 +94,19 @@ func (rt Runtime) CurrentUser(c *fiber.Ctx) (auth.Context, db.User, error) {
 	return authCtx, user, nil
 }
 
+// RequirePlatformAdmin authorizes a verified Clerk identity independently of any
+// active organization or business membership. Reject before resolving local data.
+func (rt Runtime) RequirePlatformAdmin(c *fiber.Ctx, allowedClerkUserIDs []string) (auth.Context, db.User, error) {
+	authCtx, ok := auth.FromFiber(c)
+	if !ok || authCtx.ClerkUserID == "" {
+		return auth.Context{}, db.User{}, fiber.NewError(fiber.StatusUnauthorized, "missing auth context")
+	}
+	if !RoleAllowed(authCtx.ClerkUserID, allowedClerkUserIDs...) {
+		return auth.Context{}, db.User{}, Fail(fiber.StatusForbidden, "platform_admin_required", "platform administrator access is required")
+	}
+	return rt.CurrentUser(c)
+}
+
 func (rt Runtime) RequireBusinessRole(c *fiber.Ctx, businessID uuid.UUID, allowed ...string) (auth.Context, db.User, error) {
 	authCtx, user, err := rt.CurrentUser(c)
 	if err != nil {
@@ -138,6 +152,27 @@ func Audit(q *db.Queries, ctx context.Context, businessID, userID uuid.UUID, act
 		EntityType:  entityType,
 		EntityID:    uuid.NullUUID{UUID: entityID, Valid: true},
 		Metadata:    []byte(`{}`),
+	})
+	return err
+}
+
+// AuditWithMetadata writes through the supplied queries, including its transaction.
+// A zero UUID represents an absent business, actor, or entity. Metadata must be
+// JSON serializable; nil is stored as an empty object.
+func AuditWithMetadata(q *db.Queries, ctx context.Context, businessID, userID uuid.UUID, action, entityType string, entityID uuid.UUID, metadata map[string]any) error {
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	data, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+	_, err = q.CreateAuditLog(ctx, db.CreateAuditLogParams{
+		BusinessID:  uuid.NullUUID{UUID: businessID, Valid: businessID != uuid.Nil},
+		ActorUserID: uuid.NullUUID{UUID: userID, Valid: userID != uuid.Nil},
+		Action:      action, EntityType: entityType,
+		EntityID: uuid.NullUUID{UUID: entityID, Valid: entityID != uuid.Nil},
+		Metadata: data,
 	})
 	return err
 }
