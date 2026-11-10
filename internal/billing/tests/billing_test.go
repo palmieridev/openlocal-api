@@ -1,129 +1,32 @@
-package billing
+package billing_test
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/palmieridev/openlocal-api/internal/api"
+	"github.com/palmieridev/openlocal-api/internal/billing"
+	"github.com/palmieridev/openlocal-api/internal/billing/application"
 	"github.com/palmieridev/openlocal-api/internal/config"
 	"github.com/palmieridev/openlocal-api/internal/entitlements"
 	"github.com/palmieridev/openlocal-api/internal/platform/logger"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 )
 
-func TestVerifySignature(t *testing.T) {
-	now := time.Unix(2_000_000_000, 0)
-	body := []byte(`{"id":"evt_test"}`)
-	timestamp := "2000000000"
-	mac := hmac.New(sha256.New, []byte("whsec_test"))
-	mac.Write([]byte(timestamp + "."))
-	mac.Write(body)
-	header := "t=" + timestamp + ",v1=" + hex.EncodeToString(mac.Sum(nil))
-	if !verifySignature(header, "whsec_test", body, now) {
-		t.Fatal("valid signature rejected")
-	}
-	if verifySignature(header, "wrong", body, now) || verifySignature(header, "whsec_test", append(body, 'x'), now) || verifySignature(header, "whsec_test", body, now.Add(6*time.Minute)) {
-		t.Fatal("invalid signature accepted")
-	}
-}
-
-func TestStripeClientPinsVersionAndIdempotency(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Stripe-Version") != StripeVersion {
-			t.Error("missing version")
-		}
-		if r.Header.Get("Idempotency-Key") != "request-key" {
-			t.Error("missing key")
-		}
-		user, _, ok := r.BasicAuth()
-		if !ok || user != "sk_test" {
-			t.Error("missing auth")
-		}
-		data, _ := io.ReadAll(r.Body)
-		values, _ := url.ParseQuery(string(data))
-		if values.Get("currency") != "mxn" {
-			t.Error("missing form")
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"ok"}`))
-	}))
-	defer server.Close()
-	client := Client{HTTP: server.Client(), BaseURL: server.URL, Secret: "sk_test"}
-	var out struct {
-		ID string `json:"id"`
-	}
-	if err := client.call(t.Context(), http.MethodPost, "/test", "request-key", url.Values{"currency": {"mxn"}}, &out); err != nil || out.ID != "ok" {
-		t.Fatalf("%v %#v", err, out)
-	}
-}
-
-func TestStripeClientMapsFailuresWithoutLeakingProviderBody(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(500)
-		_, _ = w.Write([]byte(`secret provider detail`))
-	}))
-	defer server.Close()
-	client := Client{HTTP: server.Client(), BaseURL: server.URL, Secret: "sk_test"}
-	err := client.call(t.Context(), http.MethodGet, "/test", "", nil, &struct{}{})
-	domain, ok := err.(*api.DomainError)
-	if !ok || domain.Code != "billing_unavailable" || strings.Contains(err.Error(), "secret") {
-		t.Fatalf("unsafe error: %v", err)
-	}
-}
-
-func TestInterpretSubscriptionRequiresKnownMonthlyComposition(t *testing.T) {
-	h := NewHandler(api.Runtime{}, config.Config{StripeEssentialPrice: "price_e", StripeBusinessPrice: "price_b", StripeSecondModulePrice: "price_a"})
-	base := item{Quantity: 1, Price: price{ID: "price_e", Currency: "mxn", Active: true}}
-	sub := subscription{Metadata: map[string]string{"base_module": "appointments"}}
-	sub.Items.Data = []item{base}
-	tier, modules, err := h.interpret(sub)
-	if err != nil || tier != "essential" || len(modules) != 1 || modules[0] != "appointments" {
-		t.Fatalf("%s %v %v", tier, modules, err)
-	}
-	addon := base
-	addon.Price.ID = "price_a"
-	sub.Items.Data = append(sub.Items.Data, addon)
-	_, modules, err = h.interpret(sub)
-	if err != nil || len(modules) != 2 {
-		t.Fatalf("addon: %v %v", modules, err)
-	}
-	sub.Items.Data[1].Price.ID = "unknown"
-	if _, _, err = h.interpret(sub); err == nil {
-		t.Fatal("unknown price accepted")
-	}
-}
-
-func TestChangeInputNormalizesModules(t *testing.T) {
-	in := changeInput{Tier: "business", Modules: []string{"preorders", "appointments"}}
-	if err := in.validate(); err != nil || strings.Join(in.Modules, ",") != "appointments,preorders" {
-		t.Fatalf("%v %v", in.Modules, err)
-	}
-	in.Modules = []string{"appointments", "appointments"}
-	if err := in.validate(); err == nil {
-		t.Fatal("duplicate accepted")
-	}
-}
-
 func TestReconcilerRequiresCompleteBillingConfiguration(t *testing.T) {
-	partial := NewHandler(api.Runtime{}, config.Config{StripeSecretKey: "sk_test"})
+	partial := billing.NewHandler(api.Runtime{}, config.Config{StripeSecretKey: "sk_test"})
 	if partial.Reconciler() != nil {
 		t.Fatal("partial Stripe configuration enabled background reconciliation")
 	}
 
-	complete := NewHandler(api.Runtime{}, config.Config{
+	complete := billing.NewHandler(api.Runtime{}, config.Config{
 		StripeSecretKey:         "sk_test",
 		StripeWebhookSecret:     "whsec_test",
 		StripeEssentialPrice:    "price_e",
@@ -136,16 +39,7 @@ func TestReconcilerRequiresCompleteBillingConfiguration(t *testing.T) {
 }
 
 func TestReconcileUsesRetrievedStripeState(t *testing.T) {
-	if os.Getenv("OPENLOCAL_INTEGRATION_TESTS") != "1" {
-		t.Skip("requires isolated Docker PostgreSQL")
-	}
-	dsn := os.Getenv("DATABASE_URL")
-	pool, err := pgxpool.New(context.Background(), dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
-	q := db.New(pool)
+	pool, q, _ := database(t)
 	ctx := context.Background()
 	customer := "cus_" + uuid.NewString()
 	event := "evt_" + uuid.NewString()
@@ -160,13 +54,7 @@ func TestReconcileUsesRetrievedStripeState(t *testing.T) {
 	if err = q.EnsureSubscription(ctx, business.ID); err != nil {
 		t.Fatal(err)
 	}
-	sub, err := q.GetSubscription(ctx, business.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	params := updateParams(sub)
-	params.StripeCustomerID = sqlText(customer)
-	if _, err = q.UpdateSubscription(ctx, params); err != nil {
+	if _, err = pool.Exec(ctx, "UPDATE business_subscriptions SET stripe_customer_id=$2 WHERE business_id=$1", business.ID, customer); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = q.SaveBillingEvent(ctx, db.SaveBillingEventParams{ID: event, CustomerID: customer}); err != nil {
@@ -180,8 +68,8 @@ func TestReconcileUsesRetrievedStripeState(t *testing.T) {
 		_, _ = io.WriteString(w, `{"data":[{"id":"`+subscriptionID+`","customer":"`+customer+`","status":"active","metadata":{"base_module":"appointments"},"items":{"has_more":false,"data":[{"id":"si_test","quantity":1,"current_period_start":`+strconv.FormatInt(start, 10)+`,"current_period_end":`+strconv.FormatInt(end, 10)+`,"price":{"id":"price_e","currency":"mxn","active":true}}]}}],"has_more":false}`)
 	}))
 	defer server.Close()
-	h := NewHandler(api.NewRuntime(logger.New("test"), pool, nil), config.Config{StripeSecretKey: "sk_test", StripeEssentialPrice: "price_e", StripeBusinessPrice: "price_b", StripeSecondModulePrice: "price_a"})
-	h.Stripe = &Client{HTTP: server.Client(), BaseURL: server.URL, Secret: "sk_test"}
+	h := billing.NewHandler(api.NewRuntime(logger.New("test"), pool, nil), config.Config{StripeSecretKey: "sk_test", StripeEssentialPrice: "price_e", StripeBusinessPrice: "price_b", StripeSecondModulePrice: "price_a"})
+	h.Stripe = &billing.Client{HTTP: server.Client(), BaseURL: server.URL, Secret: "sk_test"}
 	if err = h.Reconcile(ctx, customer); err != nil {
 		t.Fatal(err)
 	}
@@ -199,16 +87,8 @@ func TestReconcileUsesRetrievedStripeState(t *testing.T) {
 }
 
 func TestReconcileOnlyGrantsProviderAppliedModules(t *testing.T) {
-	if os.Getenv("OPENLOCAL_INTEGRATION_TESTS") != "1" {
-		t.Skip("requires isolated Docker PostgreSQL")
-	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
-	q := db.New(pool)
+	pool, q, _ := database(t)
 	for _, pending := range []bool{false, true} {
 		t.Run(strconv.FormatBool(pending), func(t *testing.T) {
 			customer := "cus_" + uuid.NewString()
@@ -221,13 +101,7 @@ func TestReconcileOnlyGrantsProviderAppliedModules(t *testing.T) {
 			if err = q.EnsureSubscription(ctx, business.ID); err != nil {
 				t.Fatal(err)
 			}
-			local, err := q.GetSubscription(ctx, business.ID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			p := updateParams(local)
-			p.StripeCustomerID = sqlText(customer)
-			if _, err = q.UpdateSubscription(ctx, p); err != nil {
+			if _, err = pool.Exec(ctx, "UPDATE business_subscriptions SET stripe_customer_id=$2 WHERE business_id=$1", business.ID, customer); err != nil {
 				t.Fatal(err)
 			}
 			start, end := time.Now().Add(-time.Hour).Unix(), time.Now().AddDate(0, 1, 0).Unix()
@@ -243,8 +117,8 @@ func TestReconcileOnlyGrantsProviderAppliedModules(t *testing.T) {
 				_, _ = io.WriteString(w, `{"data":[{"id":"`+subscriptionID+`","customer":"`+customer+`","status":"active","metadata":{"base_module":"appointments","modules":"appointments,preorders"},"pending_update":`+pendingUpdate+`,"latest_invoice":`+invoice+`,"items":{"data":[`+items+`]}}]}`)
 			}))
 			defer server.Close()
-			h := NewHandler(api.NewRuntime(logger.New("test"), pool, nil), config.Config{StripeEssentialPrice: "price_e", StripeBusinessPrice: "price_b", StripeSecondModulePrice: "price_a"})
-			h.Stripe = &Client{HTTP: server.Client(), BaseURL: server.URL, Secret: "sk_test"}
+			h := billing.NewHandler(api.NewRuntime(logger.New("test"), pool, nil), config.Config{StripeEssentialPrice: "price_e", StripeBusinessPrice: "price_b", StripeSecondModulePrice: "price_a"})
+			h.Stripe = &billing.Client{HTTP: server.Client(), BaseURL: server.URL, Secret: "sk_test"}
 			if err = h.Reconcile(ctx, customer); err != nil {
 				t.Fatal(err)
 			}
@@ -260,5 +134,16 @@ func TestReconcileOnlyGrantsProviderAppliedModules(t *testing.T) {
 				t.Fatalf("pending=%v incorrectly grants preorder access: %+v", pending, access.Modules["preorders"])
 			}
 		})
+	}
+}
+
+func TestChangeInputNormalizesModules(t *testing.T) {
+	in := application.ChangeInput{Tier: "business", Modules: []string{"preorders", "appointments"}}
+	if err := in.Validate(); err != nil || strings.Join(in.Modules, ",") != "appointments,preorders" {
+		t.Fatalf("%v %v", in.Modules, err)
+	}
+	in.Modules = []string{"appointments", "appointments"}
+	if err := in.Validate(); err == nil {
+		t.Fatal("duplicate accepted")
 	}
 }

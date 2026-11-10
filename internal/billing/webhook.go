@@ -11,7 +11,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/palmieridev/openlocal-api/internal/api"
-	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
+	"github.com/palmieridev/openlocal-api/internal/billing/application"
 )
 
 func verifySignature(header, secret string, body []byte, now time.Time) bool {
@@ -71,24 +71,8 @@ func (h *Handler) webhook(c *fiber.Ctx) error {
 	if !ok || customer == "" {
 		return api.Fail(400, "invalid_request", "event customer is missing")
 	}
-	tx, err := h.RT.Pool.Begin(c.Context())
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(c.Context())
-	q := h.RT.Q.WithTx(tx)
-	inserted, err := q.SaveBillingEvent(c.Context(), db.SaveBillingEventParams{ID: event.ID, CustomerID: customer})
-	if err != nil {
-		return err
-	}
-	if inserted == 1 {
-		_, err = q.EnqueueJob(c.Context(), db.EnqueueJobParams{Payload: raw(map[string]any{"type": "reconcile_subscription", "customer_id": customer}), DelaySeconds: 0})
-		if err != nil {
-			return err
-		}
-	}
-	if err = tx.Commit(c.Context()); err != nil {
-		return err
+	if err := h.service().ReceiveEvent(c.Context(), application.Event{ID: event.ID, CustomerID: customer}); err != nil {
+		return httpError(err)
 	}
 	return c.SendStatus(fiber.StatusOK)
 }

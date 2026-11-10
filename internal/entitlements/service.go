@@ -1,3 +1,4 @@
+// Package entitlements preserves the sqlc-facing API for transactional operation callers.
 package entitlements
 
 import (
@@ -6,123 +7,40 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/palmieridev/openlocal-api/internal/accessgrants"
 	"github.com/palmieridev/openlocal-api/internal/api"
+	"github.com/palmieridev/openlocal-api/internal/entitlements/access"
+	"github.com/palmieridev/openlocal-api/internal/entitlements/accesspostgres"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 )
 
-type Source = accessgrants.Source
+type Source = access.Source
+type Access = access.Access
+type Result = access.Result
 
-type Access struct {
-	Tier              string   `json:"tier"`
-	Sources           []Source `json:"sources"`
-	Owned             bool     `json:"owned"`
-	Enabled           bool     `json:"enabled"`
-	CanAcceptNew      bool     `json:"can_accept_new"`
-	CanManageExisting bool     `json:"can_manage_existing"`
-	CanConfigure      bool     `json:"can_configure"`
-	CanOperate        bool     `json:"can_operate"`
-	CanExport         bool     `json:"can_export"`
-	Reason            string   `json:"reason"`
-	Usage             int32    `json:"usage"`
-	Limit             int32    `json:"limit"`
-	MaxResources      int      `json:"max_resources"`
-	Advanced          bool     `json:"advanced"`
+func Paid(s db.BusinessSubscription, now time.Time) bool {
+	return access.Paid(accesspostgres.Subscription(s), now)
 }
-type Result struct {
-	Tier        string            `json:"tier"`
-	Role        string            `json:"role"`
-	PeriodStart time.Time         `json:"period_start"`
-	PeriodEnd   time.Time         `json:"period_end"`
-	Modules     map[string]Access `json:"modules"`
-}
-
-func Paid(s db.BusinessSubscription, now time.Time) bool { return accessgrants.Paid(s, now) }
-func Limits(tier string) (int32, int) {
-	switch tier {
-	case "business":
-		return 1000, 5
-	case "essential":
-		return 50, 1
-	}
-	return 0, 0
-}
-func stamp(t time.Time) pgtype.Timestamptz { return pgtype.Timestamptz{Time: t, Valid: true} }
+func Limits(tier string) (int32, int) { return access.Limits(tier) }
 func Capability(ctx context.Context, q *db.Queries, s db.BusinessSubscription, module string, now time.Time) (accessgrants.Capability, error) {
-	grants, err := q.AccessGrantsForResolution(ctx, db.AccessGrantsForResolutionParams{BusinessID: s.BusinessID, At: stamp(now)})
-	if err != nil {
-		return accessgrants.Capability{}, err
-	}
-	return accessgrants.Resolve(s, grants, module, now), nil
+	return access.New(accesspostgres.New(q)).Capability(ctx, accesspostgres.Subscription(s), module, now)
 }
-
-// Usage preserves existing paid-period accounting. Complimentary-only access counts
-// all confirmations in the current UTC month, regardless of their original period marker.
 func Usage(ctx context.Context, q *db.Queries, s db.BusinessSubscription, module string, now time.Time) (int32, error) {
-	if Paid(s, now) {
-		return q.ModuleUsage(ctx, db.ModuleUsageParams{BusinessID: s.BusinessID, Module: module, PeriodStart: s.PeriodStart})
-	}
-	start, end := accessgrants.Window(s, now)
-	return q.ModuleUsageInWindow(ctx, db.ModuleUsageInWindowParams{BusinessID: s.BusinessID, Module: module, WindowStart: stamp(start), WindowEnd: stamp(end)})
+	return access.New(accesspostgres.New(q)).Usage(ctx, accesspostgres.Subscription(s), module, now)
 }
 func Get(ctx context.Context, q *db.Queries, s db.BusinessSubscription, role string, now time.Time) (Result, error) {
-	start, end := accessgrants.Window(s, now)
-	r := Result{Tier: s.Tier, Role: role, PeriodStart: start, PeriodEnd: end, Modules: map[string]Access{}}
-	grants, err := q.AccessGrantsForResolution(ctx, db.AccessGrantsForResolutionParams{BusinessID: s.BusinessID, At: stamp(now)})
-	if err != nil {
-		return r, err
-	}
-	for _, module := range []string{"appointments", "preorders"} {
-		m, err := q.GetModule(ctx, db.GetModuleParams{BusinessID: s.BusinessID, Module: module})
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return r, err
-		}
-		used, err := Usage(ctx, q, s, module, now)
-		if err != nil {
-			return r, err
-		}
-		capability := accessgrants.Resolve(s, grants, module, now)
-		limit, resources := Limits(capability.Tier)
-		owned := capability.Tier != "free"
-		operator := role == "owner" || capability.TeamHistory && (role == "manager" || role == "staff")
-		a := Access{Tier: capability.Tier, Sources: capability.Sources, Owned: owned, Enabled: m.Enabled, CanManageExisting: operator, CanOperate: operator,
-			CanConfigure: owned && (role == "owner" || capability.Tier == "business" && role == "manager"),
-			CanExport:    owned && capability.Tier == "business" && (role == "owner" || role == "manager"), Usage: used, Limit: limit, MaxResources: resources, Advanced: capability.Tier == "business"}
-		switch {
-		case !owned:
-			a.Reason = "module_unavailable"
-		case !m.Enabled:
-			a.Reason = "intake_paused"
-		case used >= limit:
-			a.Reason = "quota_exceeded"
-		default:
-			a.CanAcceptNew = true
-		}
-		r.Modules[module] = a
-	}
-	return r, nil
+	return access.New(accesspostgres.New(q)).Get(ctx, accesspostgres.Subscription(s), role, now)
 }
 
-// Caller must hold LockSubscription throughout the transaction, as must grant writers.
+// Consume uses the supplied transaction; it never opens or commits another one.
+// Caller must hold LockSubscription throughout, as must grant writers.
 func Consume(ctx context.Context, q *db.Queries, s db.BusinessSubscription, module string, id uuid.UUID) error {
-	now := time.Now()
-	capability, err := Capability(ctx, q, s, module, now)
-	if err != nil {
-		return err
+	err := access.New(accesspostgres.New(q)).Consume(ctx, accesspostgres.Subscription(s), module, id, time.Now())
+	if errors.Is(err, access.ErrUnavailable) {
+		return api.Fail(403, "module_unavailable", err.Error())
 	}
-	if capability.Tier == "free" {
-		return api.Fail(403, "module_unavailable", "module access is unavailable")
+	if errors.Is(err, access.ErrQuotaExceeded) {
+		return api.Fail(409, "quota_exceeded", err.Error())
 	}
-	start, _ := accessgrants.Window(s, now)
-	used, err := Usage(ctx, q, s, module, now)
-	if err != nil {
-		return err
-	}
-	limit, _ := Limits(capability.Tier)
-	if used >= limit {
-		return api.Fail(409, "quota_exceeded", "confirmation limit reached")
-	}
-	return q.ConsumeModuleUsage(ctx, db.ConsumeModuleUsageParams{BusinessID: s.BusinessID, Module: module, RecordID: id, PeriodStart: stamp(start)})
+	return err
 }

@@ -7,13 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/palmieridev/openlocal-api/internal/api"
-	"github.com/palmieridev/openlocal-api/internal/config"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/palmieridev/openlocal-api/internal/api"
+	"github.com/palmieridev/openlocal-api/internal/config"
 )
 
 const StripeVersion = "2025-06-30.basil"
@@ -124,17 +125,7 @@ func (s subscription) pending() bool {
 	return len(s.PendingUpdate) > 0 && string(s.PendingUpdate) != "null"
 }
 func (h *Handler) available() bool {
-	return h.Config.StripeSecretKey != "" && h.Config.StripeWebhookSecret != "" && h.Config.StripeEssentialPrice != "" && h.Config.StripeBusinessPrice != "" && h.Config.StripeSecondModulePrice != ""
-}
-
-// Reconciler returns the provider-backed reconciliation function only when
-// billing is fully configured. This keeps deployments that intentionally run
-// without Stripe from polling the provider with partial credentials.
-func (h *Handler) Reconciler() func(context.Context, string) error {
-	if !h.available() {
-		return nil
-	}
-	return h.Reconcile
+	return configured(h.Config)
 }
 
 func (h *Handler) requireBilling() error {
@@ -143,7 +134,7 @@ func (h *Handler) requireBilling() error {
 	}
 	return nil
 }
-func (h *Handler) priceID(tier string) string {
+func (h *paymentAdapter) priceID(tier string) string {
 	if tier == "essential" {
 		return h.Config.StripeEssentialPrice
 	}
@@ -162,15 +153,15 @@ func amounts(cfg config.Config) (int64, int64, int64) {
 	}
 	return a, b, c
 }
-func (h *Handler) validatePrices(ctx context.Context) error {
+func (h *paymentAdapter) ValidatePrices(ctx context.Context) error {
 	a, b, c := amounts(h.Config)
 	for id, amount := range map[string]int64{h.Config.StripeEssentialPrice: a, h.Config.StripeBusinessPrice: b, h.Config.StripeSecondModulePrice: c} {
 		var p price
-		if e := h.Stripe.call(ctx, "GET", "/prices/"+url.PathEscape(id), "", nil, &p); e != nil {
+		if e := h.call(ctx, "GET", "/prices/"+url.PathEscape(id), "", nil, &p); e != nil {
 			return e
 		}
 		if !p.Active || p.Currency != "mxn" || p.UnitAmount != amount || p.Recurring.Interval != "month" || p.Recurring.IntervalCount != 1 {
-			return api.Fail(503, "billing_unavailable", "configured prices must match monthly MXN plan amounts")
+			return providerFailure("unavailable", "billing_unavailable", "configured prices must match monthly MXN plan amounts")
 		}
 	}
 	return nil
