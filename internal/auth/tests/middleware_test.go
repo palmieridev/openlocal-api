@@ -1,15 +1,16 @@
-package auth
+package auth_test
 
 import (
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/palmieridev/openlocal-api/internal/auth"
 )
 
 func TestRequireAuthRejectsMissingBearerToken(t *testing.T) {
 	app := fiber.New()
-	app.Get("/private", Middleware{}.RequireAuth(), func(c *fiber.Ctx) error {
+	app.Get("/private", auth.Middleware{}.RequireAuth(), func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusOK)
 	})
 
@@ -17,6 +18,7 @@ func TestRequireAuthRejectsMissingBearerToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer res.Body.Close()
 	if res.StatusCode != fiber.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", res.StatusCode)
 	}
@@ -24,8 +26,8 @@ func TestRequireAuthRejectsMissingBearerToken(t *testing.T) {
 
 func TestRequireAuthTestBypassWithoutOrgHasNoRole(t *testing.T) {
 	app := fiber.New()
-	app.Get("/private", Middleware{AllowTestAuth: true}.RequireAuth(), func(c *fiber.Ctx) error {
-		authCtx, ok := FromFiber(c)
+	app.Get("/private", auth.Middleware{AllowTestAuth: true}.RequireAuth(), func(c *fiber.Ctx) error {
+		authCtx, ok := auth.FromFiber(c)
 		if !ok {
 			return fiber.NewError(fiber.StatusUnauthorized)
 		}
@@ -41,6 +43,7 @@ func TestRequireAuthTestBypassWithoutOrgHasNoRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer res.Body.Close()
 	if res.StatusCode != fiber.StatusForbidden {
 		t.Fatalf("expected 403, got %d", res.StatusCode)
 	}
@@ -56,7 +59,7 @@ func TestMapClerkRole(t *testing.T) {
 		"unknown":    "",
 	}
 	for input, want := range tests {
-		if got := MapClerkRole(input); got != want {
+		if got := auth.MapClerkRole(input); got != want {
 			t.Fatalf("MapClerkRole(%q) = %q, want %q", input, got, want)
 		}
 	}

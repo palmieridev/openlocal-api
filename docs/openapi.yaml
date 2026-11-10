@@ -1148,7 +1148,14 @@ components:
           maxLength: 1280
         challenge_token:
           type: string
-          description: Turnstile request challenge, required in production.
+          minLength: 1
+          maxLength: 2048
+          description: |
+            For public and personal customer requests, provide a token of at most
+            2048 bytes for action request and a configured allowed hostname.
+            These requests require verification unless the non-production test
+            bypass is enabled; production always verifies them. Rejection returns
+            challenge_failed (400); provider unavailability returns challenge_failed (503).
         locale:
           type: string
         service_id:
@@ -1182,7 +1189,14 @@ components:
           maxLength: 1280
         challenge_token:
           type: string
-          description: Turnstile request challenge, required in production.
+          minLength: 1
+          maxLength: 2048
+          description: |
+            For public and personal customer requests, provide a token of at most
+            2048 bytes for action request and a configured allowed hostname.
+            These requests require verification unless the non-production test
+            bypass is enabled; production always verifies them. Rejection returns
+            challenge_failed (400); provider unavailability returns challenge_failed (503).
         locale:
           type: string
         pickup_window_id:
@@ -2083,7 +2097,34 @@ paths:
       tags:
         - Webhooks
       security: []
-      description: Clerk webhook receiver for user, organization, and membership sync. Requires valid Svix signature headers.
+      description: |
+        Synchronizes users, organizations, and memberships after verifying the Svix
+        signature against the raw request body and a timestamp within five minutes.
+        Memberships use organization.id and public_user_data.user_id; the event ID
+        is not a substitute for either reference. The user profile and membership
+        grant commit together for the business linked to that organization.
+        Roles org:admin, admin, and owner map to owner; manager maps to manager;
+        org:member, member, and staff map to staff. Unknown roles, incomplete
+        membership references, unlinked organizations, and unsupported events are
+        acknowledged without granting access. Organization deletion archives its
+        linked business; organization creation and updates create no local business.
+      parameters:
+        - name: svix-id
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: svix-timestamp
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Unix timestamp in seconds, covered by the signature.
+        - name: svix-signature
+          in: header
+          required: true
+          schema:
+            type: string
       requestBody:
         required: true
         content:
