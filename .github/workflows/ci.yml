@@ -95,12 +95,22 @@ jobs:
         env:
           DATABASE_URL: postgres://openlocal:openlocal@localhost:5432/openlocal_movement_test?sslmode=disable
           MIGRATIONS_PATH: db/migrations
+      - name: Prepare migrated domain test databases
+        run: |
+          for domain in identity catalog billing; do
+            docker exec -e PGPASSWORD=openlocal openlocal-pgmq-test \
+              createdb -h 127.0.0.1 -U openlocal \
+              --template=openlocal_movement_test "openlocal_${domain}_test"
+          done
       - name: Database integration tests
-        run: go test ./internal/integration ./internal/operations ./internal/billing ./internal/inventory/...
+        run: go test ./... -count=1 -timeout=90s
         env:
           OPENLOCAL_INTEGRATION_TESTS: "1"
           DATABASE_URL: postgres://openlocal:openlocal@localhost:5432/openlocal_movement_test?sslmode=disable
           OPENLOCAL_MOVEMENT_TEST_DATABASE_URL: postgres://openlocal:openlocal@localhost:5432/openlocal_movement_test?sslmode=disable
+          OPENLOCAL_IDENTITY_TEST_DATABASE_URL: postgres://openlocal:openlocal@localhost:5432/openlocal_identity_test?sslmode=disable
+          OPENLOCAL_CATALOG_TEST_DATABASE_URL: postgres://openlocal:openlocal@localhost:5432/openlocal_catalog_test?sslmode=disable
+          OPENLOCAL_BILLING_TEST_DATABASE_URL: postgres://openlocal:openlocal@localhost:5432/openlocal_billing_test?sslmode=disable
       - name: PostgreSQL logs on failure
         if: failure()
         run: docker logs openlocal-pgmq-test
