@@ -1,5 +1,11 @@
 package webhooks
 
+import (
+	"strings"
+
+	"github.com/palmieridev/openlocal-api/internal/identity"
+)
+
 type eventEnvelope struct {
 	Type string    `json:"type"`
 	Data eventData `json:"data"`
@@ -48,16 +54,20 @@ func (d eventData) primaryEmail() string {
 	return d.EmailAddresses[0].EmailAddress
 }
 
-func (d eventData) organizationID() string {
-	if d.Organization.ID != "" {
-		return d.Organization.ID
+// input projects verified provider data into application types. Event IDs are
+// never substitutes for membership organization/user references.
+func (e eventEnvelope) input() identity.Event {
+	d := e.Data
+	event := identity.Event{Type: e.Type, User: identity.Profile{ClerkUserID: d.ID, Email: strings.TrimSpace(d.primaryEmail()), FirstName: strings.TrimSpace(d.FirstName), LastName: strings.TrimSpace(d.LastName), ImageURL: strings.TrimSpace(d.ImageURL)}, OrganizationID: d.ID}
+	switch e.Type {
+	case "organizationMembership.created", "organizationMembership.updated", "organizationMembership.deleted":
+		email := strings.TrimSpace(d.PublicUserData.Identifier)
+		if !strings.Contains(email, "@") {
+			email = ""
+		}
+		event.OrganizationID = d.Organization.ID
+		event.User = identity.Profile{ClerkUserID: d.PublicUserData.UserID, Email: email, FirstName: strings.TrimSpace(d.PublicUserData.FirstName), LastName: strings.TrimSpace(d.PublicUserData.LastName), ImageURL: strings.TrimSpace(d.PublicUserData.ImageURL)}
+		event.Role = d.Role
 	}
-	return d.ID
-}
-
-func (d eventData) membershipUserID() string {
-	if d.PublicUserData.UserID != "" {
-		return d.PublicUserData.UserID
-	}
-	return d.ID
+	return event
 }

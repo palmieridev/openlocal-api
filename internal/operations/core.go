@@ -10,11 +10,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
-	"net/url"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -27,16 +24,19 @@ import (
 	"github.com/palmieridev/openlocal-api/internal/entitlements"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	v "github.com/palmieridev/openlocal-api/internal/platform/validator"
+	"github.com/palmieridev/openlocal-api/internal/verification"
+	"github.com/palmieridev/openlocal-api/internal/verification/turnstile"
 )
 
 type Handler struct {
-	RT     api.Runtime
-	Config config.Config
-	Client *http.Client
+	RT                api.Runtime
+	Config            config.Config
+	Client            *http.Client
+	ChallengeVerifier verification.Verifier
 }
 
 func NewHandler(rt api.Runtime, cfg config.Config) *Handler {
-	return &Handler{rt, cfg, &http.Client{Timeout: 10 * time.Second}}
+	return &Handler{RT: rt, Config: cfg, Client: &http.Client{Timeout: 10 * time.Second}}
 }
 func TS(t time.Time) pgtype.Timestamptz { return pgtype.Timestamptz{Time: t, Valid: !t.IsZero()} }
 func bad(msg string) error              { return api.Fail(400, "invalid_request", msg) }
@@ -187,33 +187,25 @@ func customer(in *CustomerInput) error {
 	}
 	return nil
 }
+
+// challenge retains the HTTP error contract while delegating provider and policy
+// decisions. Client remains injectable for existing callers and tests.
 func (h *Handler) challenge(ctx context.Context, token string) error {
-	if h.Config.ModulesAllowTestChallenge && h.Config.AppEnv != "production" && h.Config.AppEnv != "prod" {
+	verifier := h.ChallengeVerifier
+	if verifier == nil {
+		verifier = verification.New(turnstile.New(h.Client, h.Config.TurnstileSecret), verification.Policy{Environment: h.Config.AppEnv, AllowTestBypass: h.Config.ModulesAllowTestChallenge, Hostnames: h.Config.TurnstileHostnames, ExpectedAction: "request"})
+	}
+	err := verifier.Verify(ctx, verification.Input{Token: token})
+	switch {
+	case err == nil:
 		return nil
-	}
-	if token == "" || len(token) > 2048 || h.Config.TurnstileSecret == "" {
+	case errors.Is(err, verification.ErrRequired):
 		return api.Fail(400, "challenge_failed", "verification is required")
-	}
-	form := url.Values{"secret": {h.Config.TurnstileSecret}, "response": {token}}
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://challenges.cloudflare.com/turnstile/v0/siteverify", strings.NewReader(form.Encode()))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	res, err := h.Client.Do(req)
-	if err != nil {
+	case errors.Is(err, verification.ErrRejected):
+		return api.Fail(400, "challenge_failed", "verification failed")
+	default:
 		return api.Fail(503, "challenge_failed", "verification is temporarily unavailable")
 	}
-	defer res.Body.Close()
-	var result struct {
-		Success  bool   `json:"success"`
-		Hostname string `json:"hostname"`
-		Action   string `json:"action"`
-	}
-	if json.NewDecoder(io.LimitReader(res.Body, 65536)).Decode(&result) != nil || !result.Success || !slices.Contains(h.Config.TurnstileHostnames, result.Hostname) || result.Action != "request" {
-		return api.Fail(400, "challenge_failed", "verification failed")
-	}
-	return nil
 }
 func (h *Handler) aead() (cipher.AEAD, error) {
 	key, err := base64.StdEncoding.DecodeString(h.Config.ModulesTokenKey)
