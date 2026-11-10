@@ -1,4 +1,4 @@
-package operations_test
+package integration_test
 
 import (
 	"bytes"
@@ -21,24 +21,25 @@ import (
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 )
 
-type grantFixture struct {
-	fixture
+type operationsGrantFixture struct {
+	operationsFixture
 	admin string
 }
 
-func setupGrants(t *testing.T) grantFixture {
-	f := setup(t)
+func setupOperationsGrants(t *testing.T) operationsGrantFixture {
+	f := setupOperations(t)
 	admin := "user_platform_" + uuid.NewString()
+	t.Cleanup(func() { mustOperations(t, f.h.RT.Q.DeleteUserByClerkID(context.Background(), admin)) })
 	accessgrants.NewHandler(f.h.RT, []string{admin}).RegisterRoutes(f.app.Group("/api/v1", auth.Middleware{AllowTestAuth: true}.RequireAuth()))
 	_, err := f.h.RT.Pool.Exec(context.Background(), "UPDATE business_subscriptions SET tier='free',status='inactive',modules='{}' WHERE business_id=$1", f.b.ID)
-	must(t, err)
+	mustOperations(t, err)
 	t.Cleanup(func() {
 		_, _ = f.h.RT.Pool.Exec(context.Background(), "DELETE FROM audit_logs WHERE business_id=$1", f.b.ID)
 	})
-	return grantFixture{f, admin}
+	return operationsGrantFixture{f, admin}
 }
-func (f grantFixture) adminRequest(method, path string, body any) (int, []byte) {
-	req := httptest.NewRequest(method, "/api/v1/admin/businesses/"+f.b.ID.String()+"/grants"+path, bytes.NewReader(requestBody(body)))
+func (f operationsGrantFixture) adminRequest(method, path string, body any) (int, []byte) {
+	req := httptest.NewRequest(method, "/api/v1/admin/businesses/"+f.b.ID.String()+"/grants"+path, bytes.NewReader(operationsBody(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Test-Clerk-User-ID", f.admin)
 	res, err := f.app.Test(req, -1)
@@ -49,37 +50,38 @@ func (f grantFixture) adminRequest(method, path string, body any) (int, []byte) 
 	data, _ := io.ReadAll(res.Body)
 	return res.StatusCode, data
 }
-func (f grantFixture) grant(t *testing.T, module, tier string, end *time.Time) accessgrants.Grant {
+func (f operationsGrantFixture) grant(t *testing.T, module, tier string, end *time.Time) accessgrants.Grant {
 	t.Helper()
-	code, data := f.adminRequest("POST", "", accessgrants.CreateInput{Module: module, Tier: tier, StartsAt: time.Now().Add(-time.Hour), ExpiresAt: end, Indefinite: end == nil, InternalReason: "private gift", OwnerMessage: ptr("On us")})
+	code, data := f.adminRequest("POST", "", accessgrants.CreateInput{Module: module, Tier: tier, StartsAt: time.Now().Add(-time.Hour), ExpiresAt: end, Indefinite: end == nil, InternalReason: "private gift", OwnerMessage: operationsPtr("On us")})
 	if code != 201 {
 		t.Fatalf("grant %d %s", code, data)
 	}
 	var g accessgrants.Grant
-	must(t, json.Unmarshal(data, &g))
+	mustOperations(t, json.Unmarshal(data, &g))
 	return g
 }
-func ptr(s string) *string { return &s }
-func (f grantFixture) access(t *testing.T, role string) entitlements.Result {
+func operationsPtr(s string) *string { return &s }
+func (f operationsGrantFixture) access(t *testing.T, role string) entitlements.Result {
 	t.Helper()
 	s, err := f.h.RT.Q.GetSubscription(context.Background(), f.b.ID)
-	must(t, err)
+	mustOperations(t, err)
 	a, err := entitlements.Get(context.Background(), f.h.RT.Q, s, role, time.Now())
-	must(t, err)
+	mustOperations(t, err)
 	return a
 }
-func (f grantFixture) team(t *testing.T, role string) fixture {
+func (f operationsGrantFixture) team(t *testing.T, role string) operationsFixture {
 	t.Helper()
-	other := f.fixture
+	other := f.operationsFixture
 	other.user = "user_team_" + uuid.NewString()
+	t.Cleanup(func() { mustOperations(t, f.h.RT.Q.DeleteUserByClerkID(context.Background(), other.user)) })
 	u, err := f.h.RT.Q.UpsertUserFromClerk(context.Background(), db.UpsertUserFromClerkParams{ClerkUserID: other.user})
-	must(t, err)
+	mustOperations(t, err)
 	_, err = f.h.RT.Q.AddBusinessMember(context.Background(), db.AddBusinessMemberParams{BusinessID: f.b.ID, UserID: u.ID, ClerkOrgID: f.org, Role: role})
-	must(t, err)
+	mustOperations(t, err)
 	return other
 }
 func TestGrantOnlyIntakeConfirmationAndHistory(t *testing.T) {
-	f := setupGrants(t)
+	f := setupOperationsGrants(t)
 	g := f.grant(t, "appointments", "essential", nil)
 	if a := f.access(t, "owner"); a.Modules["appointments"].Limit != 50 || a.Modules["preorders"].Owned {
 		t.Fatalf("%+v", a)
@@ -105,7 +107,7 @@ func TestGrantOnlyIntakeConfirmationAndHistory(t *testing.T) {
 		t.Fatalf("read history %d %s", code, data)
 	}
 	var out operations.Record
-	must(t, json.Unmarshal(data, &out))
+	mustOperations(t, json.Unmarshal(data, &out))
 	if len(out.History) != 3 {
 		t.Fatalf("history %+v", out.History)
 	}
@@ -118,10 +120,10 @@ func TestGrantOnlyIntakeConfirmationAndHistory(t *testing.T) {
 	}
 }
 func TestGrantsMixedModuleCapabilitiesAndTeam(t *testing.T) {
-	f := setupGrants(t)
+	f := setupOperationsGrants(t)
 	ctx := context.Background()
 	_, err := f.h.RT.Pool.Exec(ctx, "UPDATE business_subscriptions SET tier='essential',status='active',modules=ARRAY['appointments'] WHERE business_id=$1", f.b.ID)
-	must(t, err)
+	mustOperations(t, err)
 	g := f.grant(t, "preorders", "business", nil)
 	a := f.access(t, "manager")
 	if a.Modules["appointments"].Tier != "essential" || a.Modules["appointments"].CanConfigure || !a.Modules["preorders"].CanConfigure || !a.Modules["preorders"].CanExport {
@@ -131,7 +133,7 @@ func TestGrantsMixedModuleCapabilitiesAndTeam(t *testing.T) {
 	staff := f.team(t, "staff")
 	base := "/businesses/" + f.b.ID.String()
 	checks := []struct {
-		f            fixture
+		f            operationsFixture
 		method, path string
 		body         any
 		want         int
@@ -142,8 +144,8 @@ func TestGrantsMixedModuleCapabilitiesAndTeam(t *testing.T) {
 		{staff, "PATCH", base + "/preorders/settings", map[string]any{"daily_cutoff": "17:00"}, 403},
 		{manager, "GET", base + "/preorders/export?from=" + f.start.Format("2006-01-02") + "&to=" + f.start.Format("2006-01-02"), nil, 200},
 		{staff, "GET", base + "/preorders/export?from=" + f.start.Format("2006-01-02") + "&to=" + f.start.Format("2006-01-02"), nil, 403},
-		{f.fixture, "POST", base + "/appointment-resources", map[string]any{"name": "Extra"}, 409},
-		{f.fixture, "PATCH", base + "/services/" + f.svc.ID.String(), map[string]any{"buffer_minutes": 5}, 403},
+		{f.operationsFixture, "POST", base + "/appointment-resources", map[string]any{"name": "Extra"}, 409},
+		{f.operationsFixture, "PATCH", base + "/services/" + f.svc.ID.String(), map[string]any{"buffer_minutes": 5}, 403},
 	}
 	for _, c := range checks {
 		code, data := c.f.request(c.method, c.path, uuid.NewString(), c.body, true)
@@ -179,16 +181,16 @@ func TestGrantsMixedModuleCapabilitiesAndTeam(t *testing.T) {
 	}
 }
 func TestGrantDoesNotEnableIntakeAndScheduledExpiredDenied(t *testing.T) {
-	f := setupGrants(t)
+	f := setupOperationsGrants(t)
 	ctx := context.Background()
 	_, err := f.h.RT.Pool.Exec(ctx, "UPDATE business_modules SET enabled=false WHERE business_id=$1", f.b.ID)
-	must(t, err)
+	mustOperations(t, err)
 	g := f.grant(t, "appointments", "business", nil)
 	if a := f.access(t, "owner"); !a.Modules["appointments"].Owned || a.Modules["appointments"].Enabled || a.Modules["appointments"].CanAcceptNew {
 		t.Fatalf("grant auto-enabled %+v", a)
 	}
 	_, err = f.h.RT.Pool.Exec(ctx, "UPDATE business_modules SET enabled=true WHERE business_id=$1", f.b.ID)
-	must(t, err)
+	mustOperations(t, err)
 	for _, state := range []string{"scheduled", "expired"} {
 		var sql string
 		if state == "scheduled" {
@@ -197,7 +199,7 @@ func TestGrantDoesNotEnableIntakeAndScheduledExpiredDenied(t *testing.T) {
 			sql = "UPDATE business_access_grants SET starts_at=now()-interval '2 days',expires_at=now()-interval '1 day' WHERE id=$1"
 		}
 		_, err = f.h.RT.Pool.Exec(ctx, sql, g.ID)
-		must(t, err)
+		mustOperations(t, err)
 		code, data := f.request("GET", "/public/businesses/"+f.b.Slug+"/appointments/services", "", nil, false)
 		if code != 403 {
 			t.Fatalf("%s intake %d %s", state, code, data)
@@ -209,17 +211,18 @@ func TestGrantDoesNotEnableIntakeAndScheduledExpiredDenied(t *testing.T) {
 	}
 }
 func TestGrantQuotaNoAdditionResetAndConcurrentLastSlot(t *testing.T) {
-	f := setupGrants(t)
+	f := setupOperationsGrants(t)
 	ctx := context.Background()
 	end := time.Now().Add(time.Hour)
 	g := f.grant(t, "appointments", "essential", &end)
 	f.grant(t, "appointments", "essential", nil)
 	// Two overlapping grants still allow 50 confirmations total. Preload 49 genuine usage events.
 	for i := 0; i < 49; i++ {
-		must(t, f.h.RT.Q.ConsumeModuleUsage(ctx, db.ConsumeModuleUsageParams{BusinessID: f.b.ID, Module: "appointments", RecordID: uuid.New(), PeriodStart: operations.TS(time.Now().AddDate(0, -1, 0))}))
+		mustOperations(t, f.h.RT.Q.ConsumeModuleUsage(ctx, db.ConsumeModuleUsageParams{BusinessID: f.b.ID, Module: "appointments", RecordID: uuid.New(), PeriodStart: operations.TS(time.Now().AddDate(0, -1, 0))}))
 	}
 	a := f.appointment(t, "+525555551101", f.start)
 	b := f.appointment(t, "+525555551102", f.start.Add(time.Hour))
+	release, wait := f.holdSubscription(t)
 	var wg sync.WaitGroup
 	codes := make(chan int, 2)
 	for _, r := range []operations.Record{a, b} {
@@ -230,6 +233,8 @@ func TestGrantQuotaNoAdditionResetAndConcurrentLastSlot(t *testing.T) {
 			codes <- code
 		}(r)
 	}
+	wait(2)
+	release()
 	wg.Wait()
 	close(codes)
 	results := map[int]int{}
@@ -262,11 +267,12 @@ func TestGrantQuotaNoAdditionResetAndConcurrentLastSlot(t *testing.T) {
 	}
 }
 func TestGrantEditsVersionsHistoryAndAuditRollback(t *testing.T) {
-	f := setupGrants(t)
+	f := setupOperationsGrants(t)
 	ctx := context.Background()
 	end := time.Now().Add(time.Hour)
 	g := f.grant(t, "appointments", "business", &end)
 	later := end.Add(time.Hour)
+	release, wait := f.holdSubscription(t)
 	var wg sync.WaitGroup
 	codes := make(chan int, 2)
 	for i := 0; i < 2; i++ {
@@ -277,6 +283,8 @@ func TestGrantEditsVersionsHistoryAndAuditRollback(t *testing.T) {
 			codes <- code
 		}()
 	}
+	wait(2)
+	release()
 	wg.Wait()
 	close(codes)
 	results := map[int]int{}
@@ -286,10 +294,10 @@ func TestGrantEditsVersionsHistoryAndAuditRollback(t *testing.T) {
 	if results[200] != 1 || results[409] != 1 {
 		t.Fatalf("edit race %v", results)
 	}
-	// A business-specific constraint forces the audit insert to fail; mutations must roll back.
-	constraint := "grant_audit_" + stringsUUID()
+	// A business-specific constraint forces the audit insert to fail; mutations mustOperations roll back.
+	constraint := "grant_audit_" + operationsUUID()
 	_, err := f.h.RT.Pool.Exec(ctx, fmt.Sprintf("ALTER TABLE audit_logs ADD CONSTRAINT %s CHECK (business_id <> '%s'::uuid OR entity_type <> 'access_grant') NOT VALID", constraint, f.b.ID))
-	must(t, err)
+	mustOperations(t, err)
 	defer func() { _, _ = f.h.RT.Pool.Exec(ctx, "ALTER TABLE audit_logs DROP CONSTRAINT "+constraint) }()
 	code, data := f.adminRequest("POST", "/"+g.ID.String()+"/revoke", accessgrants.RevokeInput{Version: 2, InternalReason: "rollback test"})
 	if code != 500 {
@@ -302,7 +310,7 @@ func TestGrantEditsVersionsHistoryAndAuditRollback(t *testing.T) {
 		t.Fatalf("extension audit rejection %d %s", code, data)
 	}
 	stored, err := f.h.RT.Q.GetAccessGrant(ctx, db.GetAccessGrantParams{BusinessID: f.b.ID, ID: g.ID})
-	must(t, err)
+	mustOperations(t, err)
 	if stored.RevokedAt.Valid || stored.Version != 2 || !stored.ExpiresAt.Time.Equal(later.Truncate(time.Microsecond)) {
 		t.Fatalf("audit failed to rollback %+v", stored)
 	}
@@ -311,12 +319,12 @@ func TestGrantEditsVersionsHistoryAndAuditRollback(t *testing.T) {
 		t.Fatalf("create audit rejection %d", code)
 	}
 	count, err := f.h.RT.Q.CountAccessGrants(ctx, f.b.ID)
-	must(t, err)
+	mustOperations(t, err)
 	if count != 1 {
 		t.Fatal("create survived audit failure")
 	}
 	_, err = f.h.RT.Pool.Exec(ctx, "ALTER TABLE audit_logs DROP CONSTRAINT "+constraint)
-	must(t, err)
+	mustOperations(t, err)
 	code, data = f.adminRequest("POST", "/"+g.ID.String()+"/revoke", accessgrants.RevokeInput{Version: 2, InternalReason: "done"})
 	if code != 200 {
 		t.Fatalf("revoke %d %s", code, data)
@@ -328,7 +336,7 @@ func TestGrantEditsVersionsHistoryAndAuditRollback(t *testing.T) {
 	var history struct {
 		Items []accessgrants.History `json:"items"`
 	}
-	must(t, json.Unmarshal(data, &history))
+	mustOperations(t, json.Unmarshal(data, &history))
 	if len(history.Items) != 3 {
 		t.Fatalf("history %s", data)
 	}
@@ -337,30 +345,30 @@ func TestGrantEditsVersionsHistoryAndAuditRollback(t *testing.T) {
 			InternalReason string `json:"internal_reason"`
 			Before, After  *accessgrants.Grant
 		}
-		must(t, json.Unmarshal(item.Metadata, &metadata))
+		mustOperations(t, json.Unmarshal(item.Metadata, &metadata))
 		if item.ActorUserID == nil || metadata.InternalReason == "" || metadata.After.Version != int32(i+1) || i > 0 && metadata.Before.Version != int32(i) {
 			t.Fatalf("history %s", data)
 		}
 	}
 }
-func stringsUUID() string { u := uuid.New(); return fmt.Sprintf("%x", u[:]) }
+func operationsUUID() string { u := uuid.New(); return fmt.Sprintf("%x", u[:]) }
 
 // Ensure a revoked grant committed while holding the operational lock is visible to confirmation.
 func TestGrantRevocationSerializesWithConfirmation(t *testing.T) {
-	f := setupGrants(t)
+	f := setupOperationsGrants(t)
 	ctx := context.Background()
 	g := f.grant(t, "appointments", "business", nil)
 	r := f.appointment(t, "+525555551201", f.start)
 	tx, err := f.h.RT.Pool.Begin(ctx)
-	must(t, err)
+	mustOperations(t, err)
 	defer tx.Rollback(ctx)
 	q := f.h.RT.Q.WithTx(tx)
 	_, err = q.LockSubscription(ctx, f.b.ID)
-	must(t, err)
+	mustOperations(t, err)
 	actor, err := q.UpsertUserFromClerk(ctx, db.UpsertUserFromClerkParams{ClerkUserID: f.admin})
-	must(t, err)
+	mustOperations(t, err)
 	_, err = q.RevokeAccessGrant(ctx, db.RevokeAccessGrantParams{BusinessID: f.b.ID, ID: g.ID, Version: 1, RevokedBy: uuid.NullUUID{UUID: actor.ID, Valid: true}, RevocationReason: sql.NullString{String: "concurrent revoke", Valid: true}})
-	must(t, err)
+	mustOperations(t, err)
 	started := make(chan struct{})
 	done := make(chan int, 1)
 	go func() {
@@ -369,12 +377,10 @@ func TestGrantRevocationSerializesWithConfirmation(t *testing.T) {
 		done <- code
 	}()
 	<-started
-	select {
-	case code := <-done:
-		t.Fatalf("confirmation bypassed lock: %d", code)
-	case <-time.After(30 * time.Millisecond):
-	}
-	must(t, tx.Commit(ctx))
+	var blocker int
+	mustOperations(t, tx.QueryRow(ctx, "SELECT pg_backend_pid()").Scan(&blocker))
+	waitForOperationsBlocked(t, f.operationsFixture, blocker, 1)
+	mustOperations(t, tx.Commit(ctx))
 	if code := <-done; code != 403 {
 		t.Fatalf("confirmation after revoke %d", code)
 	}
@@ -384,15 +390,15 @@ func TestGrantRevocationSerializesWithConfirmation(t *testing.T) {
 }
 
 func TestGrantFallbackRestrictsIntakeResourcesAndAdvancedSettings(t *testing.T) {
-	f := setupGrants(t)
+	f := setupOperationsGrants(t)
 	ctx := context.Background()
 	_, err := f.h.RT.Pool.Exec(ctx, "UPDATE business_subscriptions SET tier='essential',status='active',modules=ARRAY['appointments','preorders'] WHERE business_id=$1", f.b.ID)
-	must(t, err)
+	mustOperations(t, err)
 	g := f.grant(t, "appointments", "business", nil)
 	extra, err := f.h.RT.Q.SaveAppointmentResource(ctx, db.SaveAppointmentResourceParams{ID: uuid.New(), BusinessID: f.b.ID, Name: "ZZZ extra", Active: true, ServiceIds: []uuid.UUID{}, Hours: []byte("[]"), ClosedDates: []byte("[]")})
-	must(t, err)
+	mustOperations(t, err)
 	_, err = f.h.RT.Pool.Exec(ctx, "UPDATE services SET buffer_minutes=10 WHERE id=$1", f.svc.ID)
-	must(t, err)
+	mustOperations(t, err)
 	code, data := f.adminRequest("POST", "/"+g.ID.String()+"/revoke", accessgrants.RevokeInput{Version: 1, InternalReason: "fallback"})
 	if code != 200 {
 		t.Fatalf("revoke %d %s", code, data)
@@ -401,26 +407,26 @@ func TestGrantFallbackRestrictsIntakeResourcesAndAdvancedSettings(t *testing.T) 
 	var availability struct {
 		Slots []json.RawMessage `json:"slots"`
 	}
-	must(t, json.Unmarshal(data, &availability))
+	mustOperations(t, json.Unmarshal(data, &availability))
 	if code != 200 || len(availability.Slots) != 0 {
 		t.Fatal("extra resource still contributes to Essential intake")
 	}
 	r := f.appointment(t, "+525555551301", f.start)
 	stored, err := f.h.RT.Q.GetAppointment(ctx, db.GetAppointmentParams{BusinessID: f.b.ID, ID: r.ID})
-	must(t, err)
+	mustOperations(t, err)
 	if stored.BufferMinutes != 0 {
 		t.Fatal("advanced buffer still contributes to Essential intake")
 	}
 	// Essential intake ignores the retained Business capacity limit.
 	w, err := f.h.RT.Q.UpsertPickupWindow(ctx, db.UpsertPickupWindowParams{BusinessID: f.b.ID, StartsAt: operations.TS(f.start), EndsAt: operations.TS(f.start.Add(30 * time.Minute))})
-	must(t, err)
+	mustOperations(t, err)
 	for i := 0; i < 2; i++ {
 		code, data := f.request("POST", "/public/businesses/"+f.b.Slug+"/preorders", uuid.NewString(), map[string]any{"customer_name": "Essential Customer", "customer_phone": fmt.Sprintf("+52555555900%d", i), "pickup_window_id": w.ID, "items": []map[string]any{{"variant_id": f.variant.ID, "quantity": "1", "unit_price": "50.00"}}}, false)
 		if code != 201 {
 			t.Fatalf("Essential create %d %s", code, data)
 		}
 		var order operations.Record
-		must(t, json.Unmarshal(data, &order))
+		mustOperations(t, json.Unmarshal(data, &order))
 		code, data = f.request("POST", "/businesses/"+f.b.ID.String()+"/preorders/"+order.ID.String()+"/transitions", uuid.NewString(), operations.TransitionInput{Status: "confirmed", Version: 1}, true)
 		if code != 200 {
 			t.Fatalf("Essential ignores Business capacity %d %s", code, data)
@@ -431,12 +437,12 @@ func TestGrantFallbackRestrictsIntakeResourcesAndAdvancedSettings(t *testing.T) 
 		t.Fatalf("settings %d %s", code, savedBody)
 	}
 	var saved operations.Settings
-	must(t, json.Unmarshal(savedBody, &saved))
+	mustOperations(t, json.Unmarshal(savedBody, &saved))
 	if saved.MaxOrdersPerSlot != 1 {
 		t.Fatal("downgrade rewrote saved settings")
 	}
 	resources, err := f.h.RT.Q.ListAppointmentResources(ctx, f.b.ID)
-	must(t, err)
+	mustOperations(t, err)
 	if len(resources) != 2 || !resources[1].Active {
 		t.Fatal("fallback deleted or disabled saved resource")
 	}
@@ -445,10 +451,10 @@ func TestGrantFallbackRestrictsIntakeResourcesAndAdvancedSettings(t *testing.T) 
 func TestGrantFallbackAllowsResourceEditsWithoutIncreasingCapacity(t *testing.T) {
 	for _, state := range []string{"expired", "revoked"} {
 		t.Run(state, func(t *testing.T) {
-			f := setupGrants(t)
+			f := setupOperationsGrants(t)
 			ctx := context.Background()
 			_, err := f.h.RT.Pool.Exec(ctx, "UPDATE business_subscriptions SET tier='essential',status='active',modules=ARRAY['appointments'] WHERE business_id=$1", f.b.ID)
-			must(t, err)
+			mustOperations(t, err)
 			g := f.grant(t, "appointments", "business", nil)
 			base := "/businesses/" + f.b.ID.String() + "/appointment-resources"
 			createResource := func(name string, active bool) operations.Resource {
@@ -458,14 +464,14 @@ func TestGrantFallbackAllowsResourceEditsWithoutIncreasingCapacity(t *testing.T)
 					t.Fatalf("create resource %d %s", code, data)
 				}
 				var resource operations.Resource
-				must(t, json.Unmarshal(data, &resource))
+				mustOperations(t, json.Unmarshal(data, &resource))
 				return resource
 			}
 			extra := createResource("ZZZ extra", true)
 			inactive := createResource("ZZZ inactive", false)
 			if state == "expired" {
 				_, err = f.h.RT.Pool.Exec(ctx, "UPDATE business_access_grants SET expires_at=$1 WHERE id=$2", time.Now().Add(-time.Minute), g.ID)
-				must(t, err)
+				mustOperations(t, err)
 			} else {
 				code, data := f.adminRequest("POST", "/"+g.ID.String()+"/revoke", accessgrants.RevokeInput{Version: 1, InternalReason: "fallback"})
 				if code != 200 {
@@ -481,7 +487,7 @@ func TestGrantFallbackAllowsResourceEditsWithoutIncreasingCapacity(t *testing.T)
 					t.Fatalf("edit retained active resource %d %s", code, data)
 				}
 				var saved operations.Resource
-				must(t, json.Unmarshal(data, &saved))
+				mustOperations(t, json.Unmarshal(data, &saved))
 				if saved.Name != "Renamed "+resource.Name || !saved.Active {
 					t.Fatalf("basic edit was not saved: %+v", saved)
 				}
@@ -514,14 +520,14 @@ func TestGrantFallbackAllowsResourceEditsWithoutIncreasingCapacity(t *testing.T)
 }
 
 func TestEssentialCanEditBasicFieldsWhileRetainingBusinessConfiguration(t *testing.T) {
-	f := setupGrants(t)
+	f := setupOperationsGrants(t)
 	ctx := context.Background()
 	_, err := f.h.RT.Pool.Exec(ctx, "UPDATE business_subscriptions SET tier='essential',status='active',modules=ARRAY['appointments','preorders'] WHERE business_id=$1", f.b.ID)
-	must(t, err)
+	mustOperations(t, err)
 	_, err = f.h.RT.Pool.Exec(ctx, "UPDATE services SET buffer_minutes=10 WHERE id=$1", f.svc.ID)
-	must(t, err)
+	mustOperations(t, err)
 	_, err = f.h.RT.Pool.Exec(ctx, "UPDATE appointment_resources SET service_ids=ARRAY[$1]::uuid[] WHERE id=$2", f.svc.ID, f.resource.ID)
-	must(t, err)
+	mustOperations(t, err)
 	base := "/businesses/" + f.b.ID.String()
 	for _, c := range []struct {
 		path string
@@ -544,21 +550,21 @@ func TestEssentialCanEditBasicFieldsWhileRetainingBusinessConfiguration(t *testi
 		t.Fatalf("settings %d %s", code, savedBody)
 	}
 	var saved operations.Settings
-	must(t, json.Unmarshal(savedBody, &saved))
+	mustOperations(t, json.Unmarshal(savedBody, &saved))
 	if saved.MaxOrdersPerSlot != 1 {
 		t.Fatal("basic edit erased advanced settings")
 	}
 }
 
 func TestGrantAPIRevocationWaitsForOperationalLock(t *testing.T) {
-	f := setupGrants(t)
+	f := setupOperationsGrants(t)
 	g := f.grant(t, "appointments", "business", nil)
 	ctx := context.Background()
 	tx, err := f.h.RT.Pool.Begin(ctx)
-	must(t, err)
+	mustOperations(t, err)
 	defer tx.Rollback(ctx)
 	_, err = f.h.RT.Q.WithTx(tx).LockSubscription(ctx, f.b.ID)
-	must(t, err)
+	mustOperations(t, err)
 	done := make(chan int, 1)
 	started := make(chan struct{})
 	go func() {
@@ -567,12 +573,10 @@ func TestGrantAPIRevocationWaitsForOperationalLock(t *testing.T) {
 		done <- code
 	}()
 	<-started
-	select {
-	case code := <-done:
-		t.Fatalf("grant API bypassed operational lock: %d", code)
-	case <-time.After(30 * time.Millisecond):
-	}
-	must(t, tx.Commit(ctx))
+	var blocker int
+	mustOperations(t, tx.QueryRow(ctx, "SELECT pg_backend_pid()").Scan(&blocker))
+	waitForOperationsBlocked(t, f.operationsFixture, blocker, 1)
+	mustOperations(t, tx.Commit(ctx))
 	if code := <-done; code != 200 {
 		t.Fatalf("revoke after unlock %d", code)
 	}
