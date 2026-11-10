@@ -1,42 +1,30 @@
 package catalog
 
 import (
-	"database/sql"
-	"strings"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/palmieridev/openlocal-api/internal/api"
-	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
+	"github.com/palmieridev/openlocal-api/internal/catalog/catalogpostgres"
+	"github.com/palmieridev/openlocal-api/internal/catalog/management"
 	v "github.com/palmieridev/openlocal-api/internal/platform/validator"
 )
 
 type Handler struct {
-	rt api.Runtime
+	rt      api.Runtime
+	service *management.Service
 }
 
 func NewHandler(rt api.Runtime) Handler {
-	return Handler{rt: rt}
+	store := catalogpostgres.New(rt.Pool, rt.Q)
+	return Handler{rt: rt, service: management.New(store, store, store)}
 }
 
-func (h Handler) RegisterPrivateRoutes(private fiber.Router) {
-	private.Post("/products", h.createProduct)
-	private.Get("/products", h.listProducts)
-	private.Get("/products/:id/variants", h.listVariantsByProduct)
-	private.Get("/products/:id", h.getProduct)
-	private.Patch("/products/:id", h.updateProduct)
-	private.Delete("/products/:id", h.archiveProduct)
-
-	private.Post("/variants", h.createVariant)
-	private.Get("/variants/by-barcode/:barcode", h.getVariantByBarcode)
-	private.Get("/variants/by-sku/:sku", h.getVariantBySKU)
-	private.Get("/variants/:id", h.getVariant)
-	private.Patch("/variants/:id", h.updateVariant)
-	private.Delete("/variants/:id", h.archiveVariant)
-}
-
-func (h Handler) RegisterPublicRoutes(apiGroup fiber.Router) {
-	apiGroup.Get("/public/businesses/:slug/products", h.listPublicProducts)
+func (h Handler) identity(c *fiber.Ctx, businessID uuid.UUID, roles ...string) (management.Identity, error) {
+	_, user, err := h.rt.RequireBusinessRole(c, businessID, roles...)
+	if err != nil {
+		return management.Identity{}, err
+	}
+	return management.Identity{BusinessID: businessID, ActorID: user.ID}, nil
 }
 
 func (h Handler) createProduct(c *fiber.Ctx) error {
@@ -44,78 +32,23 @@ func (h Handler) createProduct(c *fiber.Ctx) error {
 	if err := v.DecodeStrict(c, &req); err != nil {
 		return err
 	}
-	params, businessID, err := ProductParams(req)
+	businessID, err := v.ParseUUID(req.BusinessID, "business_id")
 	if err != nil {
 		return err
 	}
-	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager"); err != nil {
-		return err
+	input := productInput(req)
+	if _, err := management.ParseProduct(input); err != nil {
+		return httpError(err)
 	}
-	product, err := h.rt.Q.CreateProduct(c.Context(), params)
+	identity, err := h.identity(c, businessID, "owner", "manager")
 	if err != nil {
 		return err
 	}
-	return c.Status(fiber.StatusCreated).JSON(MapProduct(product, true))
-}
-
-func (h Handler) listProducts(c *fiber.Ctx) error {
-	businessID, err := api.BusinessIDFromQuery(c)
+	result, err := h.service.CreateProduct(c.Context(), identity, input)
 	if err != nil {
-		return err
+		return httpError(err)
 	}
-	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager", "staff"); err != nil {
-		return err
-	}
-	limit, offset, err := v.Page(c)
-	if err != nil {
-		return err
-	}
-	products, err := h.rt.Q.ListProducts(c.Context(), db.ListProductsParams{BusinessID: businessID, Limit: limit, Offset: offset})
-	if err != nil {
-		return err
-	}
-	out := make([]ProductResponse, 0, len(products))
-	for _, product := range products {
-		out = append(out, MapProduct(product, true))
-	}
-	return c.JSON(out)
-}
-
-func (h Handler) getProduct(c *fiber.Ctx) error {
-	id, businessID, err := api.IDAndBusinessFromRequest(c, "product id")
-	if err != nil {
-		return err
-	}
-	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager", "staff"); err != nil {
-		return err
-	}
-	product, err := h.rt.Q.GetProductForBusiness(c.Context(), db.GetProductForBusinessParams{ID: id, BusinessID: businessID})
-	if err != nil {
-		return err
-	}
-	return c.JSON(MapProduct(product, true))
-}
-
-func (h Handler) listVariantsByProduct(c *fiber.Ctx) error {
-	productID, businessID, err := api.IDAndBusinessFromRequest(c, "product id")
-	if err != nil {
-		return err
-	}
-	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager", "staff"); err != nil {
-		return err
-	}
-	if _, err := h.rt.Q.GetProductForBusiness(c.Context(), db.GetProductForBusinessParams{ID: productID, BusinessID: businessID}); err != nil {
-		return err
-	}
-	variants, err := h.rt.Q.ListVariantsByProduct(c.Context(), db.ListVariantsByProductParams{ProductID: productID, BusinessID: businessID})
-	if err != nil {
-		return err
-	}
-	out := make([]VariantResponse, 0, len(variants))
-	for _, variant := range variants {
-		out = append(out, MapVariant(variant.ProductVariant, variant.ImageUrl, true))
-	}
-	return c.JSON(out)
+	return c.Status(fiber.StatusCreated).JSON(productResponse(result, true))
 }
 
 func (h Handler) updateProduct(c *fiber.Ctx) error {
@@ -127,18 +60,39 @@ func (h Handler) updateProduct(c *fiber.Ctx) error {
 	if err := v.DecodeStrict(c, &req); err != nil {
 		return err
 	}
-	params, businessID, err := UpdateProductParams(id, req)
+	businessID, err := v.ParseUUID(req.BusinessID, "business_id")
 	if err != nil {
 		return err
 	}
-	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager"); err != nil {
-		return err
+	input := productInput(req)
+	if _, err := management.ParseProduct(input); err != nil {
+		return httpError(err)
 	}
-	product, err := h.rt.Q.UpdateProduct(c.Context(), params)
+	identity, err := h.identity(c, businessID, "owner", "manager")
 	if err != nil {
 		return err
 	}
-	return c.JSON(MapProduct(product, true))
+	result, err := h.service.UpdateProduct(c.Context(), identity, id, input)
+	if err != nil {
+		return httpError(err)
+	}
+	return c.JSON(productResponse(result, true))
+}
+
+func (h Handler) getProduct(c *fiber.Ctx) error {
+	id, businessID, err := api.IDAndBusinessFromRequest(c, "product id")
+	if err != nil {
+		return err
+	}
+	identity, err := h.identity(c, businessID, "owner", "manager", "staff")
+	if err != nil {
+		return err
+	}
+	result, err := h.service.Product(c.Context(), identity, id)
+	if err != nil {
+		return httpError(err)
+	}
+	return c.JSON(productResponse(result, true))
 }
 
 func (h Handler) archiveProduct(c *fiber.Ctx) error {
@@ -146,11 +100,12 @@ func (h Handler) archiveProduct(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager"); err != nil {
+	identity, err := h.identity(c, businessID, "owner", "manager")
+	if err != nil {
 		return err
 	}
-	if err := h.rt.Q.ArchiveProduct(c.Context(), db.ArchiveProductParams{ID: id, BusinessID: businessID}); err != nil {
-		return err
+	if err := h.service.ArchiveProduct(c.Context(), identity, id); err != nil {
+		return httpError(err)
 	}
 	return c.SendStatus(fiber.StatusNoContent)
 }
@@ -160,125 +115,23 @@ func (h Handler) createVariant(c *fiber.Ctx) error {
 	if err := v.DecodeStrict(c, &req); err != nil {
 		return err
 	}
-	params, businessID, err := VariantParams(req)
+	businessID, err := v.ParseUUID(req.BusinessID, "business_id")
 	if err != nil {
 		return err
 	}
-	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager"); err != nil {
-		return err
+	input := variantInput(req)
+	if _, err := management.ParseVariant(input); err != nil {
+		return httpError(err)
 	}
-	image, err := VariantImageURL(req.ImageURL)
+	identity, err := h.identity(c, businessID, "owner", "manager")
 	if err != nil {
 		return err
 	}
-	tx, err := h.rt.Pool.Begin(c.Context())
+	result, err := h.service.CreateVariant(c.Context(), identity, input)
 	if err != nil {
-		return err
+		return httpError(err)
 	}
-	defer api.Rollback(c.Context(), tx)
-	qtx := h.rt.Q.WithTx(tx)
-	if _, err := qtx.GetProductForBusiness(c.Context(), db.GetProductForBusinessParams{ID: params.ProductID, BusinessID: businessID}); err != nil {
-		return err
-	}
-	variant, err := qtx.CreateVariant(c.Context(), params)
-	if err != nil {
-		return err
-	}
-	imageURL, err := applyVariantImage(c, qtx, variant.ID, image)
-	if err != nil {
-		return err
-	}
-	if err := tx.Commit(c.Context()); err != nil {
-		return err
-	}
-	out := MapVariant(variant, "", true)
-	out.ImageURL = imageURL
-	return c.Status(fiber.StatusCreated).JSON(out)
-}
-
-// applyVariantImage persists the variant's single storefront image and reports
-// the URL to echo back. A nil target leaves the stored image as-is; an empty
-// string clears it. Variants hold at most one image, so a write replaces the set.
-func applyVariantImage(c *fiber.Ctx, q *db.Queries, variantID uuid.UUID, target *string) (*string, error) {
-	if target == nil {
-		current, err := q.GetVariantImage(c.Context(), variantID)
-		if err != nil {
-			return nil, err
-		}
-		return stringPtr(current), nil
-	}
-	if err := q.DeleteVariantImages(c.Context(), variantID); err != nil {
-		return nil, err
-	}
-	if *target == "" {
-		return nil, nil
-	}
-	if err := q.CreateVariantImage(c.Context(), db.CreateVariantImageParams{
-		VariantID: variantID,
-		Url:       *target,
-	}); err != nil {
-		return nil, err
-	}
-	return target, nil
-}
-
-func (h Handler) getVariant(c *fiber.Ctx) error {
-	id, businessID, err := api.IDAndBusinessFromRequest(c, "variant id")
-	if err != nil {
-		return err
-	}
-	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager", "staff"); err != nil {
-		return err
-	}
-	variant, err := h.rt.Q.GetVariantForBusiness(c.Context(), db.GetVariantForBusinessParams{ID: id, BusinessID: businessID})
-	if err != nil {
-		return err
-	}
-	return c.JSON(MapVariant(variant.ProductVariant, variant.ImageUrl, true))
-}
-
-func (h Handler) getVariantByBarcode(c *fiber.Ctx) error {
-	businessID, err := api.BusinessIDFromQuery(c)
-	if err != nil {
-		return err
-	}
-	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager", "staff"); err != nil {
-		return err
-	}
-	barcode := v.Clean(c.Params("barcode"))
-	if err := v.StringLength(barcode, "barcode", 1, 128); err != nil {
-		return err
-	}
-	variant, err := h.rt.Q.GetVariantByBarcode(c.Context(), db.GetVariantByBarcodeParams{
-		BusinessID: businessID,
-		Barcode:    sql.NullString{String: barcode, Valid: barcode != ""},
-	})
-	if err != nil {
-		return err
-	}
-	return c.JSON(MapVariant(variant.ProductVariant, variant.ImageUrl, true))
-}
-
-func (h Handler) getVariantBySKU(c *fiber.Ctx) error {
-	businessID, err := api.BusinessIDFromQuery(c)
-	if err != nil {
-		return err
-	}
-	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager", "staff"); err != nil {
-		return err
-	}
-	sku := strings.ToUpper(v.Clean(c.Params("sku")))
-	if err := v.StringLength(sku, "sku", 2, 80); err != nil {
-		return err
-	}
-	variant, err := h.rt.Q.GetVariantBySKU(c.Context(), db.GetVariantBySKUParams{
-		BusinessID: businessID,
-		Sku:        sku,
-	})
-	if err != nil {
-		return err
-	}
-	return c.JSON(MapVariant(variant.ProductVariant, variant.ImageUrl, true))
+	return c.Status(fiber.StatusCreated).JSON(variantResponse(result, true))
 }
 
 func (h Handler) updateVariant(c *fiber.Ctx) error {
@@ -290,37 +143,39 @@ func (h Handler) updateVariant(c *fiber.Ctx) error {
 	if err := v.DecodeStrict(c, &req); err != nil {
 		return err
 	}
-	params, businessID, err := UpdateVariantParams(id, req)
+	businessID, err := v.ParseUUID(req.BusinessID, "business_id")
 	if err != nil {
 		return err
 	}
-	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager"); err != nil {
-		return err
+	input := variantInput(req)
+	if _, err := management.ParseVariant(input); err != nil {
+		return httpError(err)
 	}
-	image, err := VariantImageURL(req.ImageURL)
+	identity, err := h.identity(c, businessID, "owner", "manager")
 	if err != nil {
 		return err
 	}
-	tx, err := h.rt.Pool.Begin(c.Context())
+	result, err := h.service.UpdateVariant(c.Context(), identity, id, input)
+	if err != nil {
+		return httpError(err)
+	}
+	return c.JSON(variantResponse(result, true))
+}
+
+func (h Handler) getVariant(c *fiber.Ctx) error {
+	id, businessID, err := api.IDAndBusinessFromRequest(c, "variant id")
 	if err != nil {
 		return err
 	}
-	defer api.Rollback(c.Context(), tx)
-	qtx := h.rt.Q.WithTx(tx)
-	variant, err := qtx.UpdateVariant(c.Context(), params)
+	identity, err := h.identity(c, businessID, "owner", "manager", "staff")
 	if err != nil {
 		return err
 	}
-	imageURL, err := applyVariantImage(c, qtx, variant.ID, image)
+	result, err := h.service.Variant(c.Context(), identity, id)
 	if err != nil {
-		return err
+		return httpError(err)
 	}
-	if err := tx.Commit(c.Context()); err != nil {
-		return err
-	}
-	out := MapVariant(variant, "", true)
-	out.ImageURL = imageURL
-	return c.JSON(out)
+	return c.JSON(variantResponse(result, true))
 }
 
 func (h Handler) archiveVariant(c *fiber.Ctx) error {
@@ -328,13 +183,94 @@ func (h Handler) archiveVariant(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager"); err != nil {
+	identity, err := h.identity(c, businessID, "owner", "manager")
+	if err != nil {
 		return err
 	}
-	if err := h.rt.Q.ArchiveVariant(c.Context(), db.ArchiveVariantParams{ID: id, BusinessID: businessID}); err != nil {
-		return err
+	if err := h.service.ArchiveVariant(c.Context(), identity, id); err != nil {
+		return httpError(err)
 	}
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (h Handler) listProducts(c *fiber.Ctx) error {
+	businessID, err := api.BusinessIDFromQuery(c)
+	if err != nil {
+		return err
+	}
+	identity, err := h.identity(c, businessID, "owner", "manager", "staff")
+	if err != nil {
+		return err
+	}
+	limit, offset, err := v.Page(c)
+	if err != nil {
+		return err
+	}
+	rows, err := h.service.Products(c.Context(), identity, management.Page{Limit: limit, Offset: offset})
+	if err != nil {
+		return httpError(err)
+	}
+	out := make([]ProductResponse, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, productResponse(row, true))
+	}
+	return c.JSON(out)
+}
+
+func (h Handler) listVariantsByProduct(c *fiber.Ctx) error {
+	id, businessID, err := api.IDAndBusinessFromRequest(c, "product id")
+	if err != nil {
+		return err
+	}
+	identity, err := h.identity(c, businessID, "owner", "manager", "staff")
+	if err != nil {
+		return err
+	}
+	limit, offset, err := v.Page(c)
+	if err != nil {
+		return err
+	}
+	rows, err := h.service.Variants(c.Context(), identity, id, management.Page{Limit: limit, Offset: offset})
+	if err != nil {
+		return httpError(err)
+	}
+	out := make([]VariantResponse, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, variantResponse(row, true))
+	}
+	return c.JSON(out)
+}
+
+func (h Handler) getVariantBySKU(c *fiber.Ctx) error {
+	businessID, err := api.BusinessIDFromQuery(c)
+	if err != nil {
+		return err
+	}
+	identity, err := h.identity(c, businessID, "owner", "manager", "staff")
+	if err != nil {
+		return err
+	}
+	result, err := h.service.BySKU(c.Context(), identity, c.Params("sku"))
+	if err != nil {
+		return httpError(err)
+	}
+	return c.JSON(variantResponse(result, true))
+}
+
+func (h Handler) getVariantByBarcode(c *fiber.Ctx) error {
+	businessID, err := api.BusinessIDFromQuery(c)
+	if err != nil {
+		return err
+	}
+	identity, err := h.identity(c, businessID, "owner", "manager", "staff")
+	if err != nil {
+		return err
+	}
+	result, err := h.service.ByBarcode(c.Context(), identity, c.Params("barcode"))
+	if err != nil {
+		return httpError(err)
+	}
+	return c.JSON(variantResponse(result, true))
 }
 
 func (h Handler) listPublicProducts(c *fiber.Ctx) error {
@@ -342,17 +278,13 @@ func (h Handler) listPublicProducts(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	slug := v.Slug(c.Params("slug"))
-	if err := v.ValidateSlug(slug); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, err.Error())
-	}
-	rows, err := h.rt.Q.ListPublicProductsByBusinessSlug(c.Context(), db.ListPublicProductsByBusinessSlugParams{
-		Slug:   slug,
-		Limit:  limit,
-		Offset: offset,
-	})
+	rows, err := h.service.PublicProducts(c.Context(), c.Params("slug"), management.Page{Limit: limit, Offset: offset})
 	if err != nil {
-		return err
+		return httpError(err)
 	}
-	return c.JSON(PublicProductRows(rows))
+	out := make([]fiber.Map, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, publicProductResponse(row))
+	}
+	return c.JSON(out)
 }

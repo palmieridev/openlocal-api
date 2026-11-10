@@ -2,9 +2,10 @@ package auth
 
 import (
 	"context"
-	"database/sql"
 
 	"github.com/google/uuid"
+	"github.com/palmieridev/openlocal-api/internal/identity"
+	"github.com/palmieridev/openlocal-api/internal/identity/identitypostgres"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 )
 
@@ -36,33 +37,15 @@ func WithFiberLocals(base context.Context, auth Context) context.Context {
 }
 
 func (a Context) UpsertUser(ctx context.Context, q *db.Queries) (Context, db.User, error) {
-	user, err := q.UpsertUserFromClerk(ctx, db.UpsertUserFromClerkParams{
-		ClerkUserID: a.ClerkUserID,
-		Email:       nullString(a.Email),
-		FirstName:   nullString(a.FirstName),
-		LastName:    nullString(a.LastName),
-		ImageUrl:    nullString(a.ImageURL),
+	user, err := identity.NewUsers(identitypostgres.NewUsers(q)).Upsert(ctx, identity.Profile{
+		ClerkUserID: a.ClerkUserID, Email: a.Email, FirstName: a.FirstName, LastName: a.LastName, ImageURL: a.ImageURL,
 	})
 	if err != nil {
 		return a, db.User{}, err
 	}
 	a.UserID = user.ID
-	return a, user, nil
+	return a, identitypostgres.UserRow(user), nil
 }
 
-func nullString(value string) sql.NullString {
-	return sql.NullString{String: value, Valid: value != ""}
-}
-
-func MapClerkRole(role string) string {
-	switch role {
-	case "org:admin", "admin", "owner":
-		return "owner"
-	case "manager":
-		return "manager"
-	case "org:member", "member", "staff":
-		return "staff"
-	default:
-		return ""
-	}
-}
+// MapClerkRole retains the existing auth policy entry point.
+func MapClerkRole(role string) string { return identity.MapClerkRole(role) }

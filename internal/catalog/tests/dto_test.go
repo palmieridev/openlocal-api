@@ -1,4 +1,4 @@
-package catalog
+package catalog_test
 
 import (
 	"database/sql"
@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/palmieridev/openlocal-api/internal/catalog"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	"github.com/shopspring/decimal"
 )
@@ -27,7 +28,7 @@ func TestPublicVariantDTOExcludesPrivateFields(t *testing.T) {
 		ReorderPoint:      decimal.NewFromInt(5),
 		Status:            "active",
 	}
-	body, err := json.Marshal(MapVariant(variant, "", false))
+	body, err := json.Marshal(catalog.MapVariant(variant, "", false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +44,7 @@ func TestPublicVariantDTOExcludesPrivateFields(t *testing.T) {
 }
 
 func TestMapVariantIncludesVisibilityForOwners(t *testing.T) {
-	variant := MapVariant(db.ProductVariant{IsPublic: false}, "", true)
+	variant := catalog.MapVariant(db.ProductVariant{IsPublic: false}, "", true)
 	if variant.IsPublic == nil || *variant.IsPublic {
 		t.Fatalf("is_public = %v, want false", variant.IsPublic)
 	}
@@ -51,19 +52,19 @@ func TestMapVariantIncludesVisibilityForOwners(t *testing.T) {
 
 func TestProductParamsRejectsInvalidEnumsAndLengths(t *testing.T) {
 	businessID := uuid.New().String()
-	for _, req := range []ProductRequest{
+	for _, req := range []catalog.ProductRequest{
 		{BusinessID: businessID, Name: "Coffee", ProductType: "subscription"},
 		{BusinessID: businessID, Name: "Coffee", Status: "deleted"},
 		{BusinessID: businessID, Name: strings.Repeat("x", 181)},
 	} {
-		if _, _, err := ProductParams(req); err == nil {
+		if _, _, err := catalog.ProductParams(req); err == nil {
 			t.Fatalf("expected validation error for %+v", req)
 		}
 	}
 }
 
 func TestMapVariantMapsOptionalImageURL(t *testing.T) {
-	variant := MapVariant(db.ProductVariant{
+	variant := catalog.MapVariant(db.ProductVariant{
 		Description: sql.NullString{String: "Madera sólida", Valid: true},
 		PriceNote:   sql.NullString{String: "Precio sujeto a medidas", Valid: true},
 	}, " https://cdn.example.com/variant.jpg ", true)
@@ -77,7 +78,7 @@ func TestMapVariantMapsOptionalImageURL(t *testing.T) {
 		t.Fatalf("price_note = %v, want public price qualification", variant.PriceNote)
 	}
 
-	if imageURL := MapVariant(db.ProductVariant{}, "", true).ImageURL; imageURL != nil {
+	if imageURL := catalog.MapVariant(db.ProductVariant{}, "", true).ImageURL; imageURL != nil {
 		t.Fatalf("image_url = %q, want nil", *imageURL)
 	}
 }
@@ -85,7 +86,7 @@ func TestMapVariantMapsOptionalImageURL(t *testing.T) {
 func TestVariantParamsCleansOptionalPublicDetails(t *testing.T) {
 	description := "  Mueble hecho a la medida  "
 	priceNote := "  El precio final depende de los acabados.  "
-	req := VariantRequest{
+	req := catalog.VariantRequest{
 		BusinessID:  uuid.New().String(),
 		ProductID:   uuid.New().String(),
 		SKU:         "SKU-DETAILS",
@@ -93,7 +94,7 @@ func TestVariantParamsCleansOptionalPublicDetails(t *testing.T) {
 		Description: &description,
 		PriceNote:   &priceNote,
 	}
-	params, _, err := VariantParams(req)
+	params, _, err := catalog.VariantParams(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +112,7 @@ func TestVariantParamsRejectsOverlongPublicDetails(t *testing.T) {
 		"price_note":  strings.Repeat("x", 501),
 	} {
 		t.Run(field, func(t *testing.T) {
-			req := VariantRequest{
+			req := catalog.VariantRequest{
 				BusinessID: uuid.New().String(),
 				ProductID:  uuid.New().String(),
 				SKU:        "SKU-LONG",
@@ -122,7 +123,7 @@ func TestVariantParamsRejectsOverlongPublicDetails(t *testing.T) {
 			} else {
 				req.PriceNote = &value
 			}
-			if _, _, err := VariantParams(req); err == nil {
+			if _, _, err := catalog.VariantParams(req); err == nil {
 				t.Fatalf("expected %s length validation", field)
 			}
 		})
@@ -130,7 +131,7 @@ func TestVariantParamsRejectsOverlongPublicDetails(t *testing.T) {
 }
 
 func TestVariantParamsRejectsUnsafeNumericAndEnumValues(t *testing.T) {
-	base := VariantRequest{
+	base := catalog.VariantRequest{
 		BusinessID: uuid.New().String(),
 		ProductID:  uuid.New().String(),
 		SKU:        "SKU-1",
@@ -138,19 +139,19 @@ func TestVariantParamsRejectsUnsafeNumericAndEnumValues(t *testing.T) {
 	}
 	tests := []struct {
 		name   string
-		mutate func(*VariantRequest)
+		mutate func(*catalog.VariantRequest)
 	}{
-		{"price scale", func(req *VariantRequest) { req.Price = "10.001" }},
-		{"negative cost", func(req *VariantRequest) { value := "-1"; req.Cost = &value }},
-		{"currency", func(req *VariantRequest) { req.Currency = "MX" }},
-		{"stock status", func(req *VariantRequest) { req.PublicStockStatus = "secret" }},
-		{"lead time", func(req *VariantRequest) { req.LeadTimeDays = 3651 }},
+		{"price scale", func(req *catalog.VariantRequest) { req.Price = "10.001" }},
+		{"negative cost", func(req *catalog.VariantRequest) { value := "-1"; req.Cost = &value }},
+		{"currency", func(req *catalog.VariantRequest) { req.Currency = "MX" }},
+		{"stock status", func(req *catalog.VariantRequest) { req.PublicStockStatus = "secret" }},
+		{"lead time", func(req *catalog.VariantRequest) { req.LeadTimeDays = 3651 }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			req := base
 			test.mutate(&req)
-			if _, _, err := VariantParams(req); err == nil {
+			if _, _, err := catalog.VariantParams(req); err == nil {
 				t.Fatal("expected validation error")
 			}
 		})
@@ -158,13 +159,13 @@ func TestVariantParamsRejectsUnsafeNumericAndEnumValues(t *testing.T) {
 }
 
 func TestVariantParamsDefaultsAttributesToObject(t *testing.T) {
-	req := VariantRequest{
+	req := catalog.VariantRequest{
 		BusinessID: uuid.New().String(),
 		ProductID:  uuid.New().String(),
 		SKU:        "SKU-1",
 		Price:      "10.00",
 	}
-	params, _, err := VariantParams(req)
+	params, _, err := catalog.VariantParams(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,14 +179,14 @@ func TestVariantParamsDefaultsAttributesToObject(t *testing.T) {
 
 func TestVariantVisibilityCanBeCreatedHiddenAndOmittedOnUpdate(t *testing.T) {
 	hidden := false
-	req := VariantRequest{
+	req := catalog.VariantRequest{
 		BusinessID: uuid.New().String(),
 		ProductID:  uuid.New().String(),
 		SKU:        "SKU-HIDDEN",
 		Price:      "10.00",
 		IsPublic:   &hidden,
 	}
-	created, _, err := VariantParams(req)
+	created, _, err := catalog.VariantParams(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +195,7 @@ func TestVariantVisibilityCanBeCreatedHiddenAndOmittedOnUpdate(t *testing.T) {
 	}
 
 	req.IsPublic = nil
-	updated, _, err := UpdateVariantParams(uuid.New(), req)
+	updated, _, err := catalog.UpdateVariantParams(uuid.New(), req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +205,7 @@ func TestVariantVisibilityCanBeCreatedHiddenAndOmittedOnUpdate(t *testing.T) {
 }
 
 func TestVariantImageURLOmittedLeavesImageUnchanged(t *testing.T) {
-	got, err := VariantImageURL(nil)
+	got, err := catalog.VariantImageURL(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +216,7 @@ func TestVariantImageURLOmittedLeavesImageUnchanged(t *testing.T) {
 
 func TestVariantImageURLEmptyRemovesImage(t *testing.T) {
 	for _, raw := range []string{"", "   "} {
-		got, err := VariantImageURL(&raw)
+		got, err := catalog.VariantImageURL(&raw)
 		if err != nil {
 			t.Fatalf("%q: %v", raw, err)
 		}
@@ -227,7 +228,7 @@ func TestVariantImageURLEmptyRemovesImage(t *testing.T) {
 
 func TestVariantImageURLAcceptsAbsoluteHTTPURLs(t *testing.T) {
 	raw := "  https://xyz.public.blob.vercel-storage.com/products/abc.jpg  "
-	got, err := VariantImageURL(&raw)
+	got, err := catalog.VariantImageURL(&raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +245,7 @@ func TestVariantImageURLRejectsNonHTTPValues(t *testing.T) {
 		"data:image/png;base64,AAAA",
 		"https://",
 	} {
-		if _, err := VariantImageURL(&raw); err == nil {
+		if _, err := catalog.VariantImageURL(&raw); err == nil {
 			t.Fatalf("%q was accepted, want rejection", raw)
 		}
 	}
@@ -252,13 +253,13 @@ func TestVariantImageURLRejectsNonHTTPValues(t *testing.T) {
 
 func TestVariantImageURLRejectsOverlongValues(t *testing.T) {
 	raw := "https://example.com/" + strings.Repeat("a", 2100)
-	if _, err := VariantImageURL(&raw); err == nil {
+	if _, err := catalog.VariantImageURL(&raw); err == nil {
 		t.Fatal("overlong url was accepted, want rejection")
 	}
 }
 
 func TestVariantRequestAcceptsImageURL(t *testing.T) {
-	var req VariantRequest
+	var req catalog.VariantRequest
 	body := `{"business_id":"b","product_id":"p","sku":"s","image_url":"https://example.com/a.jpg"}`
 	if err := json.Unmarshal([]byte(body), &req); err != nil {
 		t.Fatal(err)
