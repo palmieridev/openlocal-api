@@ -201,6 +201,22 @@ func (q *Queries) DeleteVariantImages(ctx context.Context, variantID uuid.UUID) 
 	return err
 }
 
+const getCatalogCategoryForBusiness = `-- name: GetCatalogCategoryForBusiness :one
+SELECT id FROM categories WHERE id = $1 AND business_id = $2
+`
+
+type GetCatalogCategoryForBusinessParams struct {
+	ID         uuid.UUID `json:"id"`
+	BusinessID uuid.UUID `json:"business_id"`
+}
+
+func (q *Queries) GetCatalogCategoryForBusiness(ctx context.Context, arg GetCatalogCategoryForBusinessParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getCatalogCategoryForBusiness, arg.ID, arg.BusinessID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getProductForBusiness = `-- name: GetProductForBusiness :one
 SELECT id, business_id, category_id, name, slug, description, brand, unit, product_type, is_handmade, is_public, status, created_at, updated_at
 FROM products
@@ -619,6 +635,44 @@ func (q *Queries) ListVariantsByProduct(ctx context.Context, arg ListVariantsByP
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockCatalogVariantForBusiness = `-- name: LockCatalogVariantForBusiness :one
+SELECT id, product_id, business_id, sku, barcode, internal_code, name, attributes, price, cost, currency, track_inventory, public_stock_status, reorder_point, lead_time_days, status, created_at, updated_at, description, price_note, is_public FROM product_variants WHERE id = $1 AND business_id = $2 FOR UPDATE
+`
+
+type LockCatalogVariantForBusinessParams struct {
+	ID         uuid.UUID `json:"id"`
+	BusinessID uuid.UUID `json:"business_id"`
+}
+
+func (q *Queries) LockCatalogVariantForBusiness(ctx context.Context, arg LockCatalogVariantForBusinessParams) (ProductVariant, error) {
+	row := q.db.QueryRow(ctx, lockCatalogVariantForBusiness, arg.ID, arg.BusinessID)
+	var i ProductVariant
+	err := row.Scan(
+		&i.ID,
+		&i.ProductID,
+		&i.BusinessID,
+		&i.Sku,
+		&i.Barcode,
+		&i.InternalCode,
+		&i.Name,
+		&i.Attributes,
+		&i.Price,
+		&i.Cost,
+		&i.Currency,
+		&i.TrackInventory,
+		&i.PublicStockStatus,
+		&i.ReorderPoint,
+		&i.LeadTimeDays,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Description,
+		&i.PriceNote,
+		&i.IsPublic,
+	)
+	return i, err
 }
 
 const searchMarketplaceProducts = `-- name: SearchMarketplaceProducts :many

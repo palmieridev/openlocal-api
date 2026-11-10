@@ -3,6 +3,12 @@ INSERT INTO products (business_id, category_id, name, slug, description, brand, 
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING *;
 
+-- name: GetCatalogCategoryForBusiness :one
+SELECT id FROM categories WHERE id = $1 AND business_id = $2;
+
+-- name: LockCatalogVariantForBusiness :one
+SELECT * FROM product_variants WHERE id = $1 AND business_id = $2 FOR UPDATE;
+
 -- name: ListProducts :many
 SELECT p.*
 FROM products p
