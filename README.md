@@ -96,6 +96,8 @@ failure before retrying; do not blindly force a version or run a down migration.
 - Keep unit, validation, mapping, HTTP, and domain persistence tests in the owning domain or shared package's `tests/` directory, using external test packages that exercise production APIs.
 - Reserve `internal/integration` for cross-package flows; keep domain-specific database tests with their domain and use explicit disposable databases with isolated, cleaned-up fixtures.
 - Run recursive package patterns such as `go test ./internal/catalog/...` or `go test ./...` so test subdirectories execute. See `AGENTS.md` for the project-wide test organization rules.
+- Auth tests exercise signed JWTs through the public verifier and middleware routes; webhook tests verify signed Svix fixtures through the public verifier.
+- Identity and challenge HTTP persistence tests require `OPENLOCAL_IDENTITY_TEST_DATABASE_URL` pointing to a migrated local database named `openlocal_identity_test*`. Run `go test ./internal/auth/... ./internal/webhooks/... ./internal/identity/... ./internal/verification/...`; without this DSN, their database cases skip. CI clones the migrated test database and sets the DSN explicitly.
 
 ```sh
 go test ./...

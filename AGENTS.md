@@ -171,3 +171,10 @@ Without that variable, the database cases skip. CI provisions this database and
 sets both `OPENLOCAL_MOVEMENT_TEST_DATABASE_URL` and
 `OPENLOCAL_INTEGRATION_TESTS=1` to exercise inventory and cross-package database
 flows explicitly.
+
+Identity synchronization and verification tests use
+`OPENLOCAL_IDENTITY_TEST_DATABASE_URL`, pointing to a migrated disposable local
+database whose name starts with `openlocal_identity_test`. CI clones the migrated
+test database before running `internal/identity/tests` and
+`internal/verification/tests` so their persistence and failure-path checks do not
+silently skip.
