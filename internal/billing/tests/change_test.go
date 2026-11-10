@@ -1,32 +1,34 @@
-package billing
+package billing_test
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/palmieridev/openlocal-api/internal/api"
+	"github.com/palmieridev/openlocal-api/internal/billing/application"
 	"github.com/palmieridev/openlocal-api/internal/config"
-	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 )
 
 func TestInvoiceExpandableDecoding(t *testing.T) {
-	for _, raw := range []string{`"in_test"`, `{"id":"in_test","status":"paid","amount_paid":956}`, `null`} {
-		var s subscription
-		if err := json.Unmarshal([]byte(`{"latest_invoice":`+raw+`}`), &s); err != nil {
-			t.Fatalf("%s: %v", raw, err)
+	for _, raw := range []string{`"in_test"`, `{"id":"in_test","status":"paid","amount_paid":956,"created":123}`, `null`} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"id":"sub_test","latest_invoice":` + raw + `}`))
+		}))
+		sub, err := payment(server, config.Config{}).Subscription(t.Context(), "sub_test")
+		server.Close()
+		if err != nil || sub.ID != "sub_test" {
+			t.Fatalf("%s: subscription=%+v err=%v", raw, sub, err)
 		}
-		if raw != "null" && s.LatestInvoice.ID != "in_test" {
-			t.Fatalf("lost invoice ID: %+v", s.LatestInvoice)
+		if raw[0] == '{' && sub.InvoiceCreated != 123 {
+			t.Fatalf("expanded invoice lost created timestamp: %+v", sub)
 		}
 	}
 }
 
-// Reproduce the provider response at the real change-handler boundary. The
-// former decoder failed after Stripe had already applied a successful update.
+// Characterize the provider adapter response, including expandable invoices.
+// The former decoder failed after Stripe had already applied an update.
 func TestImmediateChangeResponses(t *testing.T) {
 	for _, tc := range []struct {
 		name, latestInvoice, pendingUpdate, status, paid, deferred string
@@ -42,6 +44,7 @@ func TestImmediateChangeResponses(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			updates := 0
+			proration := time.Now().Unix()
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				if r.Method == http.MethodGet && r.URL.Path == "/v1/subscriptions/sub_test" {
@@ -58,34 +61,26 @@ func TestImmediateChangeResponses(t *testing.T) {
 				if r.Form.Get("expand[]") != "latest_invoice" || r.Form.Get("payment_behavior") != "pending_if_incomplete" || r.Form.Get("proration_behavior") != "always_invoice" {
 					t.Errorf("unsafe change parameters: %v", r.Form)
 				}
+				if r.Form.Get("proration_date") != strconv.FormatInt(proration, 10) || r.Form.Get("items[0][price]") != "price_business" || r.Form.Get("items[1][price]") != "price_addon" {
+					t.Errorf("lost proration or plan selection: %v", r.Form)
+				}
 				if r.Header.Get("Idempotency-Key") != "change-key" {
 					t.Error("missing idempotency key")
 				}
 				_, _ = w.Write([]byte(`{"id":"sub_test","customer":"cus_test","latest_invoice":` + tc.latestInvoice + `,"pending_update":` + tc.pendingUpdate + `}`))
 			}))
 			defer server.Close()
-			h := NewHandler(api.Runtime{}, config.Config{StripeBusinessPrice: "price_business", StripeSecondModulePrice: "price_addon"})
-			h.Stripe = &Client{HTTP: server.Client(), BaseURL: server.URL, Secret: "sk_test"}
-			local := db.BusinessSubscription{Tier: "essential", Modules: []string{"appointments"}, StripeSubscriptionID: sqlText("sub_test"), StripeCustomerID: sqlText("cus_test")}
-			app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
-			app.Post("/change", func(c *fiber.Ctx) error {
-				result, err := h.change(c, nil, local, changeInput{Tier: "business", Modules: []string{"appointments", "preorders"}, ProrationDate: time.Now().Unix()}, "change-key", false)
-				if err != nil {
-					return err
-				}
-				return c.JSON(result)
-			})
-			response, err := app.Test(httptest.NewRequest(http.MethodPost, "/change", nil))
+			adapter := payment(server, config.Config{StripeBusinessPrice: "price_business", StripeSecondModulePrice: "price_addon"})
+			sub, err := adapter.Subscription(t.Context(), "sub_test")
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer response.Body.Close()
-			var result changeResult
-			if err = json.NewDecoder(response.Body).Decode(&result); err != nil {
+			result, err := adapter.Update(t.Context(), sub, application.ChangeInput{Tier: "business", Modules: []string{"appointments", "preorders"}}, application.ChangePlan{Immediate: true, ProrationDate: proration}, "change-key")
+			if err != nil {
 				t.Fatal(err)
 			}
-			if response.StatusCode != 200 || updates != 1 || result.PaymentStatus != tc.status || result.AmountPaid != tc.paid || result.AmountDeferred != tc.deferred || result.Pending != tc.pending {
-				t.Fatalf("status=%d updates=%d result=%+v", response.StatusCode, updates, result)
+			if updates != 1 || result.PaymentStatus != tc.status || result.AmountPaid != tc.paid || result.AmountDeferred != tc.deferred || result.Pending != tc.pending {
+				t.Fatalf("updates=%d result=%+v", updates, result)
 			}
 		})
 	}

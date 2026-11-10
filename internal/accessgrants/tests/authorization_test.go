@@ -1,4 +1,4 @@
-package accessgrants
+package accessgrants_test
 
 import (
 	"net/http/httptest"
@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/palmieridev/openlocal-api/internal/accessgrants"
 	"github.com/palmieridev/openlocal-api/internal/api"
 	"github.com/palmieridev/openlocal-api/internal/auth"
 )
@@ -14,7 +15,7 @@ import (
 func TestAllGrantRoutesDenyOrdinaryOrgAdmin(t *testing.T) {
 	for _, allowed := range [][]string{nil, {"user_platform"}} {
 		app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
-		NewHandler(api.Runtime{}, allowed).RegisterRoutes(app.Group("/api/v1", auth.Middleware{AllowTestAuth: true}.RequireAuth()))
+		accessgrants.NewHandler(api.Runtime{}, allowed).RegisterRoutes(app.Group("/api/v1", auth.Middleware{AllowTestAuth: true}.RequireAuth()))
 		for _, route := range []struct{ method, path string }{{"GET", ""}, {"POST", ""}, {"GET", "/bad/history"}, {"POST", "/bad/extend"}, {"POST", "/bad/revoke"}} {
 			for _, user := range []string{"", "user_ordinary_owner"} {
 				req := httptest.NewRequest(route.method, "/api/v1/admin/businesses/invalid/grants"+route.path, strings.NewReader("bad json"))

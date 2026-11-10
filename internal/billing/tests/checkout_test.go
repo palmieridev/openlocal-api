@@ -1,18 +1,18 @@
-package billing
+package billing_test
 
 import (
-	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
-	"github.com/palmieridev/openlocal-api/internal/api"
+	"github.com/palmieridev/openlocal-api/internal/billing"
+	"github.com/palmieridev/openlocal-api/internal/billing/application"
 	"github.com/palmieridev/openlocal-api/internal/config"
-	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
+	"github.com/palmieridev/openlocal-api/internal/entitlements/access"
 )
 
 func TestCheckoutPromotionCodes(t *testing.T) {
@@ -36,7 +36,7 @@ func TestCheckoutPromotionCodes(t *testing.T) {
 			var created url.Values
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				if r.Header.Get("Stripe-Version") != StripeVersion {
+				if r.Header.Get("Stripe-Version") != billing.StripeVersion {
 					t.Error("missing pinned API version")
 				}
 				if r.Method == http.MethodGet {
@@ -87,24 +87,25 @@ func TestCheckoutPromotionCodes(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			h := NewHandler(api.Runtime{}, config.Config{AppBaseURL: "https://openlocal.store", StripeBusinessPrice: "price_business", StripeSecondModulePrice: "price_addon"})
-			h.Stripe = &Client{HTTP: server.Client(), BaseURL: server.URL, Secret: "sk_test"}
-			local := db.BusinessSubscription{BusinessID: uuid.New(), StripeCustomerID: sqlText("cus_test")}
-			app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
-			app.Post("/checkout", func(c *fiber.Ctx) error {
-				result, err := h.checkout(c, local, changeInput{Tier: "business", Modules: tc.modules, Locale: "en"}, "checkout-key")
-				if err != nil {
-					return err
+			cfg := config.Config{AppBaseURL: "https://openlocal.store", StripeBusinessPrice: "price_business", StripeSecondModulePrice: "price_addon"}
+			local := application.Subscription{Subscription: access.Subscription{BusinessID: uuid.New()}, CustomerID: "cus_test"}
+			result, err := payment(server, cfg).Checkout(t.Context(), local, application.ChangeInput{Tier: "business", Modules: tc.modules, Locale: "en"}, "checkout-key")
+			if tc.status == 200 {
+				if err != nil || result.URL == "" {
+					t.Fatalf("checkout result=%+v err=%v", result, err)
 				}
-				return c.JSON(result)
-			})
-			response, err := app.Test(httptest.NewRequest(http.MethodPost, "/checkout", nil))
-			if err != nil {
-				t.Fatal(err)
+			} else {
+				var domain *application.Error
+				wantKind := "conflict"
+				if tc.status == 503 {
+					wantKind = "unavailable"
+				}
+				if !errors.As(err, &domain) || domain.Kind != wantKind {
+					t.Fatalf("error=%v; want %s", err, wantKind)
+				}
 			}
-			defer response.Body.Close()
-			if response.StatusCode != tc.status || !reflect.DeepEqual(calls, tc.calls) {
-				t.Fatalf("status=%d calls=%v; want status=%d calls=%v", response.StatusCode, calls, tc.status, tc.calls)
+			if !reflect.DeepEqual(calls, tc.calls) {
+				t.Fatalf("calls=%v; want %v", calls, tc.calls)
 			}
 			if created != nil {
 				for name, want := range map[string]string{
@@ -119,14 +120,6 @@ func TestCheckoutPromotionCodes(t *testing.T) {
 				}
 				if (created.Get("line_items[1][price]") == "price_addon") != (len(tc.modules) == 2) {
 					t.Error("second-module composition changed")
-				}
-			}
-			if tc.status == 200 {
-				var result struct {
-					URL string `json:"url"`
-				}
-				if err := json.NewDecoder(response.Body).Decode(&result); err != nil || result.URL == "" {
-					t.Fatalf("missing checkout URL: %v", err)
 				}
 			}
 		})
