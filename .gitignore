@@ -12,5 +12,5 @@
 
 # AI
 .agents/
-skills-lock.json
+.claude/
 CLAUDE.md
