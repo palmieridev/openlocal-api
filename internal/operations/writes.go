@@ -90,10 +90,7 @@ func (h *Handler) services(c *fiber.Ctx) error {
 	}
 	in := application.ConfigurationInput{Actor: actor, Module: "appointments", Create: c.Method() == "POST", Patch: c.Body()}
 	if !in.Create {
-		in.ID, err = parseID(c.Params("service_id"))
-		if err != nil {
-			return err
-		}
+		in.ID = c.Params("service_id")
 	}
 	result, err := h.service().SaveService(c.Context(), in)
 	return send(c, result, err)
@@ -109,10 +106,7 @@ func (h *Handler) resources(c *fiber.Ctx) error {
 	}
 	in := application.ConfigurationInput{Actor: actor, Module: "appointments", Create: c.Method() == "POST", Patch: c.Body()}
 	if !in.Create {
-		in.ID, err = parseID(c.Params("resource_id"))
-		if err != nil {
-			return err
-		}
+		in.ID = c.Params("resource_id")
 	}
 	result, err := h.service().SaveResource(c.Context(), in)
 	return send(c, result, err)

@@ -45,18 +45,7 @@ func (h *Handler) availability(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	sid, err := parseID(c.Query("service_id"))
-	if err != nil {
-		return err
-	}
-	rid := uuid.Nil
-	if c.Query("resource_id") != "" {
-		rid, err = parseID(c.Query("resource_id"))
-		if err != nil {
-			return err
-		}
-	}
-	result, err := h.service().Availability(c.Context(), application.SelectionInput{Actor: actor, ServiceID: sid, ResourceID: rid, Date: c.Query("date")})
+	result, err := h.service().Availability(c.Context(), application.SelectionInput{Actor: actor, ServiceID: c.Query("service_id"), ResourceID: c.Query("resource_id"), Date: c.Query("date")})
 	return send(c, result, err)
 }
 func (h *Handler) publicCatalog(c *fiber.Ctx) error {

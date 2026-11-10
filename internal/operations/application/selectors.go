@@ -12,14 +12,14 @@ import (
 type ConfigurationInput struct {
 	Actor  Actor
 	Module string
-	ID     uuid.UUID
+	ID     string
 	Create bool
 	Patch  []byte
 }
 type SelectionInput struct {
 	Actor                 Actor
 	Date                  string
-	ServiceID, ResourceID uuid.UUID
+	ServiceID, ResourceID string
 }
 type Availability struct {
 	Timezone string          `json:"timezone"`
@@ -107,7 +107,10 @@ func (h *Service) Availability(ctx context.Context, in SelectionInput) (result A
 	if err != nil {
 		return result, publicUnavailable(err)
 	}
-	sid := in.ServiceID
+	sid, err := parseIdentifier(in.ServiceID)
+	if err != nil {
+		return result, err
+	}
 	svc, err := h.store.GetService(ctx, ScopedID{BusinessID: b.ID, ID: sid})
 	if err != nil {
 		return result, err
@@ -115,7 +118,13 @@ func (h *Service) Availability(ctx context.Context, in SelectionInput) (result A
 	if !svc.Active || !svc.IsPublic {
 		return result, ErrNotFound
 	}
-	rid := in.ResourceID
+	rid := uuid.Nil
+	if in.ResourceID != "" {
+		rid, err = parseIdentifier(in.ResourceID)
+		if err != nil {
+			return result, err
+		}
+	}
 	slots, err := appointmentSlots(ctx, h.store, b, s, svc, in.Date, rid, uuid.Nil)
 	if err != nil {
 		return result, err

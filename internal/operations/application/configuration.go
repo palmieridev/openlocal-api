@@ -136,7 +136,10 @@ func (h *Service) SaveService(ctx context.Context, command ConfigurationInput) (
 	value := Offering{Active: true, IsPublic: true, DurationMinutes: 30}
 	sid := uuid.New()
 	if !command.Create {
-		sid = command.ID
+		sid, err = parseIdentifier(command.ID)
+		if err != nil {
+			return result, err
+		}
 		r, err := q.GetService(ctx, ScopedID{BusinessID: id, ID: sid})
 		if err != nil {
 			return result, err
@@ -191,7 +194,10 @@ func (h *Service) SaveResource(ctx context.Context, command ConfigurationInput) 
 	wasActive := false
 	rid := uuid.New()
 	if !command.Create {
-		rid = command.ID
+		rid, err = parseIdentifier(command.ID)
+		if err != nil {
+			return result, err
+		}
 		r, err := q.GetAppointmentResource(ctx, ScopedID{BusinessID: id, ID: rid})
 		if err != nil {
 			return result, err

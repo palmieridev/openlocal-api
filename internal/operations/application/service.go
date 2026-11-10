@@ -215,3 +215,11 @@ func requireConfigurationRole(role string) error {
 	}
 	return nil
 }
+
+func parseIdentifier(raw string) (uuid.UUID, error) {
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return uuid.Nil, bad("invalid identifier")
+	}
+	return id, nil
+}
