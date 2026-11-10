@@ -171,3 +171,8 @@ Without that variable, the database cases skip. CI provisions this database and
 sets both `OPENLOCAL_MOVEMENT_TEST_DATABASE_URL` and
 `OPENLOCAL_INTEGRATION_TESTS=1` to exercise inventory and cross-package database
 flows explicitly.
+
+Catalog database tests live in `internal/catalog/tests` and require
+`OPENLOCAL_CATALOG_TEST_DATABASE_URL` to point to a migrated disposable local
+database whose name starts with `openlocal_catalog_test`. CI clones the migrated
+test database and enables this suite explicitly.
