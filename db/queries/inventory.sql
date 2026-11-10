@@ -8,6 +8,12 @@ SELECT *
 FROM inventory_locations
 WHERE business_id = $1 AND is_default = true;
 
+-- name: TryCreateDefaultInventoryLocation :one
+INSERT INTO inventory_locations (business_id, name, is_default)
+VALUES ($1, 'Default', true)
+ON CONFLICT DO NOTHING
+RETURNING *;
+
 -- name: CreateStockMovement :one
 INSERT INTO stock_movements (
     business_id, variant_id, location_id, movement_type, quantity, unit_cost,

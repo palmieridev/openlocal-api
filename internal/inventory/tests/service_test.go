@@ -1,4 +1,4 @@
-package inventory
+package inventory_test
 
 import (
 	"database/sql"
@@ -7,16 +7,17 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/palmieridev/openlocal-api/internal/inventory"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	"github.com/shopspring/decimal"
 )
 
 func TestSignedQuantity(t *testing.T) {
 	qty := decimal.NewFromInt(3)
-	if got := SignedQuantity("IN_PURCHASE", qty); !got.Equal(qty) {
+	if got := inventory.SignedQuantity("IN_PURCHASE", qty); !got.Equal(qty) {
 		t.Fatalf("expected positive in movement, got %s", got)
 	}
-	if got := SignedQuantity("OUT_SALE", qty); !got.Equal(qty.Neg()) {
+	if got := inventory.SignedQuantity("OUT_SALE", qty); !got.Equal(qty.Neg()) {
 		t.Fatalf("expected negative out movement, got %s", got)
 	}
 }
@@ -35,15 +36,15 @@ func TestMovementDelta(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := MovementDelta(old, tt.newType, tt.quantity); !got.Equal(tt.want) {
-				t.Fatalf("MovementDelta() = %s, want %s", got, tt.want)
+			if got := inventory.MovementDelta(old, tt.newType, tt.quantity); !got.Equal(tt.want) {
+				t.Fatalf("inventory.MovementDelta() = %s, want %s", got, tt.want)
 			}
 		})
 	}
 }
 
 func TestMovementParamsRejectsUnsafeValues(t *testing.T) {
-	base := StockMovementRequest{
+	base := inventory.StockMovementRequest{
 		BusinessID:   uuid.New().String(),
 		VariantID:    uuid.New().String(),
 		MovementType: "IN_PURCHASE",
@@ -51,17 +52,17 @@ func TestMovementParamsRejectsUnsafeValues(t *testing.T) {
 	}
 	tests := []struct {
 		name   string
-		mutate func(*StockMovementRequest)
+		mutate func(*inventory.StockMovementRequest)
 	}{
-		{"quantity scale", func(req *StockMovementRequest) { req.Quantity = "1.0001" }},
-		{"negative unit cost", func(req *StockMovementRequest) { value := "-1"; req.UnitCost = &value }},
-		{"notes length", func(req *StockMovementRequest) { req.Notes = strings.Repeat("x", 2001) }},
+		{"quantity scale", func(req *inventory.StockMovementRequest) { req.Quantity = "1.0001" }},
+		{"negative unit cost", func(req *inventory.StockMovementRequest) { value := "-1"; req.UnitCost = &value }},
+		{"notes length", func(req *inventory.StockMovementRequest) { req.Notes = strings.Repeat("x", 2001) }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			req := base
 			test.mutate(&req)
-			if _, _, err := MovementParams(req, uuid.New(), "movement:12345678"); err == nil {
+			if _, _, err := inventory.MovementParams(req, uuid.New(), "movement:12345678"); err == nil {
 				t.Fatal("expected validation error")
 			}
 		})
@@ -79,7 +80,7 @@ func TestStockMovementResponseExcludesPersistenceFields(t *testing.T) {
 		CreatedBy:      uuid.NullUUID{UUID: uuid.New(), Valid: true},
 		IdempotencyKey: sql.NullString{String: "movement:12345678", Valid: true},
 	}
-	body, err := json.Marshal(MapStockMovement(movement))
+	body, err := json.Marshal(inventory.MapStockMovement(movement))
 	if err != nil {
 		t.Fatal(err)
 	}
