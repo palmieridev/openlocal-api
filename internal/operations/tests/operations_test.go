@@ -6,6 +6,15 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,14 +25,6 @@ import (
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	"github.com/palmieridev/openlocal-api/internal/scheduling"
 	"github.com/shopspring/decimal"
-	"io"
-	"log/slog"
-	"net/http/httptest"
-	"os"
-	"strings"
-	"sync"
-	"testing"
-	"time"
 )
 
 type fixture struct {
@@ -66,18 +67,36 @@ func setup(t *testing.T) fixture {
 	b, e := q.CreateBusiness(ctx, db.CreateBusinessParams{ClerkOrgID: sql.NullString{String: org, Valid: true}, Name: "Module test", Slug: "module-" + uuid.NewString(), BusinessType: "servicios", Status: "active", Timezone: "America/Mexico_City", LocationMode: "fixed"})
 	must(t, e)
 	t.Cleanup(func() {
-		_, _ = pool.Exec(ctx, `DELETE FROM request_history WHERE business_id=$1;
-DELETE FROM request_access WHERE business_id=$1;
-DELETE FROM module_usage_events WHERE business_id=$1;
-DELETE FROM preorder_items WHERE business_id=$1;
-DELETE FROM preorders WHERE business_id=$1;
-DELETE FROM preorder_pickup_windows WHERE business_id=$1;
-DELETE FROM appointments WHERE business_id=$1;
-DELETE FROM appointment_resources WHERE business_id=$1;
-DELETE FROM services WHERE business_id=$1;
-DELETE FROM module_customers WHERE business_id=$1`, b.ID)
-		_, _ = pool.Exec(ctx, "DELETE FROM businesses WHERE id=$1", b.ID)
-		_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id=$1", u.ID)
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		for _, statement := range []string{
+			"DELETE FROM pgmq.q_openlocal_jobs WHERE message->>'business_id'=$1",
+			"DELETE FROM pgmq.a_openlocal_jobs WHERE message->>'business_id'=$1",
+		} {
+			if _, err := pool.Exec(cleanupCtx, statement, b.ID.String()); err != nil {
+				t.Error(err)
+			}
+		}
+		for _, statement := range []string{
+			"DELETE FROM request_history WHERE business_id=$1",
+			"DELETE FROM request_access WHERE business_id=$1",
+			"DELETE FROM module_usage_events WHERE business_id=$1",
+			"DELETE FROM preorder_items WHERE business_id=$1",
+			"DELETE FROM preorders WHERE business_id=$1",
+			"DELETE FROM preorder_pickup_windows WHERE business_id=$1",
+			"DELETE FROM appointments WHERE business_id=$1",
+			"DELETE FROM appointment_resources WHERE business_id=$1",
+			"DELETE FROM services WHERE business_id=$1",
+			"DELETE FROM module_customers WHERE business_id=$1",
+			"DELETE FROM businesses WHERE id=$1",
+		} {
+			if _, err := pool.Exec(cleanupCtx, statement, b.ID); err != nil {
+				t.Error(err)
+			}
+		}
+		if _, err := pool.Exec(cleanupCtx, "DELETE FROM users WHERE id=$1", u.ID); err != nil {
+			t.Error(err)
+		}
 	})
 	_, e = q.AddBusinessMember(ctx, db.AddBusinessMemberParams{BusinessID: b.ID, UserID: u.ID, ClerkOrgID: org, Role: "owner"})
 	must(t, e)

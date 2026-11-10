@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/url"
+	"testing"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/palmieridev/openlocal-api/internal/api"
 	"github.com/palmieridev/openlocal-api/internal/operations"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	"github.com/palmieridev/openlocal-api/internal/savedbusinesses"
-	"net/url"
-	"testing"
-	"time"
 )
 
 func TestPersonalOwnershipReplayAndDisabledHistory(t *testing.T) {

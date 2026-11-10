@@ -6,12 +6,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/palmieridev/openlocal-api/internal/operations"
 	"io"
 	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/palmieridev/openlocal-api/internal/operations"
 
 	"github.com/google/uuid"
 	"github.com/palmieridev/openlocal-api/internal/accessgrants"

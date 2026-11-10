@@ -2,6 +2,11 @@ package main
 
 import (
 	"context"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+
 	"github.com/palmieridev/openlocal-api/internal/api"
 	"github.com/palmieridev/openlocal-api/internal/billing"
 	"github.com/palmieridev/openlocal-api/internal/config"
@@ -9,10 +14,6 @@ import (
 	"github.com/palmieridev/openlocal-api/internal/operations"
 	"github.com/palmieridev/openlocal-api/internal/platform/logger"
 	"github.com/palmieridev/openlocal-api/internal/platform/postgres"
-	"log"
-	"os"
-	"os/signal"
-	"syscall"
 )
 
 func main() {
@@ -30,7 +31,7 @@ func main() {
 	logger := logger.New(cfg.AppEnv)
 	rt := api.NewRuntime(logger, pool, nil)
 	billingService := billing.NewService(rt, cfg)
-	worker := jobs.Worker{Q: rt.Q, Operations: operations.NewHandler(rt, cfg), Reconcile: billingService.Reconciler(), Logger: logger}
+	worker := jobs.Worker{Q: rt.Q, Operations: operations.NewService(rt, cfg), Reconcile: billingService.Reconciler(), Logger: logger}
 	if e = worker.Run(ctx); e != nil {
 		log.Fatal(e)
 	}

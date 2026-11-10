@@ -6,11 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
 	"github.com/google/uuid"
-	"github.com/palmieridev/openlocal-api/internal/operations"
-	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
+
 	"log/slog"
 	"time"
+
+	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 )
 
 type Payload struct {
@@ -25,9 +27,14 @@ type message struct {
 	ReadCount int             `json:"read_ct"`
 	Payload   json.RawMessage `json:"message"`
 }
+
+// Expirer is the worker-owned application boundary for queue and sweep delivery.
+type Expirer interface {
+	Expire(context.Context, uuid.UUID, uuid.UUID, string) error
+}
 type Worker struct {
 	Q          *db.Queries
-	Operations *operations.Handler
+	Operations Expirer
 	Reconcile  func(context.Context, string) error
 	Logger     *slog.Logger
 }
