@@ -53,7 +53,10 @@ func setup(t *testing.T) fixture {
 		t.Fatal("operations tests require a disposable local openlocal_operations_test database")
 	}
 	ctx := context.Background()
-	pool, e := pgxpool.New(ctx, dsn)
+	// The widest contention test needs four writers, the held transaction,
+	// and a connection observing their locks, even on small CI runners.
+	parsed.MaxConns = 6
+	pool, e := pgxpool.NewWithConfig(ctx, parsed)
 	if e != nil {
 		t.Fatal(e)
 	}
