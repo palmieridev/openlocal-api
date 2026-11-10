@@ -3,6 +3,7 @@ package billing_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -43,6 +44,7 @@ func TestImmediateChangeResponses(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			updates := 0
+			proration := time.Now().Unix()
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				if r.Method == http.MethodGet && r.URL.Path == "/v1/subscriptions/sub_test" {
@@ -59,6 +61,9 @@ func TestImmediateChangeResponses(t *testing.T) {
 				if r.Form.Get("expand[]") != "latest_invoice" || r.Form.Get("payment_behavior") != "pending_if_incomplete" || r.Form.Get("proration_behavior") != "always_invoice" {
 					t.Errorf("unsafe change parameters: %v", r.Form)
 				}
+				if r.Form.Get("proration_date") != strconv.FormatInt(proration, 10) || r.Form.Get("items[0][price]") != "price_business" || r.Form.Get("items[1][price]") != "price_addon" {
+					t.Errorf("lost proration or plan selection: %v", r.Form)
+				}
 				if r.Header.Get("Idempotency-Key") != "change-key" {
 					t.Error("missing idempotency key")
 				}
@@ -70,7 +75,7 @@ func TestImmediateChangeResponses(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			result, err := adapter.Update(t.Context(), sub, application.ChangeInput{Tier: "business", Modules: []string{"appointments", "preorders"}}, application.ChangePlan{Immediate: true, ProrationDate: time.Now().Unix()}, "change-key")
+			result, err := adapter.Update(t.Context(), sub, application.ChangeInput{Tier: "business", Modules: []string{"appointments", "preorders"}}, application.ChangePlan{Immediate: true, ProrationDate: proration}, "change-key")
 			if err != nil {
 				t.Fatal(err)
 			}

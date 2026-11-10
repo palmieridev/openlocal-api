@@ -150,6 +150,51 @@ func TestInterpretSubscriptionRequiresKnownMonthlyComposition(t *testing.T) {
 	}
 }
 
+func TestConfiguredPricesMatchMonthlyMXN(t *testing.T) {
+	for _, invalid := range []string{"", "inactive", "currency", "amount", "interval", "interval count"} {
+		t.Run("price "+invalid, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				amounts := map[string]int64{"price_e": 5900, "price_b": 14900, "price_a": 4900}
+				id := strings.TrimPrefix(r.URL.Path, "/v1/prices/")
+				amount, ok := amounts[id]
+				if r.Method != "GET" || !ok {
+					t.Errorf("unexpected price lookup: %s %s", r.Method, r.URL.Path)
+					w.WriteHeader(404)
+					return
+				}
+				active, currency, interval, count := true, "mxn", "month", 1
+				if id == "price_e" {
+					switch invalid {
+					case "inactive":
+						active = false
+					case "currency":
+						currency = "usd"
+					case "amount":
+						amount++
+					case "interval":
+						interval = "year"
+					case "interval count":
+						count = 2
+					}
+				}
+				_, _ = fmt.Fprintf(w, `{"id":%q,"active":%t,"currency":%q,"unit_amount":%d,"recurring":{"interval":%q,"interval_count":%d}}`, id, active, currency, amount, interval, count)
+			}))
+			defer server.Close()
+			err := payment(server, config.Config{StripeEssentialPrice: "price_e", StripeBusinessPrice: "price_b", StripeSecondModulePrice: "price_a"}).ValidatePrices(t.Context())
+			if invalid == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			var domain *application.Error
+			if !errors.As(err, &domain) || domain.Kind != "unavailable" || domain.Code != "billing_unavailable" {
+				t.Fatalf("invalid configured price accepted: %v", err)
+			}
+		})
+	}
+}
+
 func signature(body, secret string, at time.Time) string {
 	timestamp := strconv.FormatInt(at.Unix(), 10)
 	mac := hmac.New(sha256.New, []byte(secret))
