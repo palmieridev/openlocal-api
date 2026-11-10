@@ -50,7 +50,7 @@ func (h *Service) Services(ctx context.Context, a Actor) ([]Offering, error) {
 	if a.Slug != "" {
 		sub, err := h.store.GetSubscription(ctx, b.ID)
 		if errors.Is(err, ErrNotFound) {
-			return nil, fail(403, "module_unavailable", "requests unavailable")
+			return nil, fail(Forbidden, "module_unavailable", "requests unavailable")
 		}
 		if err != nil {
 			return nil, err
@@ -84,7 +84,7 @@ func (h *Service) selectionBusiness(ctx context.Context, a Actor, module string)
 	sub, err := h.store.GetSubscription(ctx, b.ID)
 	if err != nil {
 		if a.Slug != "" && errors.Is(err, ErrNotFound) {
-			err = fail(403, "module_unavailable", "requests unavailable")
+			err = fail(Forbidden, "module_unavailable", "requests unavailable")
 		}
 		return b, Settings{}, err
 	}

@@ -18,7 +18,7 @@ func New(key string) *Encrypted { return &Encrypted{key: key} }
 func (e *Encrypted) aead() (cipher.AEAD, error) {
 	key, err := base64.StdEncoding.DecodeString(e.key)
 	if err != nil || len(key) != 32 {
-		return nil, &application.Error{Status: 503, Code: "module_unavailable", Message: "request credentials are not configured"}
+		return nil, &application.Error{Kind: application.Unavailable, Code: "module_unavailable", Message: "request credentials are not configured"}
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {

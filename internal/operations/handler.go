@@ -62,9 +62,9 @@ func httpError(err error) error {
 	var domain *application.Error
 	if errors.As(err, &domain) {
 		if domain.Code == "" {
-			return fiber.NewError(domain.Status, domain.Message)
+			return fiber.NewError(failureStatus(domain.Kind), domain.Message)
 		}
-		return api.Fail(domain.Status, domain.Code, domain.Message)
+		return api.Fail(failureStatus(domain.Kind), domain.Code, domain.Message)
 	}
 	if errors.Is(err, application.ErrNotFound) {
 		return pgx.ErrNoRows
@@ -86,7 +86,11 @@ func write(c *fiber.Ctx, result application.WriteResult, err error) error {
 	if result.Replayed {
 		c.Set("Idempotent-Replayed", "true")
 	}
-	return c.Status(result.Status).Send(result.Body)
+	status := 200
+	if result.Outcome == application.Created {
+		status = 201
+	}
+	return c.Status(status).Send(result.Body)
 }
 func decode(c *fiber.Ctx, dst any) error {
 	d := json.NewDecoder(bytes.NewReader(c.Body()))
@@ -155,4 +159,21 @@ func (h *Handler) actor(c *fiber.Ctx, configure bool, module string) (applicatio
 }
 func (h *Handler) Expire(ctx context.Context, business, id uuid.UUID, module string) error {
 	return httpError(h.service().Expire(ctx, business, id, module))
+}
+
+func failureStatus(kind application.Failure) int {
+	switch kind {
+	case application.InvalidInput:
+		return 400
+	case application.Forbidden:
+		return 403
+	case application.NotFound:
+		return 404
+	case application.Conflict:
+		return 409
+	case application.Unavailable:
+		return 503
+	default:
+		return 500
+	}
 }

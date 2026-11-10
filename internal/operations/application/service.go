@@ -12,14 +12,27 @@ import (
 
 var ErrNotFound = errors.New("operation resource not found")
 
+// Failure classifies an application error; inbound adapters choose HTTP statuses.
+type Failure uint8
+
+const (
+	InvalidInput Failure = iota + 1
+	Forbidden
+	NotFound
+	Conflict
+	Unavailable
+)
+
 type Error struct {
-	Status        int
+	Kind          Failure
 	Code, Message string
 }
 
-func (e *Error) Error() string                    { return e.Message }
-func fail(status int, code, message string) error { return &Error{status, code, message} }
-func bad(message string) error                    { return fail(400, "invalid_request", message) }
+func (e *Error) Error() string { return e.Message }
+func fail(kind Failure, code, message string) error {
+	return &Error{Kind: kind, Code: code, Message: message}
+}
+func bad(message string) error { return fail(InvalidInput, "invalid_request", message) }
 
 // Actor carries identity already authenticated and authorized by the caller.
 // UserID identifies a personal customer; Public denotes guest token access.
@@ -51,9 +64,16 @@ type MutateInput struct {
 }
 
 // WriteResult preserves the exact response bytes, including decrypted retries.
+type WriteOutcome uint8
+
+const (
+	Created WriteOutcome = iota + 1
+	Changed
+)
+
 type WriteResult struct {
 	Body     []byte
-	Status   int
+	Outcome  WriteOutcome
 	Replayed bool
 }
 
@@ -108,10 +128,10 @@ func accessResult(ctx context.Context, q access.Store, s access.Subscription, ro
 func consume(ctx context.Context, q access.Store, s access.Subscription, module string, id uuid.UUID) error {
 	err := access.New(q).Consume(ctx, s, module, id, time.Now())
 	if errors.Is(err, access.ErrUnavailable) {
-		return fail(403, "module_unavailable", err.Error())
+		return fail(Forbidden, "module_unavailable", err.Error())
 	}
 	if errors.Is(err, access.ErrQuotaExceeded) {
-		return fail(409, "quota_exceeded", err.Error())
+		return fail(Conflict, "quota_exceeded", err.Error())
 	}
 	return err
 }
@@ -121,11 +141,11 @@ func (h *Service) challenge(ctx context.Context, token string) error {
 	case err == nil:
 		return nil
 	case errors.Is(err, verification.ErrRequired):
-		return fail(400, "challenge_failed", "verification is required")
+		return fail(InvalidInput, "challenge_failed", "verification is required")
 	case errors.Is(err, verification.ErrRejected):
-		return fail(400, "challenge_failed", "verification failed")
+		return fail(InvalidInput, "challenge_failed", "verification failed")
 	default:
-		return fail(503, "challenge_failed", "verification is temporarily unavailable")
+		return fail(Unavailable, "challenge_failed", "verification is temporarily unavailable")
 	}
 }
 func (h *Service) business(ctx context.Context, a Actor) (Business, error) {
@@ -140,7 +160,7 @@ func (h *Service) business(ctx context.Context, a Actor) (Business, error) {
 		return b, err
 	}
 	if a.UserID != uuid.Nil && b.Status != "active" {
-		return b, fail(404, "not_found", "business not found")
+		return b, fail(NotFound, "not_found", "business not found")
 	}
 	return b, nil
 }
@@ -160,8 +180,38 @@ func (h *Service) AuthorizeTeam(ctx context.Context, business uuid.UUID, role, m
 			return err
 		}
 		if !c.TeamHistory {
-			return fail(403, "module_unavailable", "team access requires Business for this module")
+			return fail(Forbidden, "module_unavailable", "team access requires Business for this module")
 		}
+	}
+	return nil
+}
+
+// ResolveIntake lets an inbound adapter reject an unavailable business before
+// decoding a command. Create repeats this check before executing the use case.
+func (h *Service) ResolveIntake(ctx context.Context, a Actor) (Business, error) {
+	b, err := h.business(ctx, a)
+	if err != nil {
+		return b, err
+	}
+	if a.Slug != "" {
+		_, err = h.store.GetSubscription(ctx, b.ID)
+		if errors.Is(err, ErrNotFound) {
+			return b, fail(Forbidden, "module_unavailable", "requests unavailable")
+		}
+	}
+	return b, err
+}
+
+// ResolveRequest supports credential/ownership checks before HTTP body decoding.
+// Mutation independently rechecks ownership, including on replay.
+func (h *Service) ResolveRequest(ctx context.Context, in ReadInput) (RecordRef, error) {
+	business, id, module, err := h.resolveRecord(ctx, in.Actor, in.ID, in.Module, in.Token)
+	return RecordRef{BusinessID: business, ID: id, Module: module}, err
+}
+
+func requireConfigurationRole(role string) error {
+	if role != "owner" && role != "manager" {
+		return fail(Forbidden, "module_unavailable", "configuration requires a manager")
 	}
 	return nil
 }

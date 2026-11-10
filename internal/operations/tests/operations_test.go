@@ -72,6 +72,7 @@ func setup(t *testing.T) fixture {
 		for _, statement := range []string{
 			"DELETE FROM pgmq.q_openlocal_jobs WHERE message->>'business_id'=$1",
 			"DELETE FROM pgmq.a_openlocal_jobs WHERE message->>'business_id'=$1",
+			"DELETE FROM pgmq.q_openlocal_failed WHERE message->>'business_id'=$1",
 		} {
 			if _, err := pool.Exec(cleanupCtx, statement, b.ID.String()); err != nil {
 				t.Error(err)
@@ -168,6 +169,7 @@ func TestConcurrentConfirmationAndReplay(t *testing.T) {
 	f := setup(t)
 	a := f.appointment(t, "+525555550001", f.start)
 	b := f.appointment(t, "+525555550002", f.start)
+	release, wait := f.holdSubscription(t)
 	var wg sync.WaitGroup
 	codes := make(chan int, 2)
 	for _, r := range []operations.Record{a, b} {
@@ -178,6 +180,8 @@ func TestConcurrentConfirmationAndReplay(t *testing.T) {
 			codes <- code
 		}(r)
 	}
+	wait(2)
+	release()
 	wg.Wait()
 	close(codes)
 	count := map[int]int{}

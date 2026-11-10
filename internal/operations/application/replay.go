@@ -25,7 +25,7 @@ func digest(body []byte) []byte {
 func (h *Service) replay(ctx context.Context, in ReplayInput, q Repository, id uuid.UUID, scope string) (WriteResult, error) {
 	key := strings.TrimSpace(in.Key)
 	if !idempotencyKeyPattern.MatchString(key) {
-		return WriteResult{}, &Error{Status: 400, Message: "Idempotency-Key must be 8-128 characters using letters, numbers, dot, underscore, colon, or dash"}
+		return WriteResult{}, &Error{Kind: InvalidInput, Message: "Idempotency-Key must be 8-128 characters using letters, numbers, dot, underscore, colon, or dash"}
 	}
 	r, err := q.GetRequestReplay(ctx, ReplayKey{BusinessID: id, Scope: scope, Key: key})
 	if errors.Is(err, ErrNotFound) {
@@ -35,17 +35,18 @@ func (h *Service) replay(ctx context.Context, in ReplayInput, q Repository, id u
 		return WriteResult{}, err
 	}
 	if !bytes.Equal(r.Digest, digest(in.Body)) {
-		return WriteResult{}, fail(409, "version_conflict", "idempotency key was used with different input")
+		return WriteResult{}, fail(Conflict, "version_conflict", "idempotency key was used with different input")
 	}
 	plain, err := h.credentials.Open(r.Response, []byte(id.String()+scope+key))
-	return WriteResult{Body: plain, Status: int(r.StatusCode), Replayed: err == nil}, err
+	return WriteResult{Body: plain, Outcome: r.Outcome, Replayed: err == nil}, err
 }
-func (h *Service) saveReplay(ctx context.Context, in ReplayInput, q Repository, id uuid.UUID, scope string, value any, status int) error {
-	data, err := h.credentials.Seal(jsonBytes(value), []byte(id.String()+scope+in.Key))
+func (h *Service) saveReplay(ctx context.Context, in ReplayInput, q Repository, id uuid.UUID, scope string, value any, outcome WriteOutcome) error {
+	key := strings.TrimSpace(in.Key)
+	data, err := h.credentials.Seal(jsonBytes(value), []byte(id.String()+scope+key))
 	if err != nil {
 		return err
 	}
-	return q.SaveRequestReplay(ctx, ReplayEntry{BusinessID: id, Scope: scope, Key: in.Key, Digest: digest(in.Body), Response: data, StatusCode: int32(status)})
+	return q.SaveRequestReplay(ctx, ReplayEntry{BusinessID: id, Scope: scope, Key: key, Digest: digest(in.Body), Response: data, Outcome: outcome})
 }
 func (h *Service) createAccess(ctx context.Context, q Repository, id, business uuid.UUID, module string, until time.Time) (string, error) {
 	token, hash, err := h.credentials.Token()
@@ -62,18 +63,21 @@ func enqueueExpiration(ctx context.Context, q ExpirationJobs, business, id uuid.
 	return q.ScheduleExpiration(ctx, RecordRef{ID: id, BusinessID: business, Module: module}, at)
 }
 func (h *Service) resolveRecord(ctx context.Context, a Actor, id uuid.UUID, module, token string) (uuid.UUID, uuid.UUID, string, error) {
+	if !a.Public && !validModule(module) {
+		return uuid.Nil, id, module, bad("invalid module")
+	}
 	if a.UserID != uuid.Nil {
 		r, err := h.store.PersonalRequest(ctx, PersonalRecordQuery{UserID: nullableID(a.UserID), ID: id, Module: module})
 		return r.BusinessID, r.ID, r.Module, err
 	}
 	if a.Public {
 		if len(token) != 43 {
-			return uuid.Nil, id, module, fail(404, "not_found", "request not found")
+			return uuid.Nil, id, module, fail(NotFound, "not_found", "request not found")
 		}
 		hash := sha256.Sum256([]byte(token))
 		r, err := h.store.GetRequestAccess(ctx, AccessProof{PublicID: id, TokenHash: hash[:]})
 		if err != nil {
-			return uuid.Nil, id, module, fail(404, "not_found", "request not found")
+			return uuid.Nil, id, module, fail(NotFound, "not_found", "request not found")
 		}
 		return r.BusinessID, r.PublicID, r.Module, nil
 	}

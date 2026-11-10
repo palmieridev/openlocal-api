@@ -79,6 +79,9 @@ type RecordPage struct {
 }
 
 func (h *Service) List(ctx context.Context, in ListInput) (RecordPage, error) {
+	if !validModule(in.Module) {
+		return RecordPage{}, bad("invalid module")
+	}
 	f := in.Filters
 	if f.Limit < 1 || f.Limit > 100 || f.Offset < 0 || f.Offset > 100000 {
 		return RecordPage{}, bad("invalid pagination")
@@ -130,7 +133,7 @@ func (h *Service) reportAccess(ctx context.Context, a Actor, module string) (uui
 		return id, e
 	}
 	if !access.Modules[module].CanExport {
-		return id, fail(403, "module_unavailable", "Business reports required for this module")
+		return id, fail(Forbidden, "module_unavailable", "Business reports required for this module")
 	}
 	return id, nil
 }

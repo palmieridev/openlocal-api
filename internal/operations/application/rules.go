@@ -43,7 +43,7 @@ func requirePaid(ctx context.Context, q Repository, s access.Subscription, modul
 		return err
 	}
 	if capability.Tier == "free" || role != "owner" && capability.Tier != "business" {
-		return fail(403, "module_unavailable", "module capability is unavailable for this role")
+		return fail(Forbidden, "module_unavailable", "module capability is unavailable for this role")
 	}
 	return nil
 }
@@ -58,7 +58,7 @@ func requireIntake(ctx context.Context, q Repository, s access.Subscription, mod
 		return cfg, err
 	}
 	if capability.Tier == "free" || !cfg.Enabled || len(cfg.Hours) == 0 {
-		return cfg, fail(403, "module_unavailable", "requests are currently unavailable")
+		return cfg, fail(Forbidden, "module_unavailable", "requests are currently unavailable")
 	}
 	used, err := usage(ctx, q, s, module, now)
 	if err != nil {
@@ -66,7 +66,7 @@ func requireIntake(ctx context.Context, q Repository, s access.Subscription, mod
 	}
 	limit, _ := access.Limits(capability.Tier)
 	if used >= limit {
-		return cfg, fail(409, "quota_exceeded", "requests are currently unavailable")
+		return cfg, fail(Conflict, "quota_exceeded", "requests are currently unavailable")
 	}
 	return effectiveSettings(cfg, capability.Tier), nil
 }
@@ -82,7 +82,7 @@ func effectiveSettings(cfg Settings, tier string) Settings {
 func publicUnavailable(err error) error {
 	var e *Error
 	if errors.As(err, &e) && (e.Code == "quota_exceeded" || e.Code == "module_unavailable") {
-		return fail(403, "module_unavailable", "requests are currently unavailable; contact the business")
+		return fail(Forbidden, "module_unavailable", "requests are currently unavailable; contact the business")
 	}
 	return err
 }
@@ -108,7 +108,7 @@ func next(module, status string) []string {
 	}
 	return preorders.Next(status)
 }
-func conflict(code string) error { return fail(409, code, strings.ReplaceAll(code, "_", " ")) }
+func conflict(code string) error { return fail(Conflict, code, strings.ReplaceAll(code, "_", " ")) }
 func customerTransitions(r Record, cfg Settings) []string {
 	if slices.Contains(next(r.Module, r.Status), "cancelled") && time.Now().Add(time.Duration(cfg.CancelBeforeMinutes)*time.Minute).Before(r.StartsAt) {
 		return []string{"cancelled"}
@@ -123,7 +123,7 @@ func validateSettings(s Settings, tier, module string) error {
 		return bad("invalid scheduling bounds")
 	}
 	if tier != "business" && (s.DailyCutoff != "" || s.MaxOrdersPerSlot != 0) {
-		return fail(403, "module_unavailable", "advanced settings require Business")
+		return fail(Forbidden, "module_unavailable", "advanced settings require Business")
 	}
 	if s.DailyCutoff != "" {
 		if _, err := scheduling.Clock(s.DailyCutoff); err != nil {

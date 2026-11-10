@@ -38,7 +38,7 @@ func (s *Store) CreatePreorderItem(ctx context.Context, arg application.Preorder
 }
 
 func (s *Store) ExtendRequestAccess(ctx context.Context, arg application.AccessExtension) error {
-	return translate(s.q.ExtendRequestAccess(ctx, toExtendRequestAccessParams(arg)))
+	return translate(s.q.ExtendOperationAccess(ctx, db.ExtendOperationAccessParams{BusinessID: arg.BusinessID, PublicID: arg.PublicID, ExpiresAt: stamp(arg.ExpiresAt)}))
 }
 func (s *Store) GetAppointment(ctx context.Context, arg application.ScopedID) (application.Appointment, error) {
 	r, err := s.q.GetAppointment(ctx, toGetAppointmentParams(arg))
@@ -106,6 +106,9 @@ func (s *Store) ModuleBusiness(ctx context.Context, id uuid.UUID) (application.B
 	return fromBusiness(r), translate(err)
 }
 func (s *Store) ModulePublicBusiness(ctx context.Context, slug string) (application.Business, error) {
+	if s.q == nil {
+		return application.Business{}, &application.Error{Kind: application.Unavailable, Message: "database is not configured"}
+	}
 	r, err := s.q.ModulePublicBusiness(ctx, slug)
 	return fromBusiness(r), translate(err)
 }
@@ -236,10 +239,6 @@ func toCreatePreorderParams(v application.Preorder) db.CreatePreorderParams {
 	return db.CreatePreorderParams{ID: v.ID, BusinessID: v.BusinessID, CustomerID: v.CustomerID, PickupWindowID: v.PickupWindowID, CustomerName: v.CustomerName, CustomerPhone: v.CustomerPhone, Notes: v.Notes, StartsAt: stamp(v.StartsAt), EndsAt: stamp(v.EndsAt), Timezone: v.Timezone, EstimatedTotal: v.EstimatedTotal, ExpiresAt: stamp(v.ExpiresAt), CustomerUserID: v.CustomerUserID}
 }
 
-func toExtendRequestAccessParams(v application.AccessExtension) db.ExtendRequestAccessParams {
-	return db.ExtendRequestAccessParams{PublicID: v.PublicID, ExpiresAt: stamp(v.ExpiresAt)}
-}
-
 func toGetAppointmentParams(v application.ScopedID) db.GetAppointmentParams {
 	return db.GetAppointmentParams{BusinessID: v.BusinessID, ID: v.ID}
 }
@@ -344,7 +343,7 @@ func fromRequestHistoryRow(v db.RequestHistoryRow) application.HistoryEntry {
 }
 
 func fromRequestIdempotency(v db.RequestIdempotency) application.Replay {
-	return application.Replay{Digest: v.Digest, Response: v.Response, StatusCode: v.StatusCode}
+	return application.Replay{Digest: v.Digest, Response: v.Response, Outcome: replayOutcome(v.StatusCode)}
 }
 func toSaveAppointmentResourceParams(v application.ResourceSnapshot) db.SaveAppointmentResourceParams {
 	return db.SaveAppointmentResourceParams{ID: v.ID, BusinessID: v.BusinessID, Name: v.Name, Active: v.Active, ServiceIds: v.ServiceIDs, Hours: jsonBytes(v.Hours), ClosedDates: jsonBytes(v.ClosedDates)}
@@ -355,7 +354,7 @@ func toSaveRequestAccessParams(v application.AccessCredential) db.SaveRequestAcc
 }
 
 func toSaveRequestReplayParams(v application.ReplayEntry) db.SaveRequestReplayParams {
-	return db.SaveRequestReplayParams{BusinessID: v.BusinessID, Scope: v.Scope, Key: v.Key, Digest: v.Digest, Response: v.Response, StatusCode: v.StatusCode}
+	return db.SaveRequestReplayParams{BusinessID: v.BusinessID, Scope: v.Scope, Key: v.Key, Digest: v.Digest, Response: v.Response, StatusCode: replayStatus(v.Outcome)}
 }
 
 func toSaveServiceParams(v application.ServiceSnapshot) db.SaveServiceParams {
@@ -379,10 +378,6 @@ func toUpdatePreorderParams(v application.Preorder) db.UpdatePreorderParams {
 
 func toUpsertModuleCustomerParams(v application.CustomerData) db.UpsertModuleCustomerParams {
 	return db.UpsertModuleCustomerParams{BusinessID: v.BusinessID, Phone: v.Phone, Name: v.Name}
-}
-
-func toUpsertModuleParams(v application.ModuleSettings) db.UpsertModuleParams {
-	return db.UpsertModuleParams{BusinessID: v.BusinessID, Module: v.Module, Enabled: v.Enabled, Settings: v.Settings}
 }
 
 func toUpsertPickupWindowParams(v application.WindowPeriod) db.UpsertPickupWindowParams {
@@ -419,7 +414,20 @@ func (s *Store) RequireVariant(ctx context.Context, id application.ScopedID) err
 	return translate(err)
 }
 func (s *Store) SaveSettings(ctx context.Context, in application.ModuleSettings) error {
-	_, err := s.q.UpsertModule(ctx, toUpsertModuleParams(in))
+	_, err := s.q.SaveOperationSettings(ctx, db.SaveOperationSettingsParams{BusinessID: in.BusinessID, Module: in.Module, Enabled: in.Enabled, Settings: in.Settings})
 	return translate(err)
 }
 func jsonBytes(value any) []byte { data, _ := json.Marshal(value); return data }
+
+func replayStatus(outcome application.WriteOutcome) int32 {
+	if outcome == application.Created {
+		return 201
+	}
+	return 200
+}
+func replayOutcome(status int32) application.WriteOutcome {
+	if status == 201 {
+		return application.Created
+	}
+	return application.Changed
+}

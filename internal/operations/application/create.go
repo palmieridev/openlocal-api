@@ -10,10 +10,13 @@ import (
 )
 
 func (h *Service) Create(ctx context.Context, in CreateInput) (result WriteResult, err error) {
+	if !validModule(in.Module) {
+		return result, bad("invalid module")
+	}
 	module, public, userID, actor := in.Module, in.Actor.Public, in.Actor.UserID, in.Actor.Role
 	personal := userID != uuid.Nil
 	customerFacing := public || personal
-	b, e := h.business(ctx, in.Actor)
+	b, e := h.ResolveIntake(ctx, in.Actor)
 	if e != nil {
 		return result, e
 	}
@@ -177,11 +180,11 @@ func (h *Service) Create(ctx context.Context, in CreateInput) (result WriteResul
 			return result, e
 		}
 	}
-	if e = h.saveReplay(ctx, in.Replay, q, b.ID, scope, response, 201); e != nil {
+	if e = h.saveReplay(ctx, in.Replay, q, b.ID, scope, response, Created); e != nil {
 		return result, e
 	}
 	if e = tx.Commit(ctx); e != nil {
 		return result, e
 	}
-	return WriteResult{Body: jsonBytes(response), Status: 201}, nil
+	return WriteResult{Body: jsonBytes(response), Outcome: Created}, nil
 }

@@ -12,6 +12,9 @@ func (h *Handler) create(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	if _, err = h.service().ResolveIntake(c.Context(), actor); err != nil {
+		return httpError(err)
+	}
 	in := application.CreateInput{Actor: actor, Module: module, Replay: application.ReplayInput{Key: c.Get("Idempotency-Key"), Body: c.Body()}}
 	if module == "appointments" {
 		err = decode(c, &in.Appointment)
@@ -41,6 +44,11 @@ func (h *Handler) mutate(c *fiber.Ctx) error {
 		return err
 	}
 	in := application.MutateInput{Actor: actor, ID: id, Module: c.Params("module"), Token: c.Get("X-Openlocal-Management-Token"), Method: c.Method(), Editing: c.Method() == "PATCH", Replay: application.ReplayInput{Key: c.Get("Idempotency-Key"), Body: c.Body()}}
+	if actor.Public || actor.UserID != uuid.Nil {
+		if _, err = h.service().ResolveRequest(c.Context(), application.ReadInput{Actor: actor, ID: id, Module: in.Module, Token: in.Token}); err != nil {
+			return httpError(err)
+		}
+	}
 	if in.Editing {
 		err = decode(c, &in.Edit)
 	} else if actor.Public || actor.UserID != uuid.Nil {

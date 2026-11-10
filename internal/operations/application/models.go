@@ -103,8 +103,9 @@ type Preorder struct {
 	UpdatedAt      time.Time
 }
 type AccessExtension struct {
-	PublicID  uuid.UUID
-	ExpiresAt time.Time
+	BusinessID uuid.UUID
+	PublicID   uuid.UUID
+	ExpiresAt  time.Time
 }
 type ScopedID struct {
 	BusinessID uuid.UUID
@@ -212,9 +213,9 @@ type HistoryEntry struct {
 	At         time.Time
 }
 type Replay struct {
-	Digest     []byte
-	Response   []byte
-	StatusCode int32
+	Digest   []byte
+	Response []byte
+	Outcome  WriteOutcome
 }
 type ReplayEntry struct {
 	BusinessID uuid.UUID
@@ -222,7 +223,7 @@ type ReplayEntry struct {
 	Key        string
 	Digest     []byte
 	Response   []byte
-	StatusCode int32
+	Outcome    WriteOutcome
 }
 type ServiceSnapshot struct {
 	ID              uuid.UUID

@@ -122,6 +122,22 @@ func (q *Queries) EnsureSubscription(ctx context.Context, businessID uuid.UUID) 
 	return err
 }
 
+const extendOperationAccess = `-- name: ExtendOperationAccess :exec
+UPDATE request_access SET expires_at=$1
+WHERE public_id=$2 AND business_id=$3
+`
+
+type ExtendOperationAccessParams struct {
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	PublicID   uuid.UUID          `json:"public_id"`
+	BusinessID uuid.UUID          `json:"business_id"`
+}
+
+func (q *Queries) ExtendOperationAccess(ctx context.Context, arg ExtendOperationAccessParams) error {
+	_, err := q.db.Exec(ctx, extendOperationAccess, arg.ExpiresAt, arg.PublicID, arg.BusinessID)
+	return err
+}
+
 const extendRequestAccess = `-- name: ExtendRequestAccess :exec
 UPDATE request_access SET expires_at=$2 WHERE public_id=$1
 `
@@ -548,6 +564,46 @@ func (q *Queries) SaveBillingOperation(ctx context.Context, arg SaveBillingOpera
 		arg.Response,
 	)
 	return err
+}
+
+const saveOperationSettings = `-- name: SaveOperationSettings :one
+INSERT INTO business_modules(business_id,module,enabled,settings)
+SELECT $1,$2,$3,$4::jsonb
+WHERE NOT EXISTS (
+    SELECT 1 FROM jsonb_array_elements(COALESCE($4::jsonb->'variant_rules','[]'::jsonb)) AS rule
+    WHERE NOT EXISTS (
+        SELECT 1 FROM product_variants v
+        WHERE v.business_id=$1 AND v.id=(rule->>'variant_id')::uuid
+    )
+)
+ON CONFLICT(business_id,module) DO UPDATE
+SET enabled=EXCLUDED.enabled,settings=EXCLUDED.settings
+RETURNING business_id, module, enabled, settings
+`
+
+type SaveOperationSettingsParams struct {
+	BusinessID uuid.UUID `json:"business_id"`
+	Module     string    `json:"module"`
+	Enabled    bool      `json:"enabled"`
+	Settings   []byte    `json:"settings"`
+}
+
+// Variant ownership is checked in the application and again at the SQL boundary.
+func (q *Queries) SaveOperationSettings(ctx context.Context, arg SaveOperationSettingsParams) (BusinessModule, error) {
+	row := q.db.QueryRow(ctx, saveOperationSettings,
+		arg.BusinessID,
+		arg.Module,
+		arg.Enabled,
+		arg.Settings,
+	)
+	var i BusinessModule
+	err := row.Scan(
+		&i.BusinessID,
+		&i.Module,
+		&i.Enabled,
+		&i.Settings,
+	)
+	return i, err
 }
 
 const saveRequestAccess = `-- name: SaveRequestAccess :exec

@@ -13,7 +13,14 @@ SELECT * FROM appointment_resources WHERE business_id=$1 ORDER BY name,id;
 -- name: GetAppointmentResource :one
 SELECT * FROM appointment_resources WHERE business_id=$1 AND id=$2;
 -- name: SaveAppointmentResource :one
-INSERT INTO appointment_resources(id,business_id,name,active,service_ids,hours,closed_dates) VALUES($1,$2,$3,$4,$5,$6,$7)
+INSERT INTO appointment_resources(id,business_id,name,active,service_ids,hours,closed_dates) SELECT $1,$2,$3,$4,$5,$6,$7
+WHERE NOT EXISTS (
+    SELECT 1 FROM unnest($5::uuid[]) AS assignment(service_id)
+    WHERE NOT EXISTS (
+        SELECT 1 FROM services s
+        WHERE s.business_id=$2 AND s.id=assignment.service_id
+    )
+)
 ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,active=EXCLUDED.active,service_ids=EXCLUDED.service_ids,hours=EXCLUDED.hours,closed_dates=EXCLUDED.closed_dates
 WHERE appointment_resources.business_id=EXCLUDED.business_id RETURNING *;
 -- name: ListAppointments :many

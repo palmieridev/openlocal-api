@@ -44,6 +44,12 @@ func mapResource(r ResourceSnapshot) Resource {
 	return Resource{r.ID, r.Name, r.Active, r.ServiceIDs, r.Hours, r.ClosedDates}
 }
 func (h *Service) Configure(ctx context.Context, in ConfigurationInput) (result Settings, err error) {
+	if !validModule(in.Module) {
+		return result, bad("invalid module")
+	}
+	if err = requireConfigurationRole(in.Actor.Role); err != nil {
+		return result, err
+	}
 	id, role, module := in.Actor.BusinessID, in.Actor.Role, in.Module
 	tx, q, sub, err := h.begin(ctx, id)
 	if err != nil {
@@ -58,7 +64,7 @@ func (h *Service) Configure(ctx context.Context, in ConfigurationInput) (result 
 		return result, err
 	}
 	if role == "staff" {
-		return result, fail(403, "module_unavailable", "configuration requires a manager")
+		return result, fail(Forbidden, "module_unavailable", "configuration requires a manager")
 	}
 	s, err := settings(ctx, q, id, module)
 	if err != nil {
@@ -111,6 +117,9 @@ func (h *Service) Configure(ctx context.Context, in ConfigurationInput) (result 
 	return s, nil
 }
 func (h *Service) SaveService(ctx context.Context, command ConfigurationInput) (result Offering, err error) {
+	if err = requireConfigurationRole(command.Actor.Role); err != nil {
+		return result, err
+	}
 	id, role := command.Actor.BusinessID, command.Actor.Role
 	tx, q, sub, err := h.begin(ctx, id)
 	if err != nil {
@@ -142,7 +151,7 @@ func (h *Service) SaveService(ctx context.Context, command ConfigurationInput) (
 		return result, bad("invalid service")
 	}
 	if value.BufferMinutes > 0 && capability.Tier != "business" && (command.Create || hasField(command.Patch, "buffer_minutes")) {
-		return result, fail(403, "module_unavailable", "buffers require Business")
+		return result, fail(Forbidden, "module_unavailable", "buffers require Business")
 	}
 	price := decimal.NullDecimal{}
 	if value.Price != nil {
@@ -162,6 +171,9 @@ func (h *Service) SaveService(ctx context.Context, command ConfigurationInput) (
 	return mapService(r), nil
 }
 func (h *Service) SaveResource(ctx context.Context, command ConfigurationInput) (result Resource, err error) {
+	if err = requireConfigurationRole(command.Actor.Role); err != nil {
+		return result, err
+	}
 	id, role := command.Actor.BusinessID, command.Actor.Role
 	tx, q, sub, err := h.begin(ctx, id)
 	if err != nil {
@@ -201,7 +213,7 @@ func (h *Service) SaveResource(ctx context.Context, command ConfigurationInput) 
 		len(value.ClosedDates) > 0 && (command.Create || hasField(command.Patch, "closed_dates")) ||
 		len(value.ServiceIDs) > 0 && (command.Create || hasField(command.Patch, "service_ids"))
 	if capability.Tier != "business" && advancedChange {
-		return result, fail(403, "module_unavailable", "resource schedules and assignment require Business")
+		return result, fail(Forbidden, "module_unavailable", "resource schedules and assignment require Business")
 	}
 	for _, sid := range value.ServiceIDs {
 		if _, err = q.GetService(ctx, ScopedID{BusinessID: id, ID: sid}); err != nil {
@@ -220,7 +232,7 @@ func (h *Service) SaveResource(ctx context.Context, command ConfigurationInput) 
 	}
 	_, limit := access.Limits(capability.Tier)
 	if value.Active && !wasActive && n >= limit {
-		return result, fail(409, "quota_exceeded", "resource limit reached")
+		return result, fail(Conflict, "quota_exceeded", "resource limit reached")
 	}
 	r, err := q.SaveAppointmentResource(ctx, ResourceSnapshot{ID: rid, BusinessID: id, Name: strings.TrimSpace(value.Name), Active: value.Active, ServiceIDs: value.ServiceIDs, Hours: value.Hours, ClosedDates: value.ClosedDates})
 	if err != nil {

@@ -143,7 +143,7 @@ func (h *Service) Mutate(ctx context.Context, in MutateInput) (result WriteResul
 			if e = enqueueExpiration(ctx, q, business, id, module, a.ExpiresAt); e != nil {
 				return result, e
 			}
-			if e = q.ExtendRequestAccess(ctx, AccessExtension{PublicID: id, ExpiresAt: a.EndsAt.AddDate(0, 0, 30)}); e != nil {
+			if e = q.ExtendRequestAccess(ctx, AccessExtension{BusinessID: business, PublicID: id, ExpiresAt: a.EndsAt.AddDate(0, 0, 30)}); e != nil {
 				return result, e
 			}
 		}
@@ -209,7 +209,7 @@ func (h *Service) Mutate(ctx context.Context, in MutateInput) (result WriteResul
 			if e = enqueueExpiration(ctx, q, business, id, module, p.ExpiresAt); e != nil {
 				return result, e
 			}
-			if e = q.ExtendRequestAccess(ctx, AccessExtension{PublicID: id, ExpiresAt: p.EndsAt.AddDate(0, 0, 30)}); e != nil {
+			if e = q.ExtendRequestAccess(ctx, AccessExtension{BusinessID: business, PublicID: id, ExpiresAt: p.EndsAt.AddDate(0, 0, 30)}); e != nil {
 				return result, e
 			}
 		}
@@ -233,13 +233,13 @@ func (h *Service) Mutate(ctx context.Context, in MutateInput) (result WriteResul
 			return result, e
 		}
 	}
-	if e = h.saveReplay(ctx, in.Replay, q, business, scope, response, 200); e != nil {
+	if e = h.saveReplay(ctx, in.Replay, q, business, scope, response, Changed); e != nil {
 		return result, e
 	}
 	if e = tx.Commit(ctx); e != nil {
 		return result, e
 	}
-	return WriteResult{Body: jsonBytes(response), Status: 200}, nil
+	return WriteResult{Body: jsonBytes(response), Outcome: Changed}, nil
 }
 
 // Expire is idempotent; queue delivery and recovery sweeps call the same transaction.
