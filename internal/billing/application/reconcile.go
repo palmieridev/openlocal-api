@@ -19,10 +19,6 @@ func (s *Service) Reconcile(ctx context.Context, customer string) error {
 		}
 		return err
 	}
-	list, err := s.payment.Subscriptions(ctx, customer)
-	if err != nil {
-		return err
-	}
 	tx, err := s.store.Begin(ctx)
 	if err != nil {
 		return err
@@ -34,6 +30,12 @@ func (s *Service) Reconcile(ctx context.Context, customer string) error {
 	}
 	if local.CustomerID == "" || local.CustomerID != customer {
 		return fail("conflict", "billing_unavailable", "customer mapping changed")
+	}
+	// Serialize provider reads as well as writes. Otherwise an older response
+	// delayed in transit can overwrite a newer committed reconciliation.
+	list, err := s.payment.Subscriptions(ctx, customer)
+	if err != nil {
+		return err
 	}
 	var selected *ProviderSubscription
 	for i := range list {
