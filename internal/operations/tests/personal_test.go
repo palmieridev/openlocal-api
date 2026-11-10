@@ -1,4 +1,4 @@
-package operations
+package operations_test
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"github.com/google/uuid"
 	"github.com/palmieridev/openlocal-api/internal/api"
+	"github.com/palmieridev/openlocal-api/internal/operations"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	"github.com/palmieridev/openlocal-api/internal/savedbusinesses"
 	"net/url"
@@ -15,14 +16,14 @@ import (
 
 func TestPersonalOwnershipReplayAndDisabledHistory(t *testing.T) {
 	f := setup(t)
-	body := AppointmentInput{CustomerInput: CustomerInput{CustomerName: "Personal Customer", CustomerPhone: "+525555551111", Notes: "private"}, ServiceID: f.svc.ID, ResourceID: f.resource.ID, StartsAt: f.start}
+	body := operations.AppointmentInput{CustomerInput: operations.CustomerInput{CustomerName: "Personal Customer", CustomerPhone: "+525555551111", Notes: "private"}, ServiceID: f.svc.ID, ResourceID: f.resource.ID, StartsAt: f.start}
 	path := "/me/businesses/" + f.b.ID.String() + "/appointments"
 	key := uuid.NewString()
 	code, data := f.request("POST", path, key, body, true)
 	if code != 201 {
 		t.Fatalf("create %d %s", code, data)
 	}
-	var r PersonalDetail
+	var r operations.PersonalDetail
 	must(t, json.Unmarshal(data, &r))
 	for _, field := range []string{"management_token", "customer_id", "notes", "resource_id"} {
 		if bytes.Contains(data, []byte(`"`+field+`"`)) {
@@ -46,7 +47,7 @@ func TestPersonalOwnershipReplayAndDisabledHistory(t *testing.T) {
 	if code != 201 {
 		t.Fatalf("other create %d %s", code, data)
 	}
-	var second PersonalDetail
+	var second operations.PersonalDetail
 	must(t, json.Unmarshal(data, &second))
 	if second.ID == r.ID {
 		t.Fatal("cross-user replay")
@@ -61,7 +62,7 @@ func TestPersonalOwnershipReplayAndDisabledHistory(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("history %d %s", code, data)
 	}
-	var page api.CursorPage[ActivityItem]
+	var page api.CursorPage[operations.ActivityItem]
 	must(t, json.Unmarshal(data, &page))
 	if len(page.Items) != 1 || page.Items[0].ID != r.ID || page.NextCursor != nil {
 		t.Fatalf("isolation %s", data)
@@ -143,7 +144,7 @@ func TestSavedBusinessesLifecycle(t *testing.T) {
 func TestPersonalPreorderPaginationWithoutOrganization(t *testing.T) {
 	f := setup(t)
 	f.org = ""
-	w, e := f.h.RT.Q.UpsertPickupWindow(context.Background(), db.UpsertPickupWindowParams{BusinessID: f.b.ID, StartsAt: TS(f.start), EndsAt: TS(f.start.Add(30 * time.Minute))})
+	w, e := f.h.RT.Q.UpsertPickupWindow(context.Background(), db.UpsertPickupWindowParams{BusinessID: f.b.ID, StartsAt: operations.TS(f.start), EndsAt: operations.TS(f.start.Add(30 * time.Minute))})
 	must(t, e)
 	body := map[string]any{"customer_name": "Personal Customer", "customer_phone": "+525555551222", "pickup_window_id": w.ID, "items": []map[string]any{{"variant_id": f.variant.ID, "quantity": "1.5", "unit_price": "50.00"}}}
 	for i := 0; i < 2; i++ {
@@ -156,7 +157,7 @@ func TestPersonalPreorderPaginationWithoutOrganization(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("list %d %s", code, data)
 	}
-	var page api.CursorPage[ActivityItem]
+	var page api.CursorPage[operations.ActivityItem]
 	must(t, json.Unmarshal(data, &page))
 	if len(page.Items) != 1 || page.NextCursor == nil {
 		t.Fatalf("page %s", data)
@@ -172,7 +173,7 @@ func TestPersonalPreorderPaginationWithoutOrganization(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("detail %d %s", code, data)
 	}
-	var detail PersonalDetail
+	var detail operations.PersonalDetail
 	must(t, json.Unmarshal(data, &detail))
 	if detail.EstimatedTotal != "75.00" || len(detail.Items) != 1 || len(detail.History) != 1 {
 		t.Fatalf("snapshot %s", data)

@@ -97,7 +97,7 @@ jobs:
           MIGRATIONS_PATH: db/migrations
       - name: Prepare migrated domain test databases
         run: |
-          for domain in identity catalog billing; do
+          for domain in identity catalog billing operations; do
             docker exec -e PGPASSWORD=openlocal openlocal-pgmq-test \
               createdb -h 127.0.0.1 -U openlocal \
               --template=openlocal_movement_test "openlocal_${domain}_test"
@@ -111,6 +111,7 @@ jobs:
           OPENLOCAL_IDENTITY_TEST_DATABASE_URL: postgres://openlocal:openlocal@localhost:5432/openlocal_identity_test?sslmode=disable
           OPENLOCAL_CATALOG_TEST_DATABASE_URL: postgres://openlocal:openlocal@localhost:5432/openlocal_catalog_test?sslmode=disable
           OPENLOCAL_BILLING_TEST_DATABASE_URL: postgres://openlocal:openlocal@localhost:5432/openlocal_billing_test?sslmode=disable
+          OPENLOCAL_OPERATIONS_TEST_DATABASE_URL: postgres://openlocal:openlocal@localhost:5432/openlocal_operations_test?sslmode=disable
       - name: PostgreSQL logs on failure
         if: failure()
         run: docker logs openlocal-pgmq-test

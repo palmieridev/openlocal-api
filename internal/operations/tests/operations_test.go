@@ -1,4 +1,4 @@
-package operations
+package operations_test
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 	"github.com/palmieridev/openlocal-api/internal/api"
 	"github.com/palmieridev/openlocal-api/internal/auth"
 	"github.com/palmieridev/openlocal-api/internal/config"
+	"github.com/palmieridev/openlocal-api/internal/operations"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	"github.com/palmieridev/openlocal-api/internal/scheduling"
 	"github.com/shopspring/decimal"
@@ -19,30 +20,39 @@ import (
 	"log/slog"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 )
 
 type fixture struct {
-	h         *Handler
+	h         *operations.Handler
 	app       *fiber.App
 	b         db.Business
 	svc       db.Service
 	resource  db.AppointmentResource
 	variant   db.ProductVariant
 	user, org string
-	cfg       Settings
+	cfg       operations.Settings
 	start     time.Time
 }
 
 func setup(t *testing.T) fixture {
 	t.Helper()
-	if os.Getenv("OPENLOCAL_INTEGRATION_TESTS") != "1" {
-		t.Skip("requires isolated Docker PostgreSQL")
+	dsn := os.Getenv("OPENLOCAL_OPERATIONS_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("requires explicit migrated disposable OPENLOCAL_OPERATIONS_TEST_DATABASE_URL")
+	}
+	parsed, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(parsed.ConnConfig.Database, "openlocal_operations_test") || (parsed.ConnConfig.Host != "localhost" && parsed.ConnConfig.Host != "127.0.0.1" && !strings.HasPrefix(parsed.ConnConfig.Host, "/")) {
+		t.Fatal("operations tests require a disposable local openlocal_operations_test database")
 	}
 	ctx := context.Background()
-	pool, e := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
+	pool, e := pgxpool.New(ctx, dsn)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -72,9 +82,9 @@ DELETE FROM module_customers WHERE business_id=$1`, b.ID)
 	_, e = q.AddBusinessMember(ctx, db.AddBusinessMemberParams{BusinessID: b.ID, UserID: u.ID, ClerkOrgID: org, Role: "owner"})
 	must(t, e)
 	must(t, q.EnsureSubscription(ctx, b.ID))
-	_, e = q.UpdateSubscription(ctx, db.UpdateSubscriptionParams{BusinessID: b.ID, Tier: "business", Status: "pilot", Modules: []string{"appointments", "preorders"}, PeriodStart: TS(time.Now().Add(-time.Hour)), PeriodEnd: TS(time.Now().AddDate(0, 1, 0))})
+	_, e = q.UpdateSubscription(ctx, db.UpdateSubscriptionParams{BusinessID: b.ID, Tier: "business", Status: "pilot", Modules: []string{"appointments", "preorders"}, PeriodStart: operations.TS(time.Now().Add(-time.Hour)), PeriodEnd: operations.TS(time.Now().AddDate(0, 1, 0))})
 	must(t, e)
-	cfg := defaults()
+	cfg := operations.Settings{Hours: []scheduling.Hour{}, ClosedDates: []string{}, LeadMinutes: 60, HorizonDays: 30, SlotMinutes: 30, CancelBeforeMinutes: 60, PendingTTLMinutes: 1440, VariantRules: []operations.VariantRule{}}
 	cfg.Enabled = true
 	cfg.MaxOrdersPerSlot = 1
 	for d := 0; d < 7; d++ {
@@ -88,12 +98,12 @@ DELETE FROM module_customers WHERE business_id=$1`, b.ID)
 	must(t, e)
 	variant, e := q.CreateVariant(ctx, db.CreateVariantParams{BusinessID: b.ID, ProductID: product.ID, Sku: uuid.NewString(), InternalCode: uuid.NewString(), Name: "Entero", Attributes: []byte("{}"), Price: decimal.NewFromInt(50), Currency: "MXN", TrackInventory: true, PublicStockStatus: "available", IsPublic: true, Status: "active"})
 	must(t, e)
-	cfg.VariantRules = []VariantRule{{VariantID: variant.ID, MinQuantity: "0.5", MaxQuantity: "10", Step: "0.5"}}
+	cfg.VariantRules = []operations.VariantRule{{VariantID: variant.ID, MinQuantity: "0.5", MaxQuantity: "10", Step: "0.5"}}
 	for _, m := range []string{"appointments", "preorders"} {
 		_, e = q.UpsertModule(ctx, db.UpsertModuleParams{BusinessID: b.ID, Module: m, Enabled: true, Settings: jsonBytes(cfg)})
 		must(t, e)
 	}
-	h := NewHandler(rt, config.Config{AppEnv: "development", ModulesAllowTestChallenge: true, ModulesTokenKey: base64.StdEncoding.EncodeToString(make([]byte, 32))})
+	h := operations.NewHandler(rt, config.Config{AppEnv: "development", ModulesAllowTestChallenge: true, ModulesTokenKey: base64.StdEncoding.EncodeToString(make([]byte, 32))})
 	app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
 	h.RegisterPublicRoutes(app.Group("/api/v1"))
 	h.RegisterPrivateRoutes(app.Group("/api/v1", auth.Middleware{AllowTestAuth: true}.RequireAuth()))
@@ -125,13 +135,13 @@ func (f fixture) request(method, path, key string, body any, owner bool) (int, [
 	data, _ := io.ReadAll(res.Body)
 	return res.StatusCode, data
 }
-func (f fixture) appointment(t *testing.T, phone string, start time.Time) Record {
+func (f fixture) appointment(t *testing.T, phone string, start time.Time) operations.Record {
 	t.Helper()
 	code, data := f.request("POST", "/public/businesses/"+f.b.Slug+"/appointments", uuid.NewString(), map[string]any{"customer_name": "Test Customer", "customer_phone": phone, "service_id": f.svc.ID, "resource_id": f.resource.ID, "starts_at": start}, false)
 	if code != 201 {
 		t.Fatalf("create: %d %s", code, data)
 	}
-	var r Record
+	var r operations.Record
 	must(t, json.Unmarshal(data, &r))
 	return r
 }
@@ -141,11 +151,11 @@ func TestConcurrentConfirmationAndReplay(t *testing.T) {
 	b := f.appointment(t, "+525555550002", f.start)
 	var wg sync.WaitGroup
 	codes := make(chan int, 2)
-	for _, r := range []Record{a, b} {
+	for _, r := range []operations.Record{a, b} {
 		wg.Add(1)
-		go func(r Record) {
+		go func(r operations.Record) {
 			defer wg.Done()
-			code, _ := f.request("POST", "/businesses/"+f.b.ID.String()+"/appointments/"+r.ID.String()+"/transitions", uuid.NewString(), TransitionInput{Status: "confirmed", Version: 1}, true)
+			code, _ := f.request("POST", "/businesses/"+f.b.ID.String()+"/appointments/"+r.ID.String()+"/transitions", uuid.NewString(), operations.TransitionInput{Status: "confirmed", Version: 1}, true)
 			codes <- code
 		}(r)
 	}
@@ -158,7 +168,7 @@ func TestConcurrentConfirmationAndReplay(t *testing.T) {
 	if count[200] != 1 || count[409] != 1 {
 		t.Fatalf("concurrent results %v", count)
 	}
-	body := AppointmentInput{CustomerInput: CustomerInput{CustomerName: "Repeat Customer", CustomerPhone: "+525555550003"}, ServiceID: f.svc.ID, ResourceID: f.resource.ID, StartsAt: f.start.Add(time.Hour)}
+	body := operations.AppointmentInput{CustomerInput: operations.CustomerInput{CustomerName: "Repeat Customer", CustomerPhone: "+525555550003"}, ServiceID: f.svc.ID, ResourceID: f.resource.ID, StartsAt: f.start.Add(time.Hour)}
 	key := uuid.NewString()
 	path := "/public/businesses/" + f.b.Slug + "/appointments"
 	code, data := f.request("POST", path, key, body, false)
@@ -183,8 +193,12 @@ func TestExpiryPreservesHistoryAndTokenIsolation(t *testing.T) {
 	must(t, e)
 	must(t, f.h.Expire(ctx, f.b.ID, r.ID, "appointments"))
 	must(t, f.h.Expire(ctx, f.b.ID, r.ID, "appointments"))
-	out, e := f.h.record(ctx, f.h.RT.Q, f.b.ID, r.ID, "appointments")
-	must(t, e)
+	code, data := f.request("GET", "/businesses/"+f.b.ID.String()+"/appointments/"+r.ID.String(), "", nil, true)
+	if code != 200 {
+		t.Fatalf("read %d %s", code, data)
+	}
+	var out operations.Record
+	must(t, json.Unmarshal(data, &out))
 	if out.Status != "expired" || len(out.History) != 2 {
 		t.Fatalf("expiry/history: %+v", out)
 	}
@@ -206,7 +220,7 @@ func TestExpiryPreservesHistoryAndTokenIsolation(t *testing.T) {
 func TestPreorderCapacityPriceAndNoStockMutation(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
-	w, e := f.h.RT.Q.UpsertPickupWindow(ctx, db.UpsertPickupWindowParams{BusinessID: f.b.ID, StartsAt: TS(f.start), EndsAt: TS(f.start.Add(30 * time.Minute))})
+	w, e := f.h.RT.Q.UpsertPickupWindow(ctx, db.UpsertPickupWindowParams{BusinessID: f.b.ID, StartsAt: operations.TS(f.start), EndsAt: operations.TS(f.start.Add(30 * time.Minute))})
 	must(t, e)
 	body := map[string]any{"customer_name": "Test Customer", "customer_phone": "+525555550010", "pickup_window_id": w.ID, "items": []map[string]any{{"variant_id": f.variant.ID, "quantity": "1.5", "unit_price": "50.00"}}}
 	path := "/public/businesses/" + f.b.Slug + "/preorders"
@@ -214,7 +228,7 @@ func TestPreorderCapacityPriceAndNoStockMutation(t *testing.T) {
 	if code != 201 {
 		t.Fatalf("preorder %d %s", code, data)
 	}
-	var a Record
+	var a operations.Record
 	must(t, json.Unmarshal(data, &a))
 	if a.EstimatedTotal != "75.00" {
 		t.Fatal(a.EstimatedTotal)
@@ -224,10 +238,10 @@ func TestPreorderCapacityPriceAndNoStockMutation(t *testing.T) {
 	if code != 201 {
 		t.Fatalf("preorder %d %s", code, data)
 	}
-	var b Record
+	var b operations.Record
 	must(t, json.Unmarshal(data, &b))
-	for i, r := range []Record{a, b} {
-		code, data = f.request("POST", "/businesses/"+f.b.ID.String()+"/preorders/"+r.ID.String()+"/transitions", uuid.NewString(), TransitionInput{Status: "confirmed", Version: 1}, true)
+	for i, r := range []operations.Record{a, b} {
+		code, data = f.request("POST", "/businesses/"+f.b.ID.String()+"/preorders/"+r.ID.String()+"/transitions", uuid.NewString(), operations.TransitionInput{Status: "confirmed", Version: 1}, true)
 		want := 200
 		if i == 1 {
 			want = 409
@@ -242,7 +256,7 @@ func TestPreorderCapacityPriceAndNoStockMutation(t *testing.T) {
 		t.Fatal("preorders changed stock")
 	}
 	body["items"] = []map[string]any{{"variant_id": f.variant.ID, "quantity": "1.5", "unit_price": "1.00"}}
-	w, e = f.h.RT.Q.UpsertPickupWindow(ctx, db.UpsertPickupWindowParams{BusinessID: f.b.ID, StartsAt: TS(f.start.Add(time.Hour)), EndsAt: TS(f.start.Add(90 * time.Minute))})
+	w, e = f.h.RT.Q.UpsertPickupWindow(ctx, db.UpsertPickupWindowParams{BusinessID: f.b.ID, StartsAt: operations.TS(f.start.Add(time.Hour)), EndsAt: operations.TS(f.start.Add(90 * time.Minute))})
 	must(t, e)
 	body["pickup_window_id"] = w.ID
 	code, _ = f.request("POST", path, uuid.NewString(), body, false)
@@ -256,4 +270,12 @@ func requestBody(body any) []byte {
 		return nil
 	}
 	return jsonBytes(body)
+}
+
+func jsonBytes(value any) []byte {
+	data, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	return data
 }

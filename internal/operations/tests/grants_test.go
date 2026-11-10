@@ -1,4 +1,4 @@
-package operations
+package operations_test
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/palmieridev/openlocal-api/internal/operations"
 	"io"
 	"net/http/httptest"
 	"sync"
@@ -85,7 +86,7 @@ func TestGrantOnlyIntakeConfirmationAndHistory(t *testing.T) {
 	// Complimentary access works through the real public route and owner confirmation.
 	r := f.appointment(t, "+525555551001", f.start)
 	path := "/businesses/" + f.b.ID.String() + "/appointments/" + r.ID.String() + "/transitions"
-	code, data := f.request("POST", path, uuid.NewString(), TransitionInput{Status: "confirmed", Version: 1}, true)
+	code, data := f.request("POST", path, uuid.NewString(), operations.TransitionInput{Status: "confirmed", Version: 1}, true)
 	if code != 200 {
 		t.Fatalf("confirm %d %s", code, data)
 	}
@@ -94,7 +95,7 @@ func TestGrantOnlyIntakeConfirmationAndHistory(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("revoke %d %s", code, data)
 	}
-	code, data = f.request("POST", path, uuid.NewString(), TransitionInput{Status: "completed", Version: 2}, true)
+	code, data = f.request("POST", path, uuid.NewString(), operations.TransitionInput{Status: "completed", Version: 2}, true)
 	if code != 200 {
 		t.Fatalf("complete after revoke %d %s", code, data)
 	}
@@ -102,7 +103,7 @@ func TestGrantOnlyIntakeConfirmationAndHistory(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("read history %d %s", code, data)
 	}
-	var out Record
+	var out operations.Record
 	must(t, json.Unmarshal(data, &out))
 	if len(out.History) != 3 {
 		t.Fatalf("history %+v", out.History)
@@ -214,17 +215,17 @@ func TestGrantQuotaNoAdditionResetAndConcurrentLastSlot(t *testing.T) {
 	f.grant(t, "appointments", "essential", nil)
 	// Two overlapping grants still allow 50 confirmations total. Preload 49 genuine usage events.
 	for i := 0; i < 49; i++ {
-		must(t, f.h.RT.Q.ConsumeModuleUsage(ctx, db.ConsumeModuleUsageParams{BusinessID: f.b.ID, Module: "appointments", RecordID: uuid.New(), PeriodStart: TS(time.Now().AddDate(0, -1, 0))}))
+		must(t, f.h.RT.Q.ConsumeModuleUsage(ctx, db.ConsumeModuleUsageParams{BusinessID: f.b.ID, Module: "appointments", RecordID: uuid.New(), PeriodStart: operations.TS(time.Now().AddDate(0, -1, 0))}))
 	}
 	a := f.appointment(t, "+525555551101", f.start)
 	b := f.appointment(t, "+525555551102", f.start.Add(time.Hour))
 	var wg sync.WaitGroup
 	codes := make(chan int, 2)
-	for _, r := range []Record{a, b} {
+	for _, r := range []operations.Record{a, b} {
 		wg.Add(1)
-		go func(r Record) {
+		go func(r operations.Record) {
 			defer wg.Done()
-			code, _ := f.request("POST", "/businesses/"+f.b.ID.String()+"/appointments/"+r.ID.String()+"/transitions", uuid.NewString(), TransitionInput{Status: "confirmed", Version: 1}, true)
+			code, _ := f.request("POST", "/businesses/"+f.b.ID.String()+"/appointments/"+r.ID.String()+"/transitions", uuid.NewString(), operations.TransitionInput{Status: "confirmed", Version: 1}, true)
 			codes <- code
 		}(r)
 	}
@@ -363,7 +364,7 @@ func TestGrantRevocationSerializesWithConfirmation(t *testing.T) {
 	done := make(chan int, 1)
 	go func() {
 		close(started)
-		code, _ := f.request("POST", "/businesses/"+f.b.ID.String()+"/appointments/"+r.ID.String()+"/transitions", uuid.NewString(), TransitionInput{Status: "confirmed", Version: 1}, true)
+		code, _ := f.request("POST", "/businesses/"+f.b.ID.String()+"/appointments/"+r.ID.String()+"/transitions", uuid.NewString(), operations.TransitionInput{Status: "confirmed", Version: 1}, true)
 		done <- code
 	}()
 	<-started
@@ -395,11 +396,12 @@ func TestGrantFallbackRestrictsIntakeResourcesAndAdvancedSettings(t *testing.T) 
 	if code != 200 {
 		t.Fatalf("revoke %d %s", code, data)
 	}
-	svc, err := f.h.RT.Q.GetService(ctx, db.GetServiceParams{BusinessID: f.b.ID, ID: f.svc.ID})
-	must(t, err)
-	slots, err := appointmentSlots(ctx, f.h.RT.Q, f.b, f.cfg, svc, f.start.Format("2006-01-02"), extra.ID, uuid.Nil)
-	must(t, err)
-	if len(slots) != 0 {
+	code, data = f.request("GET", "/public/businesses/"+f.b.Slug+"/appointments/availability?service_id="+f.svc.ID.String()+"&resource_id="+extra.ID.String()+"&date="+f.start.Format("2006-01-02"), "", nil, false)
+	var availability struct {
+		Slots []json.RawMessage `json:"slots"`
+	}
+	must(t, json.Unmarshal(data, &availability))
+	if code != 200 || len(availability.Slots) != 0 {
 		t.Fatal("extra resource still contributes to Essential intake")
 	}
 	r := f.appointment(t, "+525555551301", f.start)
@@ -408,15 +410,27 @@ func TestGrantFallbackRestrictsIntakeResourcesAndAdvancedSettings(t *testing.T) 
 	if stored.BufferMinutes != 0 {
 		t.Fatal("advanced buffer still contributes to Essential intake")
 	}
-	sub, err := f.h.RT.Q.GetSubscription(ctx, f.b.ID)
+	// Essential intake ignores the retained Business capacity limit.
+	w, err := f.h.RT.Q.UpsertPickupWindow(ctx, db.UpsertPickupWindowParams{BusinessID: f.b.ID, StartsAt: operations.TS(f.start), EndsAt: operations.TS(f.start.Add(30 * time.Minute))})
 	must(t, err)
-	cfg, err := requireIntake(ctx, f.h.RT.Q, sub, "preorders")
-	must(t, err)
-	if cfg.MaxOrdersPerSlot != 0 || cfg.DailyCutoff != "" {
-		t.Fatal("advanced preorder settings active on Essential")
+	for i := 0; i < 2; i++ {
+		code, data := f.request("POST", "/public/businesses/"+f.b.Slug+"/preorders", uuid.NewString(), map[string]any{"customer_name": "Essential Customer", "customer_phone": fmt.Sprintf("+52555555900%d", i), "pickup_window_id": w.ID, "items": []map[string]any{{"variant_id": f.variant.ID, "quantity": "1", "unit_price": "50.00"}}}, false)
+		if code != 201 {
+			t.Fatalf("Essential create %d %s", code, data)
+		}
+		var order operations.Record
+		must(t, json.Unmarshal(data, &order))
+		code, data = f.request("POST", "/businesses/"+f.b.ID.String()+"/preorders/"+order.ID.String()+"/transitions", uuid.NewString(), operations.TransitionInput{Status: "confirmed", Version: 1}, true)
+		if code != 200 {
+			t.Fatalf("Essential ignores Business capacity %d %s", code, data)
+		}
 	}
-	saved, err := settings(ctx, f.h.RT.Q, f.b.ID, "preorders")
-	must(t, err)
+	code, savedBody := f.request("GET", "/businesses/"+f.b.ID.String()+"/preorders/settings", "", nil, true)
+	if code != 200 {
+		t.Fatalf("settings %d %s", code, savedBody)
+	}
+	var saved operations.Settings
+	must(t, json.Unmarshal(savedBody, &saved))
 	if saved.MaxOrdersPerSlot != 1 {
 		t.Fatal("downgrade rewrote saved settings")
 	}
@@ -436,13 +450,13 @@ func TestGrantFallbackAllowsResourceEditsWithoutIncreasingCapacity(t *testing.T)
 			must(t, err)
 			g := f.grant(t, "appointments", "business", nil)
 			base := "/businesses/" + f.b.ID.String() + "/appointment-resources"
-			createResource := func(name string, active bool) Resource {
+			createResource := func(name string, active bool) operations.Resource {
 				t.Helper()
 				code, data := f.request("POST", base, uuid.NewString(), map[string]any{"name": name, "active": active}, true)
 				if code != 200 {
 					t.Fatalf("create resource %d %s", code, data)
 				}
-				var resource Resource
+				var resource operations.Resource
 				must(t, json.Unmarshal(data, &resource))
 				return resource
 			}
@@ -460,12 +474,12 @@ func TestGrantFallbackAllowsResourceEditsWithoutIncreasingCapacity(t *testing.T)
 			if access := f.access(t, "owner"); access.Modules["appointments"].MaxResources != 1 {
 				t.Fatalf("expected Essential fallback: %+v", access)
 			}
-			for _, resource := range []Resource{{ID: f.resource.ID, Name: f.resource.Name}, extra} {
+			for _, resource := range []operations.Resource{{ID: f.resource.ID, Name: f.resource.Name}, extra} {
 				code, data := f.request("PATCH", base+"/"+resource.ID.String(), uuid.NewString(), map[string]any{"name": "Renamed " + resource.Name, "active": true}, true)
 				if code != 200 {
 					t.Fatalf("edit retained active resource %d %s", code, data)
 				}
-				var saved Resource
+				var saved operations.Resource
 				must(t, json.Unmarshal(data, &saved))
 				if saved.Name != "Renamed "+resource.Name || !saved.Active {
 					t.Fatalf("basic edit was not saved: %+v", saved)
@@ -524,8 +538,12 @@ func TestEssentialCanEditBasicFieldsWhileRetainingBusinessConfiguration(t *testi
 			t.Fatalf("%s %d want %d %s", c.path, code, c.want, data)
 		}
 	}
-	saved, err := settings(ctx, f.h.RT.Q, f.b.ID, "preorders")
-	must(t, err)
+	code, savedBody := f.request("GET", "/businesses/"+f.b.ID.String()+"/preorders/settings", "", nil, true)
+	if code != 200 {
+		t.Fatalf("settings %d %s", code, savedBody)
+	}
+	var saved operations.Settings
+	must(t, json.Unmarshal(savedBody, &saved))
 	if saved.MaxOrdersPerSlot != 1 {
 		t.Fatal("basic edit erased advanced settings")
 	}
