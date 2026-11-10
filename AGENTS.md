@@ -211,3 +211,8 @@ Operations tests live in `internal/operations/tests` and require
 database whose name starts with `openlocal_operations_test`. CI clones the migrated
 test database and explicitly enables this suite in both PGMQ configurations.
 Without this DSN, operations database cases skip.
+
+Cross-package operations/access-grant, saved-business, and worker queue flows live
+in `internal/integration`. They require `OPENLOCAL_INTEGRATION_TESTS=1` and an
+explicit local `DATABASE_URL` named with the `openlocal_movement_test` prefix.
+Their fixtures clean up customer records and queue messages for their business.

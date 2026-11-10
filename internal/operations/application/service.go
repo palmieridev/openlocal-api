@@ -63,7 +63,6 @@ type MutateInput struct {
 	Replay                ReplayInput
 }
 
-// WriteResult preserves the exact response bytes, including decrypted retries.
 type WriteOutcome uint8
 
 const (
@@ -71,6 +70,7 @@ const (
 	Changed
 )
 
+// WriteResult preserves the exact response bytes, including decrypted retries.
 type WriteResult struct {
 	Body     []byte
 	Outcome  WriteOutcome
