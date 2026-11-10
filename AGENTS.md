@@ -171,3 +171,25 @@ Without that variable, the database cases skip. CI provisions this database and
 sets both `OPENLOCAL_MOVEMENT_TEST_DATABASE_URL` and
 `OPENLOCAL_INTEGRATION_TESTS=1` to exercise inventory and cross-package database
 flows explicitly.
+
+Billing database tests live in `internal/billing/tests` and require
+`OPENLOCAL_BILLING_TEST_DATABASE_URL` to point to a migrated disposable local
+database whose name starts with `openlocal_billing_test`. CI clones the migrated
+test database and enables this suite explicitly, along with entitlement policy
+tests in `internal/entitlements/tests`.
+
+Billing provider, checkout, invoice, signature, and reconciliation tests all live
+in `internal/billing/tests`. Access-grant resolution and authorization tests live
+in `internal/accessgrants/tests`; grant input validation uses registered routes
+and the same disposable billing database. These suites use external test packages
+and production services, routes, or payment adapters rather than private test shims.
+
+Run the billing/access suites with `OPENLOCAL_BILLING_TEST_DATABASE_URL` set:
+
+```sh
+go test ./internal/billing/... ./internal/accessgrants/... ./internal/entitlements/...
+```
+
+Without the explicit DSN, their database cases skip; the provider-stub and pure
+policy cases still run. For all database suites, also set the disposable movement
+DSN and `OPENLOCAL_INTEGRATION_TESTS=1` as described above before `go test ./...`.
