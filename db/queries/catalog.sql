@@ -1,7 +1,14 @@
 -- name: CreateProduct :one
 INSERT INTO products (business_id, category_id, name, slug, description, brand, unit, product_type, is_handmade, is_public, status)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+WHERE $2::uuid IS NULL OR EXISTS (SELECT 1 FROM categories WHERE id = $2 AND business_id = $1)
 RETURNING *;
+
+-- name: GetCatalogCategoryForBusiness :one
+SELECT id FROM categories WHERE id = $1 AND business_id = $2;
+
+-- name: LockCatalogVariantForBusiness :one
+SELECT * FROM product_variants WHERE id = $1 AND business_id = $2 FOR UPDATE;
 
 -- name: ListProducts :many
 SELECT p.*
@@ -27,7 +34,8 @@ UPDATE products SET
     is_public = $10,
     status = $11,
     updated_at = now()
-WHERE id = $1 AND business_id = $2
+WHERE products.id = $1 AND products.business_id = $2
+  AND ($3::uuid IS NULL OR EXISTS (SELECT 1 FROM categories WHERE id = $3 AND business_id = $2))
 RETURNING *;
 
 -- name: ArchiveProduct :exec
@@ -57,9 +65,9 @@ INSERT INTO product_variants (
     product_id, business_id, sku, barcode, internal_code, name, description, price_note, attributes,
     price, cost, currency, track_inventory, public_stock_status, is_public, reorder_point,
     lead_time_days, status
-) VALUES (
+) SELECT
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
-)
+WHERE EXISTS (SELECT 1 FROM products WHERE id = $1 AND business_id = $2)
 RETURNING *;
 
 -- name: ListVariantsByProduct :many
@@ -74,7 +82,10 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) pi ON true
 WHERE pv.product_id = $1 AND pv.business_id = $2
-ORDER BY pv.created_at ASC;
+ORDER BY pv.created_at ASC
+-- Zero retains the default for existing sqlc callers that omit pagination.
+LIMIT LEAST(COALESCE(NULLIF(sqlc.arg('limit_count')::int, 0), 25), 100)
+OFFSET sqlc.arg('offset_count')::int;
 
 -- name: GetVariantForBusiness :one
 SELECT sqlc.embed(pv),
@@ -149,7 +160,7 @@ SELECT p.id, p.name, p.slug, p.description, p.brand, p.unit, p.product_type,
        COALESCE(pi.url, '') AS image_url
 FROM businesses b
 JOIN products p ON p.business_id = b.id
-JOIN product_variants pv ON pv.product_id = p.id
+JOIN product_variants pv ON pv.product_id = p.id AND pv.business_id = b.id
 LEFT JOIN LATERAL (
     SELECT url
     FROM product_images
@@ -175,7 +186,7 @@ SELECT b.slug AS business_slug, b.name AS business_name,
        COALESCE(pi.url, '') AS image_url
 FROM businesses b
 JOIN products p ON p.business_id = b.id
-JOIN product_variants pv ON pv.product_id = p.id
+JOIN product_variants pv ON pv.product_id = p.id AND pv.business_id = b.id
 LEFT JOIN LATERAL (
     SELECT url
     FROM product_images

@@ -178,3 +178,8 @@ database whose name starts with `openlocal_identity_test`. CI clones the migrate
 test database before running `internal/identity/tests` and
 `internal/verification/tests` so their persistence and failure-path checks do not
 silently skip.
+
+Catalog database tests live in `internal/catalog/tests` and require
+`OPENLOCAL_CATALOG_TEST_DATABASE_URL` to point to a migrated disposable local
+database whose name starts with `openlocal_catalog_test`. CI clones the migrated
+test database and enables this suite explicitly.
