@@ -821,6 +821,7 @@ components:
           type: string
           format: uuid
           nullable: true
+          description: Must belong to business_id. On creation, omission resolves or creates the business's default location.
         movement_type:
           type: string
           enum: [IN_PURCHASE, IN_PRODUCTION, OUT_SALE, OUT_ADJUSTMENT, IN_ADJUSTMENT, OUT_LOSS]
@@ -2432,6 +2433,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StockMovementResult"
+        "404":
+          description: The variant or supplied location was not found in this business. Foreign and nonexistent locations receive the same response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: The idempotency key was already used for different movement data.
   /api/v1/inventory/movements/{id}:

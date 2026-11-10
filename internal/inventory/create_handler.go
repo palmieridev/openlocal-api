@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/palmieridev/openlocal-api/internal/api"
 	"github.com/palmieridev/openlocal-api/internal/inventory/movement"
 	v "github.com/palmieridev/openlocal-api/internal/platform/validator"
 )
@@ -44,6 +45,9 @@ func movementInput(req StockMovementRequest, businessID, actorID uuid.UUID, key 
 		ReferenceType: req.ReferenceType, ReferenceID: req.ReferenceID, Notes: req.Notes, IdempotencyKey: key}
 }
 func movementHTTPError(err error) error {
+	if errors.Is(err, movement.ErrLocationNotFound) {
+		return api.Fail(fiber.StatusNotFound, "inventory_location_not_found", "inventory location not found")
+	}
 	var validation *movement.ValidationError
 	if errors.As(err, &validation) {
 		return fiber.NewError(fiber.StatusBadRequest, validation.Error())

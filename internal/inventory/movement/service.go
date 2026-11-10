@@ -13,6 +13,7 @@ import (
 
 var ErrDuplicate = errors.New("stock movement idempotency key exists")
 var ErrConflict = errors.New("Idempotency-Key was already used for a different stock movement")
+var ErrLocationNotFound = errors.New("inventory location not found")
 
 // Input carries trusted identity separately from untrusted movement fields.
 type Input struct {
@@ -63,6 +64,7 @@ type Store interface {
 // Transaction contains only the writes needed for this use case. Insert reports
 // ErrDuplicate when the business-scoped idempotency key already exists.
 type Transaction interface {
+	RequireLocation(context.Context, uuid.UUID, uuid.UUID) error
 	DefaultLocation(context.Context, uuid.UUID) (uuid.UUID, error)
 	Insert(context.Context, Data) (Movement, error)
 	ApplyDelta(context.Context, Data, decimal.Decimal) (StockLevel, error)
@@ -90,6 +92,9 @@ func (s *Service) Create(ctx context.Context, input Input) (Result, error) {
 	defer func() { _ = tx.Rollback(ctx) }()
 	if input.LocationID != nil && *input.LocationID != "" {
 		data.LocationID, err = parseUUID(*input.LocationID, "location_id")
+		if err == nil {
+			err = tx.RequireLocation(ctx, data.BusinessID, data.LocationID)
+		}
 	} else {
 		data.LocationID, err = tx.DefaultLocation(ctx, data.BusinessID)
 	}

@@ -51,10 +51,23 @@ type transaction struct {
 
 func (t *transaction) Commit(ctx context.Context) error   { return t.tx.Commit(ctx) }
 func (t *transaction) Rollback(ctx context.Context) error { return t.tx.Rollback(ctx) }
+func (t *transaction) RequireLocation(ctx context.Context, businessID, locationID uuid.UUID) error {
+	_, err := t.q.GetInventoryLocationForBusiness(ctx, db.GetInventoryLocationForBusinessParams{ID: locationID, BusinessID: businessID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return movement.ErrLocationNotFound
+	}
+	return err
+}
 func (t *transaction) DefaultLocation(ctx context.Context, businessID uuid.UUID) (uuid.UUID, error) {
 	location, err := t.q.GetDefaultInventoryLocation(ctx, businessID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		location, err = t.q.CreateInventoryLocation(ctx, db.CreateInventoryLocationParams{BusinessID: businessID, Name: "Default", IsDefault: true})
+		// Concurrent inserts can conflict on either the default-per-business
+		// index or (business_id, name). Wait for either winner without aborting
+		// the transaction, then read it in a fresh READ COMMITTED snapshot.
+		location, err = t.q.TryCreateDefaultInventoryLocation(ctx, businessID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			location, err = t.q.GetDefaultInventoryLocation(ctx, businessID)
+		}
 	}
 	return location.ID, err
 }

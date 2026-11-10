@@ -423,6 +423,26 @@ func (q *Queries) ListStockMovements(ctx context.Context, arg ListStockMovements
 	return items, nil
 }
 
+const tryCreateDefaultInventoryLocation = `-- name: TryCreateDefaultInventoryLocation :one
+INSERT INTO inventory_locations (business_id, name, is_default)
+VALUES ($1, 'Default', true)
+ON CONFLICT DO NOTHING
+RETURNING id, business_id, name, is_default, created_at
+`
+
+func (q *Queries) TryCreateDefaultInventoryLocation(ctx context.Context, businessID uuid.UUID) (InventoryLocation, error) {
+	row := q.db.QueryRow(ctx, tryCreateDefaultInventoryLocation, businessID)
+	var i InventoryLocation
+	err := row.Scan(
+		&i.ID,
+		&i.BusinessID,
+		&i.Name,
+		&i.IsDefault,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const updateStockMovement = `-- name: UpdateStockMovement :one
 UPDATE stock_movements
 SET location_id = $3,
