@@ -45,6 +45,11 @@ func (s *Service) CreateProduct(ctx context.Context, identity Identity, input Pr
 	if err != nil {
 		return Product{}, err
 	}
+	if data.CategoryID != nil {
+		if err := s.products.RequireCategory(ctx, identity.BusinessID, *data.CategoryID); err != nil {
+			return Product{}, err
+		}
+	}
 	return s.products.CreateProduct(ctx, identity.BusinessID, data)
 }
 
@@ -58,6 +63,11 @@ func (s *Service) UpdateProduct(ctx context.Context, identity Identity, id uuid.
 	}
 	if _, err := s.products.Product(ctx, identity.BusinessID, id); err != nil {
 		return Product{}, err
+	}
+	if data.CategoryID != nil {
+		if err := s.products.RequireCategory(ctx, identity.BusinessID, *data.CategoryID); err != nil {
+			return Product{}, err
+		}
 	}
 	// The store deliberately does not update slug or business ownership.
 	return s.products.UpdateProduct(ctx, identity.BusinessID, id, data)
@@ -116,10 +126,8 @@ func (s *Service) writeVariant(ctx context.Context, identity Identity, id uuid.U
 		return Variant{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if id == uuid.Nil {
-		if err := tx.RequireProduct(ctx, identity.BusinessID, data.ProductID); err != nil {
-			return Variant{}, err
-		}
+	if err := tx.RequireProduct(ctx, identity.BusinessID, data.ProductID); err != nil {
+		return Variant{}, err
 	}
 	var result Variant
 	if id == uuid.Nil {
@@ -129,9 +137,12 @@ func (s *Service) writeVariant(ctx context.Context, identity Identity, id uuid.U
 		}
 		result, err = tx.CreateVariant(ctx, identity.BusinessID, data)
 	} else {
-		_, readErr := tx.LockVariant(ctx, identity.BusinessID, id)
+		current, readErr := tx.LockVariant(ctx, identity.BusinessID, id)
 		if readErr != nil {
 			return Variant{}, readErr
+		}
+		if current.ProductID != data.ProductID {
+			return Variant{}, ErrNotFound
 		}
 		result, err = tx.UpdateVariant(ctx, identity.BusinessID, id, data)
 	}

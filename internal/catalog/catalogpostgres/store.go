@@ -211,7 +211,7 @@ func (s *Store) Variant(ctx context.Context, businessID, id uuid.UUID) (manageme
 }
 
 func (s *Store) Variants(ctx context.Context, businessID, productID uuid.UUID, page management.Page) ([]management.Variant, error) {
-	rows, err := s.q.ListVariantsByProduct(ctx, db.ListVariantsByProductParams{ProductID: productID, BusinessID: businessID})
+	rows, err := s.q.ListVariantsByProduct(ctx, db.ListVariantsByProductParams{ProductID: productID, BusinessID: businessID, LimitCount: page.Limit, OffsetCount: page.Offset})
 	if err != nil {
 		return nil, translate(err)
 	}

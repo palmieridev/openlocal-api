@@ -226,7 +226,11 @@ func (h Handler) listVariantsByProduct(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	rows, err := h.service.Variants(c.Context(), identity, id, management.Page{})
+	limit, offset, err := v.Page(c)
+	if err != nil {
+		return err
+	}
+	rows, err := h.service.Variants(c.Context(), identity, id, management.Page{Limit: limit, Offset: offset})
 	if err != nil {
 		return httpError(err)
 	}

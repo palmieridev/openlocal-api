@@ -46,7 +46,8 @@ func (q *Queries) ArchiveVariant(ctx context.Context, arg ArchiveVariantParams) 
 
 const createProduct = `-- name: CreateProduct :one
 INSERT INTO products (business_id, category_id, name, slug, description, brand, unit, product_type, is_handmade, is_public, status)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+WHERE $2::uuid IS NULL OR EXISTS (SELECT 1 FROM categories WHERE id = $2 AND business_id = $1)
 RETURNING id, business_id, category_id, name, slug, description, brand, unit, product_type, is_handmade, is_public, status, created_at, updated_at
 `
 
@@ -103,9 +104,9 @@ INSERT INTO product_variants (
     product_id, business_id, sku, barcode, internal_code, name, description, price_note, attributes,
     price, cost, currency, track_inventory, public_stock_status, is_public, reorder_point,
     lead_time_days, status
-) VALUES (
+) SELECT
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
-)
+WHERE EXISTS (SELECT 1 FROM products WHERE id = $1 AND business_id = $2)
 RETURNING id, product_id, business_id, sku, barcode, internal_code, name, attributes, price, cost, currency, track_inventory, public_stock_status, reorder_point, lead_time_days, status, created_at, updated_at, description, price_note, is_public
 `
 
@@ -489,7 +490,7 @@ SELECT p.id, p.name, p.slug, p.description, p.brand, p.unit, p.product_type,
        COALESCE(pi.url, '') AS image_url
 FROM businesses b
 JOIN products p ON p.business_id = b.id
-JOIN product_variants pv ON pv.product_id = p.id
+JOIN product_variants pv ON pv.product_id = p.id AND pv.business_id = b.id
 LEFT JOIN LATERAL (
     SELECT url
     FROM product_images
@@ -582,11 +583,15 @@ LEFT JOIN LATERAL (
 ) pi ON true
 WHERE pv.product_id = $1 AND pv.business_id = $2
 ORDER BY pv.created_at ASC
+LIMIT LEAST(COALESCE(NULLIF($4::int, 0), 25), 100)
+OFFSET $3::int
 `
 
 type ListVariantsByProductParams struct {
-	ProductID  uuid.UUID `json:"product_id"`
-	BusinessID uuid.UUID `json:"business_id"`
+	ProductID   uuid.UUID `json:"product_id"`
+	BusinessID  uuid.UUID `json:"business_id"`
+	OffsetCount int32     `json:"offset_count"`
+	LimitCount  int32     `json:"limit_count"`
 }
 
 type ListVariantsByProductRow struct {
@@ -594,8 +599,14 @@ type ListVariantsByProductRow struct {
 	ImageUrl       string         `json:"image_url"`
 }
 
+// Zero retains the default for existing sqlc callers that omit pagination.
 func (q *Queries) ListVariantsByProduct(ctx context.Context, arg ListVariantsByProductParams) ([]ListVariantsByProductRow, error) {
-	rows, err := q.db.Query(ctx, listVariantsByProduct, arg.ProductID, arg.BusinessID)
+	rows, err := q.db.Query(ctx, listVariantsByProduct,
+		arg.ProductID,
+		arg.BusinessID,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -684,7 +695,7 @@ SELECT b.slug AS business_slug, b.name AS business_name,
        COALESCE(pi.url, '') AS image_url
 FROM businesses b
 JOIN products p ON p.business_id = b.id
-JOIN product_variants pv ON pv.product_id = p.id
+JOIN product_variants pv ON pv.product_id = p.id AND pv.business_id = b.id
 LEFT JOIN LATERAL (
     SELECT url
     FROM product_images
@@ -857,7 +868,8 @@ UPDATE products SET
     is_public = $10,
     status = $11,
     updated_at = now()
-WHERE id = $1 AND business_id = $2
+WHERE products.id = $1 AND products.business_id = $2
+  AND ($3::uuid IS NULL OR EXISTS (SELECT 1 FROM categories WHERE id = $3 AND business_id = $2))
 RETURNING id, business_id, category_id, name, slug, description, brand, unit, product_type, is_handmade, is_public, status, created_at, updated_at
 `
 
