@@ -93,9 +93,9 @@ failure before retrying; do not blindly force a version or run a down migration.
 
 ## Tests
 
-- Keep pure validation and mapping tests beside their domain package (`internal/catalog`, `internal/inventory`, and similar).
-- Keep middleware and HTTP security behavior tests in `internal/server` and `internal/auth`.
-- Keep database transaction and tenant-isolation tests in `internal/integration`; they are opt-in and roll back their fixtures.
+- Keep unit, validation, mapping, HTTP, and domain persistence tests in the owning domain or shared package's `tests/` directory, using external test packages that exercise production APIs.
+- Reserve `internal/integration` for cross-package flows; keep domain-specific database tests with their domain and use explicit disposable databases with isolated, cleaned-up fixtures.
+- Run recursive package patterns such as `go test ./internal/catalog/...` or `go test ./...` so test subdirectories execute. See `AGENTS.md` for the project-wide test organization rules.
 
 ```sh
 go test ./...
