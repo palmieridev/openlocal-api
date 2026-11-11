@@ -2,6 +2,7 @@ package adminpostgres
 
 import (
 	"encoding/json"
+
 	"github.com/palmieridev/openlocal-api/internal/api"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	"github.com/palmieridev/openlocal-api/internal/platformadmin/application"

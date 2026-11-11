@@ -15,9 +15,10 @@ type Reader interface {
 }
 
 // Transactions holds the same business subscription lock as operational writers
-// until callback and commit finish. Any callback, audit, or commit failure rolls
-// back all grant/subscription/history changes. The callback must not be retried
-// after an ambiguous commit: create has no idempotency-key contract, while edits
+// until callback and commit finish. Callback/audit failures and database-rejected
+// commits abort the grant, subscription and history writes together. A transport
+// failure during commit can have an unknown outcome: never retry the callback
+// after an ambiguous commit. Creation has no idempotency-key contract; edits
 // reject stale versions on retry.
 type Transactions interface {
 	WithinBusiness(context.Context, uuid.UUID, func(Writer) error) error

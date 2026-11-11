@@ -84,7 +84,11 @@ input returns `400`; missing businesses or a grant outside the business returns
 Grant edits and confirmations serialize on the same subscription row lock. A
 confirmation ordered after a committed revoke cannot use that grant. Grant,
 reason, actor, and before/after audit insertion commit atomically; audit failure
-rolls back the mutation.
+rolls back the mutation, including subscription initialization when needed.
+Concurrent commands with the same grant version permit one successful mutation;
+losing commands and retries with the stale version return `409` without new
+history or audit entries. Creation has no idempotency-key contract: after an
+ambiguous response, inspect the grant list before retrying a create.
 
 ## History
 

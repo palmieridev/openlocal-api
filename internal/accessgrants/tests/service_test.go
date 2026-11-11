@@ -98,6 +98,10 @@ func (r grantReader) Grant(context.Context, application.ScopedID) (application.G
 	return r.grant, nil
 }
 
+func (r grantReader) History(context.Context, application.ScopedID, application.Page) ([]application.History, error) {
+	return []application.History{{Action: "private"}}, nil
+}
+
 type grantWriter struct {
 	application.Writer
 	grant application.Grant

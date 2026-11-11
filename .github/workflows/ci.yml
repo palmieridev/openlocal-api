@@ -110,6 +110,7 @@ jobs:
           OPENLOCAL_MOVEMENT_TEST_DATABASE_URL: postgres://openlocal:openlocal@localhost:5432/openlocal_movement_test?sslmode=disable
           OPENLOCAL_IDENTITY_TEST_DATABASE_URL: postgres://openlocal:openlocal@localhost:5432/openlocal_identity_test?sslmode=disable
           OPENLOCAL_CATALOG_TEST_DATABASE_URL: postgres://openlocal:openlocal@localhost:5432/openlocal_catalog_test?sslmode=disable
+          # Also explicitly enables platformadmin and grant administration database suites.
           OPENLOCAL_BILLING_TEST_DATABASE_URL: postgres://openlocal:openlocal@localhost:5432/openlocal_billing_test?sslmode=disable
           OPENLOCAL_OPERATIONS_TEST_DATABASE_URL: postgres://openlocal:openlocal@localhost:5432/openlocal_operations_test?sslmode=disable
       - name: PostgreSQL logs on failure

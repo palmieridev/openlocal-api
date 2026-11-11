@@ -81,7 +81,7 @@ func TestPlatformAdminBusinessSearchDetailAndActivity(t *testing.T) {
 	if len(next.Items) != 1 || next.NextCursor != nil || next.Items[0].ID == page.Items[0].ID {
 		t.Fatalf("second page=%+v", next)
 	}
-	for _, query := range []string{first.ID.String(), first.Slug, orgID, "ADMIN %_ " + suffix} {
+	for _, query := range []string{first.ID.String(), first.Slug, "  " + first.Slug + "  ", orgID, "ADMIN %_ " + suffix} {
 		found := adminGet[api.CursorPage[platformadmin.BusinessResponse]](t, app, "/api/v1/admin/businesses?q="+url.QueryEscape(query), actor.ClerkUserID, 200)
 		if len(found.Items) == 0 {
 			t.Fatalf("query %q did not match", query)
@@ -210,5 +210,57 @@ func TestAllInspectionRoutesDenyOrdinaryUsers(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestInspectionWithoutSubscriptionResolvesGrantAndUTCUsageWithoutWrites(t *testing.T) {
+	pool := adminPool(t)
+	ctx := t.Context()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(context.Background())
+	q := db.New(tx)
+	actor := createUser(t, ctx, q)
+	business := createBusiness(t, ctx, q)
+	app := adminTestApp(q, actor.ClerkUserID)
+	if _, err = q.CreateAccessGrant(ctx, db.CreateAccessGrantParams{BusinessID: business.ID, Module: "appointments", Tier: "essential", StartsAt: pgtype.Timestamptz{Time: time.Now().Add(-time.Hour), Valid: true}, InternalReason: "private reason", CreatedBy: uuid.NullUUID{UUID: actor.ID, Valid: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = q.UpsertModule(ctx, db.UpsertModuleParams{BusinessID: business.ID, Module: "appointments", Enabled: true, Settings: []byte(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if err = q.ConsumeModuleUsage(ctx, db.ConsumeModuleUsageParams{BusinessID: business.ID, Module: "appointments", RecordID: uuid.New(), PeriodStart: pgtype.Timestamptz{Time: time.Now().AddDate(0, -1, 0), Valid: true}}); err != nil {
+		t.Fatal(err)
+	}
+	detail := adminGet[platformadmin.BusinessDetailResponse](t, app, "/api/v1/admin/businesses/"+business.ID.String(), actor.ClerkUserID, 200)
+	a := detail.Modules["appointments"]
+	if detail.Subscription != nil || !a.Owned || !a.CanAcceptNew || a.Tier != "essential" || a.Usage != 1 || len(a.Sources) != 1 || a.Sources[0].Kind != "grant" {
+		t.Fatalf("detail=%+v module=%+v", detail, a)
+	}
+	if _, err = q.GetSubscription(ctx, business.ID); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("inspection wrote subscription: %v", err)
+	}
+	var audits int
+	if err = tx.QueryRow(ctx, "SELECT count(*) FROM audit_logs WHERE business_id=$1", business.ID).Scan(&audits); err != nil || audits != 0 {
+		t.Fatalf("inspection wrote audit count=%d err=%v", audits, err)
+	}
+	// Null foreign keys retain their JSON keys in the private activity projection.
+	row, err := q.CreateAuditLog(ctx, db.CreateAuditLogParams{BusinessID: uuid.NullUUID{UUID: business.ID, Valid: true}, Action: "admin.null_projection", EntityType: "business", Metadata: []byte(`{"reason":"private"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := adminGet[api.CursorPage[map[string]any]](t, app, "/api/v1/admin/activity?business_id="+business.ID.String()+"&action=admin.null_projection", actor.ClerkUserID, 200)
+	if len(page.Items) != 1 || page.Items[0]["id"] != row.ID.String() {
+		t.Fatalf("activity=%+v", page)
+	}
+	for _, key := range []string{"actor_user_id", "entity_id"} {
+		if value, ok := page.Items[0][key]; !ok || value != nil {
+			t.Fatalf("%s=%v", key, value)
+		}
+	}
+	if page.Items[0]["metadata"].(map[string]any)["reason"] != "private" {
+		t.Fatalf("metadata=%v", page.Items[0]["metadata"])
 	}
 }

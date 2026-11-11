@@ -46,7 +46,7 @@ func (s *Service) Search(ctx context.Context, actor Actor, in SearchQuery) (Page
 	}
 	in.Query = strings.TrimSpace(in.Query)
 	if len([]rune(in.Query)) > 200 {
-		return out, Invalid("q must be between 0 and 200 characters")
+		return out, &Error{Kind: InvalidInput, Message: "q must be between 0 and 200 characters"}
 	}
 	in.Limit++
 	rows, err := s.store.SearchBusinesses(ctx, in)
@@ -97,7 +97,7 @@ func (s *Service) Activity(ctx context.Context, actor Actor, in ActivityQuery) (
 	}
 	in.Action = strings.TrimSpace(in.Action)
 	if len([]rune(in.Action)) > 120 {
-		return out, Invalid("action must be between 0 and 120 characters")
+		return out, &Error{Kind: InvalidInput, Message: "action must be between 0 and 120 characters"}
 	}
 	in.Limit++
 	rows, err := s.store.Activity(ctx, in)

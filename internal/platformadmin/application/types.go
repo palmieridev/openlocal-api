@@ -3,9 +3,10 @@ package application
 
 import (
 	"encoding/json"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/palmieridev/openlocal-api/internal/entitlements/access"
-	"time"
 )
 
 // These DTOs are private projections; they must never be reused by public routes.

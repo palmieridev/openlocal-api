@@ -2,13 +2,15 @@ package platformadmin_test
 
 import (
 	"context"
-	"github.com/google/uuid"
-	"github.com/palmieridev/openlocal-api/internal/api"
-	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/palmieridev/openlocal-api/internal/api"
+	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 )
 
 func TestSearchAndActivityParameters(t *testing.T) {
@@ -51,5 +53,37 @@ func TestSearchAndActivityParameters(t *testing.T) {
 				t.Fatalf("status=%d want %d", res.StatusCode, tc.want)
 			}
 		})
+	}
+}
+
+func TestInspectionLengthErrorsPreserveOptionalCodeContract(t *testing.T) {
+	pool := adminPool(t)
+	tx, err := pool.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(context.Background())
+	q := db.New(tx)
+	actor := createUser(t, t.Context(), q)
+	app := adminTestApp(q, actor.ClerkUserID)
+	for _, path := range []string{"/api/v1/admin/businesses?q=" + strings.Repeat("x", 201), "/api/v1/admin/activity?action=" + strings.Repeat("x", 121)} {
+		req := httptest.NewRequest("GET", path, nil)
+		req.Header.Set("X-Test-Clerk-User-ID", actor.ClerkUserID)
+		res, err := app.Test(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body map[string]any
+		err = json.NewDecoder(res.Body).Decode(&body)
+		res.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.StatusCode != 400 {
+			t.Fatalf("status=%d", res.StatusCode)
+		}
+		if _, ok := body["code"]; ok {
+			t.Fatalf("legacy length-validation response added code: %v", body)
+		}
 	}
 }

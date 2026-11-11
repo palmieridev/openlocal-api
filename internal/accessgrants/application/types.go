@@ -3,8 +3,9 @@ package application
 
 import (
 	"encoding/json"
-	"github.com/google/uuid"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type CreateInput struct {

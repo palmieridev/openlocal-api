@@ -1,9 +1,10 @@
 package application
 
 import (
-	admin "github.com/palmieridev/openlocal-api/internal/platformadmin/application"
 	"strings"
 	"time"
+
+	admin "github.com/palmieridev/openlocal-api/internal/platformadmin/application"
 )
 
 func invalid(message string) error { return admin.Invalid(message) }

@@ -13,6 +13,8 @@ Authentication fails with `401`. Authenticated users outside the allowlist recei
 validation, actor upsert, or business/audit lookups. An allowed identity is upserted
 into the existing local users table for audit attribution. Platform authorization
 does not grant membership or change authorization on ordinary business endpoints.
+Caller-supplied actor IDs and business IDs do not grant administrator access; the
+local actor must correspond to the authenticated, allowlisted Clerk identity.
 
 Admin responses use `Cache-Control: no-store` and the existing private rate limit.
 Errors have `{ "error": "message", "code": "optional_machine_code" }`; clients must
