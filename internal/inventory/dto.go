@@ -4,8 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/palmieridev/openlocal-api/internal/api"
-	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
+	"github.com/palmieridev/openlocal-api/internal/inventory/movement"
 )
 
 type StockMovementRequest struct {
@@ -46,27 +45,22 @@ type MovementCreatedResponse struct {
 	StockLevel StockLevelResponse    `json:"stock_level"`
 }
 
-func MapStockMovement(movement db.StockMovement) StockMovementResponse {
+func mapStockMovement(item movement.Movement) StockMovementResponse {
+	var cost *string
+	if item.UnitCost != nil {
+		value := item.UnitCost.String()
+		cost = &value
+	}
 	return StockMovementResponse{
-		ID:            movement.ID,
-		VariantID:     movement.VariantID,
-		LocationID:    movement.LocationID,
-		MovementType:  movement.MovementType,
-		Quantity:      movement.Quantity.String(),
-		UnitCost:      api.DecimalPtr(movement.UnitCost),
-		ReferenceType: api.StringPtr(movement.ReferenceType),
-		ReferenceID:   api.StringPtr(movement.ReferenceID),
-		Notes:         movement.Notes,
-		CreatedAt:     api.TS(movement.CreatedAt),
+		ID: item.ID, VariantID: item.VariantID, LocationID: item.LocationID,
+		MovementType: item.MovementType, Quantity: item.Quantity.String(), UnitCost: cost,
+		ReferenceType: item.ReferenceType, ReferenceID: item.ReferenceID, Notes: item.Notes, CreatedAt: item.CreatedAt,
 	}
 }
 
-func MapStockLevel(level db.StockLevel) StockLevelResponse {
+func mapStockLevel(level movement.StockLevel) StockLevelResponse {
 	return StockLevelResponse{
-		VariantID:        level.VariantID,
-		LocationID:       level.LocationID,
-		QuantityOnHand:   level.QuantityOnHand.String(),
-		QuantityReserved: level.QuantityReserved.String(),
-		UpdatedAt:        api.TS(level.UpdatedAt),
+		VariantID: level.VariantID, LocationID: level.LocationID,
+		QuantityOnHand: level.QuantityOnHand.String(), QuantityReserved: level.QuantityReserved.String(), UpdatedAt: level.UpdatedAt,
 	}
 }

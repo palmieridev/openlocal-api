@@ -1,23 +1,17 @@
 package inventory
 
 import (
-	"context"
-	"errors"
-
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/palmieridev/openlocal-api/internal/api"
 	"github.com/palmieridev/openlocal-api/internal/inventory/movement"
-	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	v "github.com/palmieridev/openlocal-api/internal/platform/validator"
-	"github.com/shopspring/decimal"
 )
 
 type Handler struct {
 	rt             api.Runtime
 	createMovement *movement.Service
+	maintenance    *movement.Maintenance
+	reader         *movement.Reader
 }
 
 func (h Handler) updateStockMovement(c *fiber.Ctx) error {
@@ -41,86 +35,16 @@ func (h Handler) updateStockMovement(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	tx, err := h.rt.Pool.Begin(c.Context())
-	if err != nil {
-		return err
-	}
-	defer api.Rollback(c.Context(), tx)
-	qtx := h.rt.Q.WithTx(tx)
-	current, err := qtx.GetStockMovementForUpdate(c.Context(), db.GetStockMovementForUpdateParams{
-		ID: movementID, BusinessID: businessID,
+	result, err := h.maintenance.Edit(c.Context(), movement.EditInput{
+		Input: movementInput(req, businessID, user.ID, idempotencyKey), MovementID: movementID,
 	})
 	if err != nil {
-		return err
+		return movementHTTPError(err)
 	}
-	parsed, parsedBusinessID, err := MovementParams(req, user.ID, idempotencyKey)
-	if err != nil {
-		return err
-	}
-	if parsedBusinessID != current.BusinessID {
-		return fiber.NewError(fiber.StatusNotFound, "not found")
-	}
-	if parsed.VariantID != current.VariantID {
-		return fiber.NewError(fiber.StatusBadRequest, "variant_id cannot be changed; delete and recreate the movement instead")
-	}
-	locationID := current.LocationID
-	if req.LocationID != nil && *req.LocationID != "" {
-		locationID, err = v.ParseUUID(*req.LocationID, "location_id")
-		if err != nil {
-			return err
-		}
-		if _, err := qtx.GetInventoryLocationForBusiness(c.Context(), db.GetInventoryLocationForBusinessParams{
-			ID: locationID, BusinessID: businessID,
-		}); err != nil {
-			return err
-		}
-	}
-	params := db.UpdateStockMovementParams{
-		ID:             movementID,
-		BusinessID:     businessID,
-		LocationID:     locationID,
-		MovementType:   parsed.MovementType,
-		Quantity:       parsed.Quantity,
-		UnitCost:       parsed.UnitCost,
-		ReferenceType:  parsed.ReferenceType,
-		ReferenceID:    parsed.ReferenceID,
-		Notes:          parsed.Notes,
-		IdempotencyKey: parsed.IdempotencyKey,
-	}
-	if current.IdempotencyKey == params.IdempotencyKey {
-		if !SameMovementEdit(current, params) {
-			return fiber.NewError(fiber.StatusConflict, "Idempotency-Key was already used for different movement data")
-		}
-		level, err := qtx.GetStockLevel(c.Context(), db.GetStockLevelParams{
-			BusinessID: businessID, VariantID: current.VariantID, LocationID: current.LocationID,
-		})
-		if err != nil {
-			return err
-		}
-		if err := tx.Commit(c.Context()); err != nil {
-			return err
-		}
+	if result.Replayed {
 		c.Set("Idempotent-Replayed", "true")
-		return c.JSON(MovementCreatedResponse{Movement: MapStockMovement(current), StockLevel: MapStockLevel(level)})
 	}
-	level, err := applyMovementEditDelta(c.Context(), qtx, current, params)
-	if err != nil {
-		return err
-	}
-	movement, err := qtx.UpdateStockMovement(c.Context(), params)
-	if isUniqueViolation(err) {
-		return fiber.NewError(fiber.StatusConflict, "Idempotency-Key was already used for a different stock movement")
-	}
-	if err != nil {
-		return err
-	}
-	if err := api.Audit(qtx, c.Context(), businessID, user.ID, "inventory.movement.update", "stock_movement", movement.ID); err != nil {
-		return err
-	}
-	if err := tx.Commit(c.Context()); err != nil {
-		return err
-	}
-	return c.JSON(MovementCreatedResponse{Movement: MapStockMovement(movement), StockLevel: MapStockLevel(level)})
+	return c.JSON(mapMovementResult(result))
 }
 
 func (h Handler) deleteStockMovement(c *fiber.Ctx) error {
@@ -132,70 +56,12 @@ func (h Handler) deleteStockMovement(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	tx, err := h.rt.Pool.Begin(c.Context())
-	if err != nil {
-		return err
-	}
-	defer api.Rollback(c.Context(), tx)
-	qtx := h.rt.Q.WithTx(tx)
-	movement, err := qtx.GetStockMovementForUpdate(c.Context(), db.GetStockMovementForUpdateParams{
-		ID: movementID, BusinessID: businessID,
-	})
-	if err != nil {
-		return err
-	}
-	if _, err := applyNonnegativeStockDelta(c.Context(), qtx, movement.BusinessID, movement.VariantID, movement.LocationID,
-		SignedQuantity(movement.MovementType, movement.Quantity).Neg()); err != nil {
-		return err
-	}
-	if _, err := qtx.DeleteStockMovement(c.Context(), db.DeleteStockMovementParams{ID: movementID, BusinessID: businessID}); err != nil {
-		return err
-	}
-	if err := api.Audit(qtx, c.Context(), businessID, user.ID, "inventory.movement.delete", "stock_movement", movement.ID); err != nil {
-		return err
-	}
-	if err := tx.Commit(c.Context()); err != nil {
-		return err
+	if err := h.maintenance.Delete(c.Context(), movement.DeleteInput{
+		BusinessID: businessID, ActorID: user.ID, MovementID: movementID,
+	}); err != nil {
+		return movementHTTPError(err)
 	}
 	return c.SendStatus(fiber.StatusNoContent)
-}
-
-func applyMovementEditDelta(ctx context.Context, q *db.Queries, current db.StockMovement, params db.UpdateStockMovementParams) (db.StockLevel, error) {
-	if current.LocationID == params.LocationID {
-		return applyNonnegativeStockDelta(ctx, q, current.BusinessID, current.VariantID, current.LocationID,
-			MovementDelta(current, params.MovementType, params.Quantity))
-	}
-	if _, err := applyNonnegativeStockDelta(ctx, q, current.BusinessID, current.VariantID, current.LocationID,
-		SignedQuantity(current.MovementType, current.Quantity).Neg()); err != nil {
-		return db.StockLevel{}, err
-	}
-	return applyNonnegativeStockDelta(ctx, q, current.BusinessID, current.VariantID, params.LocationID,
-		SignedQuantity(params.MovementType, params.Quantity))
-}
-
-func applyNonnegativeStockDelta(ctx context.Context, q *db.Queries, businessID, variantID, locationID uuid.UUID, delta decimal.Decimal) (db.StockLevel, error) {
-	if delta.IsZero() {
-		return q.GetStockLevel(ctx, db.GetStockLevelParams{
-			BusinessID: businessID, VariantID: variantID, LocationID: locationID,
-		})
-	}
-	level, err := q.ApplyNonnegativeStockDelta(ctx, db.ApplyNonnegativeStockDeltaParams{
-		BusinessID: businessID, VariantID: variantID, LocationID: locationID, QuantityOnHand: delta,
-	})
-	if errors.Is(err, pgx.ErrNoRows) && delta.IsPositive() {
-		level, err = q.InsertNonnegativeStockDelta(ctx, db.InsertNonnegativeStockDeltaParams{
-			BusinessID: businessID, VariantID: variantID, LocationID: locationID, QuantityOnHand: delta,
-		})
-	}
-	if errors.Is(err, pgx.ErrNoRows) {
-		return db.StockLevel{}, fiber.NewError(fiber.StatusConflict, "stock level cannot be negative")
-	}
-	return level, err
-}
-
-func isUniqueViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
 func (h Handler) listStockMovements(c *fiber.Ctx) error {
@@ -210,13 +76,13 @@ func (h Handler) listStockMovements(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	items, err := h.rt.Q.ListStockMovements(c.Context(), db.ListStockMovementsParams{BusinessID: businessID, Limit: limit, Offset: offset})
+	items, err := h.reader.Movements(c.Context(), movement.ListInput{BusinessID: businessID, Limit: limit, Offset: offset})
 	if err != nil {
-		return err
+		return movementHTTPError(err)
 	}
 	out := make([]StockMovementResponse, 0, len(items))
 	for _, item := range items {
-		out = append(out, MapStockMovement(item))
+		out = append(out, mapStockMovement(item))
 	}
 	return c.JSON(out)
 }
@@ -233,13 +99,13 @@ func (h Handler) listStockLevels(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	items, err := h.rt.Q.ListStockLevels(c.Context(), db.ListStockLevelsParams{BusinessID: businessID, Limit: limit, Offset: offset})
+	items, err := h.reader.Levels(c.Context(), movement.ListInput{BusinessID: businessID, Limit: limit, Offset: offset})
 	if err != nil {
-		return err
+		return movementHTTPError(err)
 	}
 	out := make([]StockLevelResponse, 0, len(items))
 	for _, item := range items {
-		out = append(out, MapStockLevel(item))
+		out = append(out, mapStockLevel(item))
 	}
 	return c.JSON(out)
 }

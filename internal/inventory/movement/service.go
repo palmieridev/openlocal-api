@@ -1,4 +1,4 @@
-// Package movement owns the create-stock-movement use case and its persistence ports.
+// Package movement owns stock movement use cases and their persistence ports.
 // Callers must authorize BusinessID and ActorID before invoking the service.
 package movement
 

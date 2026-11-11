@@ -8,7 +8,8 @@ import (
 )
 
 func NewHandler(rt api.Runtime) Handler {
-	return Handler{rt: rt, createMovement: movement.New(movementpostgres.New(rt.Pool, rt.Q))}
+	store := movementpostgres.New(rt.Pool, rt.Q)
+	return Handler{rt: rt, createMovement: movement.New(store), maintenance: movement.NewMaintenance(store), reader: movement.NewReader(store)}
 }
 
 func (h Handler) RegisterPrivateRoutes(private fiber.Router) {
