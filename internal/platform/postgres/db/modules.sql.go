@@ -570,7 +570,10 @@ const saveOperationSettings = `-- name: SaveOperationSettings :one
 INSERT INTO business_modules(business_id,module,enabled,settings)
 SELECT $1,$2,$3,$4::jsonb
 WHERE NOT EXISTS (
-    SELECT 1 FROM jsonb_array_elements(COALESCE($4::jsonb->'variant_rules','[]'::jsonb)) AS rule
+    SELECT 1 FROM jsonb_array_elements(COALESCE(
+        NULLIF($4::jsonb->'variant_rules','null'::jsonb),
+        '[]'::jsonb
+    )) AS rule
     WHERE NOT EXISTS (
         SELECT 1 FROM product_variants v
         WHERE v.business_id=$1 AND v.id=(rule->>'variant_id')::uuid

@@ -105,7 +105,10 @@ SELECT openlocal_clean_job_archive();
 INSERT INTO business_modules(business_id,module,enabled,settings)
 SELECT sqlc.arg(business_id),sqlc.arg(module),sqlc.arg(enabled),sqlc.arg(settings)::jsonb
 WHERE NOT EXISTS (
-    SELECT 1 FROM jsonb_array_elements(COALESCE(sqlc.arg(settings)::jsonb->'variant_rules','[]'::jsonb)) AS rule
+    SELECT 1 FROM jsonb_array_elements(COALESCE(
+        NULLIF(sqlc.arg(settings)::jsonb->'variant_rules','null'::jsonb),
+        '[]'::jsonb
+    )) AS rule
     WHERE NOT EXISTS (
         SELECT 1 FROM product_variants v
         WHERE v.business_id=sqlc.arg(business_id) AND v.id=(rule->>'variant_id')::uuid
