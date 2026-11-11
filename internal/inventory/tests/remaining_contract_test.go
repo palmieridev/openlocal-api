@@ -78,6 +78,12 @@ func TestMovementEditReplayAndDeletionContracts(t *testing.T) {
 	request.Quantity = "6"
 	inventoryRequest(t, app, "PATCH", path, request, key, 409)
 	assertMovementCounts(t, pool, input.BusinessID, 1, 1, 1, 2)
+	same := input
+	same.IdempotencyKey = key
+	replayedCreation, err := service.Create(ctx, same)
+	if err != nil || !replayedCreation.Replayed || replayedCreation.Movement.ID != created.Movement.ID {
+		t.Fatalf("creation replay with current edit key: %+v %v", replayedCreation, err)
+	}
 	// Edits replace the current key; creation may use the released key again.
 	again, err := service.Create(ctx, input)
 	if err != nil || again.Replayed || again.Movement.ID == created.Movement.ID {
@@ -90,6 +96,11 @@ func TestMovementEditReplayAndDeletionContracts(t *testing.T) {
 	if err != nil || !level.QuantityOnHand.Equal(decimal.NewFromInt(5)) {
 		t.Fatalf("repeated delete changed stock: %+v, %v", level, err)
 	}
+	reused, err := service.Create(ctx, same)
+	if err != nil || reused.Replayed || reused.Movement.ID == created.Movement.ID {
+		t.Fatalf("deleted movement key should be reusable: %+v %v", reused, err)
+	}
+	assertMovementCounts(t, pool, input.BusinessID, 2, 1, 1, 5)
 }
 
 func TestMovementLocationTransferAndSignedEdit(t *testing.T) {
@@ -250,6 +261,10 @@ func TestInventoryListContracts(t *testing.T) {
 			t.Fatalf("default pagination %s: %d", resource, len(rows))
 		}
 		for _, row := range rows {
+			var variantID string
+			if err := json.Unmarshal(row["variant_id"], &variantID); err != nil || variantID != input.VariantID {
+				t.Fatalf("list leaked another business's resource: %s (%v)", data, err)
+			}
 			if len(row) != fields {
 				t.Fatalf("projection: %s", data)
 			}
@@ -269,6 +284,75 @@ func TestInventoryListContracts(t *testing.T) {
 		}
 		if len(rows) != want {
 			t.Fatalf("offset %s: %s", resource, data)
+		}
+	}
+}
+
+func TestInventoryEditHTTPValidationAndProjection(t *testing.T) {
+	pool := createMovementPool(t)
+	ctx := context.Background()
+	q := db.New(pool)
+	service := movement.New(movementpostgres.New(pool, q))
+	editor := createMovementInput(t, pool)
+	input := createMovementInput(t, pool)
+	created, err := service.Create(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trusted := input
+	trusted.ActorID = editor.ActorID
+	app, _ := movementHTTPApp(t, pool, trusted)
+	path := "/inventory/movements/" + created.Movement.ID.String()
+	base := editRequest(input)
+	for _, change := range []func(*inventory.StockMovementRequest){
+		func(r *inventory.StockMovementRequest) { r.Quantity = "1.0001" },
+		func(r *inventory.StockMovementRequest) { r.Quantity = "0" },
+		func(r *inventory.StockMovementRequest) { r.MovementType = "unknown" },
+		func(r *inventory.StockMovementRequest) { v := "-1"; r.UnitCost = &v },
+		func(r *inventory.StockMovementRequest) { v := "no"; r.LocationID = &v },
+		func(r *inventory.StockMovementRequest) { r.Notes = strings.Repeat("x", 2001) },
+	} {
+		request := base
+		change(&request)
+		inventoryRequest(t, app, "PATCH", path, request, "invalid:"+uuid.NewString(), 400)
+	}
+	inventoryRequest(t, app, "PATCH", path, map[string]any{"unknown": true}, "invalid:"+uuid.NewString(), 400)
+	inventoryRequest(t, app, "PATCH", path, base, "bad", 400)
+	inventoryRequest(t, app, "PATCH", "/inventory/movements/not-a-uuid", base, "invalid:"+uuid.NewString(), 400)
+	inventoryRequest(t, app, "DELETE", path, nil, "", 400)
+	assertMovementCounts(t, pool, input.BusinessID, 1, 1, 1, 1)
+	// Replay an identical movement as another authorized editor. Creation still
+	// requires the original actor when it compares a create retry.
+	_, replayed := inventoryRequest(t, app, "PATCH", path, base, input.IdempotencyKey, 200)
+	if !replayed {
+		t.Fatal("edit replay should ignore editor identity")
+	}
+	cost, ref, refID := "2.50", "invoice", "123"
+	base.UnitCost, base.ReferenceType, base.ReferenceID, base.Notes = &cost, &ref, &refID, "  normalized\n note "
+	data, _ := inventoryRequest(t, app, "PATCH", path, base, "projection:"+uuid.NewString(), 200)
+	var result inventory.MovementCreatedResponse
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Movement.UnitCost == nil || *result.Movement.UnitCost != "2.5" || result.Movement.ReferenceType == nil || *result.Movement.ReferenceType != ref || result.Movement.ReferenceID == nil || *result.Movement.ReferenceID != refID || result.Movement.Notes != "normalized note" || !result.Movement.CreatedAt.Equal(created.Movement.CreatedAt) {
+		t.Fatalf("optional response projection: %s", data)
+	}
+	stored, err := q.GetStockMovementForUpdate(ctx, db.GetStockMovementForUpdateParams{BusinessID: input.BusinessID, ID: created.Movement.ID})
+	if err != nil || stored.CreatedBy.UUID != input.ActorID {
+		t.Fatalf("editor changed creator: %+v %v", stored, err)
+	}
+	var actor uuid.UUID
+	if err := pool.QueryRow(ctx, "SELECT actor_user_id FROM audit_logs WHERE business_id=$1 AND action='inventory.movement.update'", input.BusinessID).Scan(&actor); err != nil || actor != editor.ActorID {
+		t.Fatalf("audit actor=%s err=%v", actor, err)
+	}
+	data, _ = inventoryRequest(t, app, "GET", "/inventory/movements?business_id="+input.BusinessID.String(), nil, "", 200)
+	var rows []inventory.StockMovementResponse
+	if err := json.Unmarshal(data, &rows); err != nil || len(rows) != 1 || rows[0].UnitCost == nil || *rows[0].UnitCost != "2.5" {
+		t.Fatalf("list optional projection: %s %v", data, err)
+	}
+	for _, field := range []string{"business_id", "created_by", "idempotency_key"} {
+		if strings.Contains(string(data), `"`+field+`"`) {
+			t.Fatalf("leaked %s", field)
 		}
 	}
 }

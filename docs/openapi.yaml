@@ -2453,6 +2453,7 @@ paths:
     get:
       tags:
         - Inventory
+      description: Lists this business's private movement ledger for an owner, manager, or staff member. Supports business_id, limit (default 25, maximum 100), and offset; an empty page is [].
       parameters:
         - $ref: "#/components/parameters/BusinessIDQuery"
         - $ref: "#/components/parameters/LimitQuery"
@@ -2522,7 +2523,13 @@ paths:
     patch:
       tags:
         - Inventory
-      description: Updates a movement and applies its signed delta to stock in the same transaction. Omitting location_id preserves the original location; variant_id cannot be changed.
+      description: >-
+        Updates a movement for an owner, manager, or staff member, applying its signed stock delta and audit in one transaction.
+        Omitting location_id preserves the original location; a supplied location must belong to the business.
+        The business, variant, creator, and creation timestamp cannot change. A location transfer reverses the source effect and applies the destination effect atomically.
+        Each changed stock quantity must remain nonnegative; a zero-delta edit preserves stock, including negative stock previously allowed by creation.
+        An identical request using the movement's current key replays without another audit; an identical request with a new key is an audited edit.
+        An edit replaces the movement's current idempotency key. The previous key becomes available for creation again; keys are not a permanent request history.
       parameters:
         - name: Idempotency-Key
           in: header
@@ -2554,23 +2561,28 @@ paths:
                 $ref: "#/components/schemas/StockMovementResult"
         "400":
           description: Invalid input or an attempted variant_id change.
+        "404":
+          description: Movement or location not found in this business. Foreign and nonexistent resources receive the same rejection.
         "409":
           description: The edit would make stock negative or the idempotency key is already in use.
     delete:
       tags:
         - Inventory
-      description: Deletes a movement and reverses its signed stock effect in the same transaction.
+      description: Deletes a movement for an owner, manager, or staff member, reversing its signed stock effect and recording an audit in one transaction. Deletion releases its idempotency key for reuse; a repeated delete returns 404 without further stock or audit changes.
       parameters:
         - $ref: "#/components/parameters/BusinessIDQuery"
       responses:
         "204":
           description: Movement deleted and its stock effect reversed.
+        "404":
+          description: Movement not found in this business, including an already deleted movement.
         "409":
           description: Reversing the movement would make stock negative.
   /api/v1/inventory/stock-levels:
     get:
       tags:
         - Inventory
+      description: Lists this business's private stock levels for an owner, manager, or staff member. Supports business_id, limit (default 25, maximum 100), and offset; an empty page is [].
       parameters:
         - $ref: "#/components/parameters/BusinessIDQuery"
         - $ref: "#/components/parameters/LimitQuery"
