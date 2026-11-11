@@ -294,6 +294,9 @@ func (h Handler) replaceHours(c *fiber.Ctx) error {
 	}
 	defer api.Rollback(c.Context(), tx)
 	qtx := h.rt.Q.WithTx(tx)
+	if _, err := qtx.LockBusinessForManager(c.Context(), db.LockBusinessForManagerParams{ID: id, UserID: user.ID}); err != nil {
+		return err
+	}
 	if err := qtx.DeleteBusinessHours(c.Context(), id); err != nil {
 		return err
 	}

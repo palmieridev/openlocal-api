@@ -194,3 +194,12 @@ SELECT *
 FROM business_service_areas
 WHERE business_id = ANY(@business_ids::uuid[])
 ORDER BY business_id, name, id;
+
+-- name: LockBusinessForManager :one
+-- Serialize full profile/hour replacements even when their child tables are empty.
+-- Membership stays in the persistence boundary as well as HTTP authorization.
+SELECT b.*
+FROM businesses b
+JOIN business_members bm ON bm.business_id = b.id
+WHERE b.id = $1 AND bm.user_id = $2 AND bm.role IN ('owner', 'manager')
+FOR UPDATE OF b;

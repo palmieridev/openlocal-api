@@ -733,6 +733,56 @@ func (q *Queries) ListPublicBusinesses(ctx context.Context, arg ListPublicBusine
 	return items, nil
 }
 
+const lockBusinessForManager = `-- name: LockBusinessForManager :one
+SELECT b.id, b.name, b.slug, b.description, b.business_type, b.phone, b.whatsapp, b.email, b.website, b.logo_url, b.cover_image_url, b.status, b.address, b.neighborhood, b.city, b.state, b.country, b.postal_code, b.latitude, b.longitude, b.pickup_available, b.delivery_available, b.created_at, b.updated_at, b.clerk_org_id, b.timezone, b.location_mode
+FROM businesses b
+JOIN business_members bm ON bm.business_id = b.id
+WHERE b.id = $1 AND bm.user_id = $2 AND bm.role IN ('owner', 'manager')
+FOR UPDATE OF b
+`
+
+type LockBusinessForManagerParams struct {
+	ID     uuid.UUID `json:"id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+// Serialize full profile/hour replacements even when their child tables are empty.
+// Membership stays in the persistence boundary as well as HTTP authorization.
+func (q *Queries) LockBusinessForManager(ctx context.Context, arg LockBusinessForManagerParams) (Business, error) {
+	row := q.db.QueryRow(ctx, lockBusinessForManager, arg.ID, arg.UserID)
+	var i Business
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.Description,
+		&i.BusinessType,
+		&i.Phone,
+		&i.Whatsapp,
+		&i.Email,
+		&i.Website,
+		&i.LogoUrl,
+		&i.CoverImageUrl,
+		&i.Status,
+		&i.Address,
+		&i.Neighborhood,
+		&i.City,
+		&i.State,
+		&i.Country,
+		&i.PostalCode,
+		&i.Latitude,
+		&i.Longitude,
+		&i.PickupAvailable,
+		&i.DeliveryAvailable,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ClerkOrgID,
+		&i.Timezone,
+		&i.LocationMode,
+	)
+	return i, err
+}
+
 const updateBusiness = `-- name: UpdateBusiness :one
 UPDATE businesses SET
     name = $3,
