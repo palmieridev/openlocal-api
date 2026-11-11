@@ -334,6 +334,45 @@ func (q *Queries) GetStockMovementForUpdate(ctx context.Context, arg GetStockMov
 	return i, err
 }
 
+const insertNonnegativeStockDelta = `-- name: InsertNonnegativeStockDelta :one
+INSERT INTO stock_levels (business_id, variant_id, location_id, quantity_on_hand)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (business_id, variant_id, location_id) DO UPDATE SET
+    quantity_on_hand = stock_levels.quantity_on_hand + EXCLUDED.quantity_on_hand,
+    updated_at = now()
+WHERE stock_levels.quantity_on_hand + EXCLUDED.quantity_on_hand >= 0
+RETURNING business_id, variant_id, location_id, quantity_on_hand, quantity_reserved, updated_at
+`
+
+type InsertNonnegativeStockDeltaParams struct {
+	BusinessID     uuid.UUID       `json:"business_id"`
+	VariantID      uuid.UUID       `json:"variant_id"`
+	LocationID     uuid.UUID       `json:"location_id"`
+	QuantityOnHand decimal.Decimal `json:"quantity_on_hand"`
+}
+
+// Used only for a positive delta after the guarded UPDATE found no stock row.
+// A concurrent creator may insert negative stock before this statement wins;
+// recheck the resulting quantity while holding the conflicting row lock.
+func (q *Queries) InsertNonnegativeStockDelta(ctx context.Context, arg InsertNonnegativeStockDeltaParams) (StockLevel, error) {
+	row := q.db.QueryRow(ctx, insertNonnegativeStockDelta,
+		arg.BusinessID,
+		arg.VariantID,
+		arg.LocationID,
+		arg.QuantityOnHand,
+	)
+	var i StockLevel
+	err := row.Scan(
+		&i.BusinessID,
+		&i.VariantID,
+		&i.LocationID,
+		&i.QuantityOnHand,
+		&i.QuantityReserved,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listStockLevels = `-- name: ListStockLevels :many
 SELECT sl.business_id, sl.variant_id, sl.location_id, sl.quantity_on_hand, sl.quantity_reserved, sl.updated_at
 FROM stock_levels sl
