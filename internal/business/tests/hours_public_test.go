@@ -1,7 +1,8 @@
-package business
+package business_test
 
 import (
 	"encoding/json"
+	. "github.com/palmieridev/openlocal-api/internal/business"
 	"testing"
 
 	"github.com/google/uuid"
