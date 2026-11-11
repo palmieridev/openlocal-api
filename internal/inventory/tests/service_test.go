@@ -43,6 +43,9 @@ func (f *changeFake) RequireLocation(context.Context, uuid.UUID, uuid.UUID) erro
 func (f *changeFake) StockLevel(context.Context, movement.Data) (movement.StockLevel, error) {
 	return movement.StockLevel{QuantityOnHand: decimal.NewFromInt(10)}, f.failure("level")
 }
+func (f *changeFake) LockStockLocations(context.Context, movement.Data, []uuid.UUID) error {
+	return f.failure("stock locks")
+}
 func (f *changeFake) ApplyNonnegativeDelta(_ context.Context, _ movement.Data, d decimal.Decimal) (movement.StockLevel, error) {
 	f.deltas = append(f.deltas, d)
 	return movement.StockLevel{}, f.failure("delta")

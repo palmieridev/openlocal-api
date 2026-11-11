@@ -61,6 +61,16 @@ ON CONFLICT (business_id, variant_id, location_id) DO UPDATE SET
     updated_at = now()
 RETURNING *;
 
+-- name: LockStockLocations :many
+-- Transfers lock all existing stock rows in the same order before changing
+-- either location. Missing destinations are protected by the guarded upsert.
+SELECT *
+FROM stock_levels
+WHERE business_id = sqlc.arg(business_id) AND variant_id = sqlc.arg(variant_id)
+  AND location_id = ANY(sqlc.arg(location_ids)::uuid[])
+ORDER BY location_id
+FOR UPDATE;
+
 -- name: ApplyNonnegativeStockDelta :one
 UPDATE stock_levels
 SET quantity_on_hand = quantity_on_hand + sqlc.arg(quantity_on_hand)::numeric,

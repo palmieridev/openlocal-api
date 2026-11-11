@@ -34,6 +34,7 @@ type ChangeTransaction interface {
 	RequireVariant(context.Context, uuid.UUID, uuid.UUID) error
 	RequireLocation(context.Context, uuid.UUID, uuid.UUID) error
 	StockLevel(context.Context, Data) (StockLevel, error)
+	LockStockLocations(context.Context, Data, []uuid.UUID) error
 	ApplyNonnegativeDelta(context.Context, Data, decimal.Decimal) (StockLevel, error)
 	Update(context.Context, Movement) (Movement, error)
 	Delete(context.Context, uuid.UUID, uuid.UUID) error
@@ -96,6 +97,9 @@ func (s *Maintenance) Edit(ctx context.Context, input EditInput) (Result, error)
 	if current.LocationID == data.LocationID {
 		level, err = tx.ApplyNonnegativeDelta(ctx, data, SignedQuantity(data.MovementType, data.Quantity).Sub(SignedQuantity(current.MovementType, current.Quantity)))
 	} else {
+		if err := tx.LockStockLocations(ctx, data, []uuid.UUID{current.LocationID, data.LocationID}); err != nil {
+			return Result{}, err
+		}
 		_, err = tx.ApplyNonnegativeDelta(ctx, current.Data, SignedQuantity(current.MovementType, current.Quantity).Neg())
 		if err == nil {
 			level, err = tx.ApplyNonnegativeDelta(ctx, data, SignedQuantity(data.MovementType, data.Quantity))

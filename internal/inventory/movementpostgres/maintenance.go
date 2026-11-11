@@ -45,6 +45,11 @@ func (t *changeTransaction) StockLevel(ctx context.Context, data movement.Data) 
 	return mapLevel(level), changeError(err)
 }
 
+func (t *changeTransaction) LockStockLocations(ctx context.Context, data movement.Data, locations []uuid.UUID) error {
+	_, err := t.q.LockStockLocations(ctx, db.LockStockLocationsParams{BusinessID: data.BusinessID, VariantID: data.VariantID, LocationIds: locations})
+	return err
+}
+
 func (t *changeTransaction) ApplyNonnegativeDelta(ctx context.Context, data movement.Data, delta decimal.Decimal) (movement.StockLevel, error) {
 	// A zero delta preserves the legacy no-op behavior even when creation has
 	// allowed negative stock. It must not refresh the stock timestamp.

@@ -462,6 +462,50 @@ func (q *Queries) ListStockMovements(ctx context.Context, arg ListStockMovements
 	return items, nil
 }
 
+const lockStockLocations = `-- name: LockStockLocations :many
+SELECT business_id, variant_id, location_id, quantity_on_hand, quantity_reserved, updated_at
+FROM stock_levels
+WHERE business_id = $1 AND variant_id = $2
+  AND location_id = ANY($3::uuid[])
+ORDER BY location_id
+FOR UPDATE
+`
+
+type LockStockLocationsParams struct {
+	BusinessID  uuid.UUID   `json:"business_id"`
+	VariantID   uuid.UUID   `json:"variant_id"`
+	LocationIds []uuid.UUID `json:"location_ids"`
+}
+
+// Transfers lock all existing stock rows in the same order before changing
+// either location. Missing destinations are protected by the guarded upsert.
+func (q *Queries) LockStockLocations(ctx context.Context, arg LockStockLocationsParams) ([]StockLevel, error) {
+	rows, err := q.db.Query(ctx, lockStockLocations, arg.BusinessID, arg.VariantID, arg.LocationIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StockLevel{}
+	for rows.Next() {
+		var i StockLevel
+		if err := rows.Scan(
+			&i.BusinessID,
+			&i.VariantID,
+			&i.LocationID,
+			&i.QuantityOnHand,
+			&i.QuantityReserved,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const tryCreateDefaultInventoryLocation = `-- name: TryCreateDefaultInventoryLocation :one
 INSERT INTO inventory_locations (business_id, name, is_default)
 VALUES ($1, 'Default', true)
