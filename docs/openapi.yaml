@@ -2653,11 +2653,17 @@ paths:
             default: "20"
       responses:
         "200":
-          description: EOQ recommendation from demand and manual cost assumptions.
+          description: EOQ recommendation for a variant owned by the authorized business, from demand and manual cost assumptions.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/EOQ"
+        "404":
+          description: Variant does not exist in the authorized business. Foreign and missing variants receive the same response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/analytics/low-stock:
     get:
       tags:
