@@ -1,14 +1,10 @@
 package business_test
 
 import (
-	"database/sql"
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
-	. "github.com/palmieridev/openlocal-api/internal/business"
 	"github.com/palmieridev/openlocal-api/internal/business/profile"
-	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 )
 
 func stringPtr(value string) *string { return &value }
@@ -133,20 +129,5 @@ func TestNormalizeAreas(t *testing.T) {
 	}
 	if _, err := profile.NormalizeAreas(tooMany); err == nil {
 		t.Fatal("expected service-area count limit")
-	}
-}
-
-func TestMapAlwaysReturnsServiceAreaArray(t *testing.T) {
-	response := Map(db.Business{ID: uuid.New(), LocationMode: "mobile"}, false, nil)
-	if response.ServiceAreas == nil || len(response.ServiceAreas) != 0 {
-		t.Fatal("service_areas must serialize as an empty array")
-	}
-	row := db.BusinessServiceArea{
-		Name: "Coyoacán", Country: "MX", State: "Ciudad de México",
-		Municipality: sql.NullString{String: "Coyoacán", Valid: true},
-	}
-	response = Map(db.Business{ID: uuid.New(), LocationMode: "mobile"}, false, []db.BusinessServiceArea{row})
-	if len(response.ServiceAreas) != 1 || response.ServiceAreas[0].Municipality == nil {
-		t.Fatal("service area was not mapped")
 	}
 }

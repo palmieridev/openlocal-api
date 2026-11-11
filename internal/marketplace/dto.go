@@ -1,11 +1,9 @@
 package marketplace
 
 import (
-	"strings"
-
 	"github.com/google/uuid"
-	"github.com/palmieridev/openlocal-api/internal/api"
-	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
+	"github.com/palmieridev/openlocal-api/internal/marketplace/discovery"
+	"time"
 )
 
 type ProductResponse struct {
@@ -29,37 +27,67 @@ type ProductResponse struct {
 	ImageURL           *string   `json:"image_url,omitempty"`
 }
 
-func MapProducts(rows []db.SearchMarketplaceProductsRow) []ProductResponse {
-	out := make([]ProductResponse, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, ProductResponse{
-			BusinessSlug:       row.BusinessSlug,
-			BusinessName:       row.BusinessName,
-			ID:                 row.ID,
-			Name:               row.Name,
-			Slug:               row.Slug,
-			Description:        row.Description,
-			Brand:              api.StringPtr(row.Brand),
-			Unit:               row.Unit,
-			ProductType:        row.ProductType,
-			VariantID:          row.VariantID,
-			SKU:                row.Sku,
-			VariantName:        row.VariantName,
-			VariantDescription: api.StringPtr(row.VariantDescription),
-			PriceNote:          api.StringPtr(row.PriceNote),
-			Price:              row.Price.StringFixed(2),
-			Currency:           row.Currency,
-			PublicStockStatus:  row.PublicStockStatus,
-			ImageURL:           optionalString(row.ImageUrl),
-		})
+type BusinessResponse struct {
+	ID                uuid.UUID             `json:"id"`
+	Name              string                `json:"name"`
+	Slug              string                `json:"slug"`
+	Description       string                `json:"description"`
+	BusinessType      string                `json:"business_type"`
+	Phone             *string               `json:"phone,omitempty"`
+	Whatsapp          *string               `json:"whatsapp,omitempty"`
+	Email             *string               `json:"email,omitempty"`
+	Website           *string               `json:"website,omitempty"`
+	LogoURL           *string               `json:"logo_url,omitempty"`
+	CoverImageURL     *string               `json:"cover_image_url,omitempty"`
+	Address           *string               `json:"address,omitempty"`
+	Neighborhood      *string               `json:"neighborhood,omitempty"`
+	City              *string               `json:"city,omitempty"`
+	State             *string               `json:"state,omitempty"`
+	Country           *string               `json:"country,omitempty"`
+	PostalCode        *string               `json:"postal_code,omitempty"`
+	Latitude          *string               `json:"latitude,omitempty"`
+	Longitude         *string               `json:"longitude,omitempty"`
+	PickupAvailable   bool                  `json:"pickup_available"`
+	DeliveryAvailable bool                  `json:"delivery_available"`
+	Timezone          string                `json:"timezone"`
+	LocationMode      string                `json:"location_mode"`
+	ServiceAreas      []ServiceAreaResponse `json:"service_areas"`
+	CreatedAt         time.Time             `json:"created_at,omitempty"`
+	UpdatedAt         time.Time             `json:"updated_at,omitempty"`
+	Hours             []HourResponse        `json:"hours"`
+}
+
+type ServiceAreaResponse struct {
+	Name         string  `json:"name"`
+	Country      string  `json:"country"`
+	State        string  `json:"state"`
+	Municipality *string `json:"municipality,omitempty"`
+	City         *string `json:"city,omitempty"`
+	Neighborhood *string `json:"neighborhood,omitempty"`
+	PostalCode   *string `json:"postal_code,omitempty"`
+}
+
+type HourResponse struct {
+	DayOfWeek int32   `json:"day_of_week"`
+	OpensAt   *string `json:"opens_at"`
+	ClosesAt  *string `json:"closes_at"`
+	IsClosed  bool    `json:"is_closed"`
+}
+
+func businessResponse(b discovery.Business) BusinessResponse {
+	out := BusinessResponse{ID: b.ID, Name: b.Name, Slug: b.Slug, Description: b.Description, BusinessType: b.BusinessType, Phone: b.Phone, Whatsapp: b.Whatsapp, Email: b.Email, Website: b.Website, LogoURL: b.LogoURL, CoverImageURL: b.CoverImageURL, Address: b.Address, Neighborhood: b.Neighborhood, City: b.City, State: b.State, Country: b.Country, PostalCode: b.PostalCode, Latitude: b.Latitude, Longitude: b.Longitude, PickupAvailable: b.PickupAvailable, DeliveryAvailable: b.DeliveryAvailable, Timezone: b.Timezone, LocationMode: b.LocationMode, Hours: []HourResponse{}, ServiceAreas: []ServiceAreaResponse{}}
+	for _, h := range b.Hours {
+		out.Hours = append(out.Hours, HourResponse{DayOfWeek: h.DayOfWeek, OpensAt: h.OpensAt, ClosesAt: h.ClosesAt, IsClosed: h.IsClosed})
+	}
+	for _, a := range b.ServiceAreas {
+		out.ServiceAreas = append(out.ServiceAreas, ServiceAreaResponse{Name: a.Name, Country: a.Country, State: a.State, Municipality: a.Municipality, City: a.City, Neighborhood: a.Neighborhood, PostalCode: a.PostalCode})
 	}
 	return out
 }
-
-func optionalString(value string) *string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return nil
+func productResponses(rows []discovery.Product) []ProductResponse {
+	out := make([]ProductResponse, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, ProductResponse(r))
 	}
-	return &value
+	return out
 }
