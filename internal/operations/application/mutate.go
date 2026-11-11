@@ -20,6 +20,13 @@ func (h *Service) Mutate(ctx context.Context, in MutateInput) (result WriteResul
 	}
 	editing := in.Editing
 	change, edit := in.Transition, in.Edit
+	// Customer credentials authorize cancellation only, including on replay.
+	hasEdits := editing || edit.Notes != nil || edit.StartsAt != nil ||
+		edit.ResourceID != nil || edit.PickupWindowID != nil ||
+		len(edit.Items) > 0 || edit.FinalTotal != nil
+	if customerFacing && (change.Status != "cancelled" || hasEdits) {
+		return result, conflict("invalid_transition")
+	}
 	tx, q, sub, e := h.begin(ctx, business)
 	if e != nil {
 		return result, e
