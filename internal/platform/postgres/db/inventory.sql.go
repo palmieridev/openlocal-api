@@ -334,6 +334,45 @@ func (q *Queries) GetStockMovementForUpdate(ctx context.Context, arg GetStockMov
 	return i, err
 }
 
+const insertNonnegativeStockDelta = `-- name: InsertNonnegativeStockDelta :one
+INSERT INTO stock_levels (business_id, variant_id, location_id, quantity_on_hand)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (business_id, variant_id, location_id) DO UPDATE SET
+    quantity_on_hand = stock_levels.quantity_on_hand + EXCLUDED.quantity_on_hand,
+    updated_at = now()
+WHERE stock_levels.quantity_on_hand + EXCLUDED.quantity_on_hand >= 0
+RETURNING business_id, variant_id, location_id, quantity_on_hand, quantity_reserved, updated_at
+`
+
+type InsertNonnegativeStockDeltaParams struct {
+	BusinessID     uuid.UUID       `json:"business_id"`
+	VariantID      uuid.UUID       `json:"variant_id"`
+	LocationID     uuid.UUID       `json:"location_id"`
+	QuantityOnHand decimal.Decimal `json:"quantity_on_hand"`
+}
+
+// Used only for a positive delta after the guarded UPDATE found no stock row.
+// A concurrent creator may insert negative stock before this statement wins;
+// recheck the resulting quantity while holding the conflicting row lock.
+func (q *Queries) InsertNonnegativeStockDelta(ctx context.Context, arg InsertNonnegativeStockDeltaParams) (StockLevel, error) {
+	row := q.db.QueryRow(ctx, insertNonnegativeStockDelta,
+		arg.BusinessID,
+		arg.VariantID,
+		arg.LocationID,
+		arg.QuantityOnHand,
+	)
+	var i StockLevel
+	err := row.Scan(
+		&i.BusinessID,
+		&i.VariantID,
+		&i.LocationID,
+		&i.QuantityOnHand,
+		&i.QuantityReserved,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listStockLevels = `-- name: ListStockLevels :many
 SELECT sl.business_id, sl.variant_id, sl.location_id, sl.quantity_on_hand, sl.quantity_reserved, sl.updated_at
 FROM stock_levels sl
@@ -412,6 +451,87 @@ func (q *Queries) ListStockMovements(ctx context.Context, arg ListStockMovements
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.IdempotencyKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockStockLocationKeys = `-- name: LockStockLocationKeys :many
+SELECT id
+FROM inventory_locations
+WHERE business_id = $1
+  AND id = ANY($2::uuid[])
+ORDER BY id
+FOR NO KEY UPDATE
+`
+
+type LockStockLocationKeysParams struct {
+	BusinessID  uuid.UUID   `json:"business_id"`
+	LocationIds []uuid.UUID `json:"location_ids"`
+}
+
+// Location records exist even when stock rows do not. Reserve both locations
+// in a stable order before acquiring any stock row locks. NO KEY UPDATE stays
+// compatible with the foreign-key KEY SHARE locks of concurrent creation.
+func (q *Queries) LockStockLocationKeys(ctx context.Context, arg LockStockLocationKeysParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, lockStockLocationKeys, arg.BusinessID, arg.LocationIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockStockLocations = `-- name: LockStockLocations :many
+SELECT business_id, variant_id, location_id, quantity_on_hand, quantity_reserved, updated_at
+FROM stock_levels
+WHERE business_id = $1 AND variant_id = $2
+  AND location_id = ANY($3::uuid[])
+ORDER BY location_id
+FOR UPDATE
+`
+
+type LockStockLocationsParams struct {
+	BusinessID  uuid.UUID   `json:"business_id"`
+	VariantID   uuid.UUID   `json:"variant_id"`
+	LocationIds []uuid.UUID `json:"location_ids"`
+}
+
+// After reserving location keys, lock existing stock rows in location order.
+// The guarded upsert still enforces nonnegative stock if creation adds a row.
+func (q *Queries) LockStockLocations(ctx context.Context, arg LockStockLocationsParams) ([]StockLevel, error) {
+	rows, err := q.db.Query(ctx, lockStockLocations, arg.BusinessID, arg.VariantID, arg.LocationIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StockLevel{}
+	for rows.Next() {
+		var i StockLevel
+		if err := rows.Scan(
+			&i.BusinessID,
+			&i.VariantID,
+			&i.LocationID,
+			&i.QuantityOnHand,
+			&i.QuantityReserved,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

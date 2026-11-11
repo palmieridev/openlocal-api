@@ -61,6 +61,27 @@ ON CONFLICT (business_id, variant_id, location_id) DO UPDATE SET
     updated_at = now()
 RETURNING *;
 
+-- name: LockStockLocationKeys :many
+-- Location records exist even when stock rows do not. Reserve both locations
+-- in a stable order before acquiring any stock row locks. NO KEY UPDATE stays
+-- compatible with the foreign-key KEY SHARE locks of concurrent creation.
+SELECT id
+FROM inventory_locations
+WHERE business_id = sqlc.arg(business_id)
+  AND id = ANY(sqlc.arg(location_ids)::uuid[])
+ORDER BY id
+FOR NO KEY UPDATE;
+
+-- name: LockStockLocations :many
+-- After reserving location keys, lock existing stock rows in location order.
+-- The guarded upsert still enforces nonnegative stock if creation adds a row.
+SELECT *
+FROM stock_levels
+WHERE business_id = sqlc.arg(business_id) AND variant_id = sqlc.arg(variant_id)
+  AND location_id = ANY(sqlc.arg(location_ids)::uuid[])
+ORDER BY location_id
+FOR UPDATE;
+
 -- name: ApplyNonnegativeStockDelta :one
 UPDATE stock_levels
 SET quantity_on_hand = quantity_on_hand + sqlc.arg(quantity_on_hand)::numeric,
@@ -69,6 +90,18 @@ WHERE business_id = sqlc.arg(business_id)
   AND variant_id = sqlc.arg(variant_id)
   AND location_id = sqlc.arg(location_id)
   AND quantity_on_hand + sqlc.arg(quantity_on_hand)::numeric >= 0
+RETURNING *;
+
+-- name: InsertNonnegativeStockDelta :one
+-- Used only for a positive delta after the guarded UPDATE found no stock row.
+-- A concurrent creator may insert negative stock before this statement wins;
+-- recheck the resulting quantity while holding the conflicting row lock.
+INSERT INTO stock_levels (business_id, variant_id, location_id, quantity_on_hand)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (business_id, variant_id, location_id) DO UPDATE SET
+    quantity_on_hand = stock_levels.quantity_on_hand + EXCLUDED.quantity_on_hand,
+    updated_at = now()
+WHERE stock_levels.quantity_on_hand + EXCLUDED.quantity_on_hand >= 0
 RETURNING *;
 
 -- name: GetStockLevel :one

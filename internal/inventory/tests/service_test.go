@@ -1,96 +1,227 @@
 package inventory_test
 
 import (
-	"database/sql"
-	"encoding/json"
-	"strings"
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/palmieridev/openlocal-api/internal/inventory"
-	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
+	"github.com/palmieridev/openlocal-api/internal/inventory/movement"
 	"github.com/shopspring/decimal"
 )
 
-func TestSignedQuantity(t *testing.T) {
-	qty := decimal.NewFromInt(3)
-	if got := inventory.SignedQuantity("IN_PURCHASE", qty); !got.Equal(qty) {
-		t.Fatalf("expected positive in movement, got %s", got)
-	}
-	if got := inventory.SignedQuantity("OUT_SALE", qty); !got.Equal(qty.Neg()) {
-		t.Fatalf("expected negative out movement, got %s", got)
-	}
+type changeFake struct {
+	current                        movement.Movement
+	fail                           string
+	deltas                         []decimal.Decimal
+	audit                          movement.DeleteInput
+	action                         string
+	updated                        movement.Movement
+	deleted, committed, rolledBack bool
 }
 
-func TestMovementDelta(t *testing.T) {
-	old := db.StockMovement{MovementType: "IN_PURCHASE", Quantity: decimal.NewFromInt(5)}
-	tests := []struct {
-		name     string
-		newType  string
-		quantity decimal.Decimal
-		want     decimal.Decimal
-	}{
-		{name: "edit inbound up", newType: "IN_PURCHASE", quantity: decimal.NewFromInt(8), want: decimal.NewFromInt(3)},
-		{name: "edit inbound down", newType: "IN_PURCHASE", quantity: decimal.NewFromInt(2), want: decimal.NewFromInt(-3)},
-		{name: "change to outbound", newType: "OUT_ADJUSTMENT", quantity: decimal.NewFromInt(2), want: decimal.NewFromInt(-7)},
+var changeFailure = errors.New("persistence failed")
+
+func (f *changeFake) failure(operation string) error {
+	if f.fail == operation {
+		return changeFailure
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := inventory.MovementDelta(old, tt.newType, tt.quantity); !got.Equal(tt.want) {
-				t.Fatalf("inventory.MovementDelta() = %s, want %s", got, tt.want)
-			}
-		})
+	return nil
+}
+func (f *changeFake) BeginChange(context.Context) (movement.ChangeTransaction, error) {
+	return f, f.failure("begin")
+}
+func (f *changeFake) LockMovement(context.Context, uuid.UUID, uuid.UUID) (movement.Movement, error) {
+	return f.current, f.failure("lock")
+}
+func (f *changeFake) RequireVariant(context.Context, uuid.UUID, uuid.UUID) error {
+	return f.failure("variant")
+}
+func (f *changeFake) RequireLocation(context.Context, uuid.UUID, uuid.UUID) error {
+	return f.failure("location")
+}
+func (f *changeFake) StockLevel(context.Context, movement.Data) (movement.StockLevel, error) {
+	return movement.StockLevel{QuantityOnHand: decimal.NewFromInt(10)}, f.failure("level")
+}
+func (f *changeFake) LockStockLocations(context.Context, movement.Data, []uuid.UUID) error {
+	return f.failure("stock locks")
+}
+func (f *changeFake) ApplyNonnegativeDelta(_ context.Context, _ movement.Data, d decimal.Decimal) (movement.StockLevel, error) {
+	f.deltas = append(f.deltas, d)
+	return movement.StockLevel{}, f.failure("delta")
+}
+func (f *changeFake) Update(_ context.Context, m movement.Movement) (movement.Movement, error) {
+	f.updated = m
+	return m, f.failure("update")
+}
+func (f *changeFake) Delete(context.Context, uuid.UUID, uuid.UUID) error {
+	f.deleted = true
+	return f.failure("delete")
+}
+func (f *changeFake) AuditChange(_ context.Context, input movement.DeleteInput, action string) error {
+	f.audit = input
+	f.action = action
+	return f.failure("audit")
+}
+func (f *changeFake) Commit(context.Context) error {
+	if err := f.failure("commit"); err != nil {
+		return err
 	}
+	f.committed = true
+	return nil
+}
+func (f *changeFake) Rollback(context.Context) error { f.rolledBack = true; return nil }
+
+func changeFixture() (*changeFake, movement.EditInput) {
+	actor := uuid.New()
+	data := movement.Data{BusinessID: uuid.New(), VariantID: uuid.New(), LocationID: uuid.New(), ActorID: &actor, MovementType: "IN_PURCHASE", Quantity: decimal.NewFromInt(5), IdempotencyKey: "original:12345678"}
+	f := &changeFake{current: movement.Movement{ID: uuid.New(), Data: data}}
+	input := movement.EditInput{MovementID: f.current.ID, Input: movement.Input{BusinessID: data.BusinessID, ActorID: uuid.New(), VariantID: data.VariantID.String(), MovementType: data.MovementType, Quantity: "8", IdempotencyKey: "edit:12345678"}}
+	return f, input
 }
 
-func TestMovementParamsRejectsUnsafeValues(t *testing.T) {
-	base := inventory.StockMovementRequest{
-		BusinessID:   uuid.New().String(),
-		VariantID:    uuid.New().String(),
-		MovementType: "IN_PURCHASE",
-		Quantity:     "1.000",
-	}
-	tests := []struct {
-		name   string
-		mutate func(*inventory.StockMovementRequest)
-	}{
-		{"quantity scale", func(req *inventory.StockMovementRequest) { req.Quantity = "1.0001" }},
-		{"negative unit cost", func(req *inventory.StockMovementRequest) { value := "-1"; req.UnitCost = &value }},
-		{"notes length", func(req *inventory.StockMovementRequest) { req.Notes = strings.Repeat("x", 2001) }},
-	}
-	for _, test := range tests {
+func TestMovementEditSignedDeltas(t *testing.T) {
+	for _, test := range []struct{ name, oldType, newType, quantity, want string }{
+		{"inbound up", "IN_PURCHASE", "IN_PURCHASE", "8", "3"},
+		{"inbound down", "IN_PURCHASE", "IN_PURCHASE", "2", "-3"},
+		{"inbound to outbound", "IN_PURCHASE", "OUT_ADJUSTMENT", "2", "-7"},
+		{"outbound to inbound", "OUT_LOSS", "IN_ADJUSTMENT", "2", "7"},
+		{"outbound increase", "OUT_SALE", "OUT_SALE", "8", "-3"},
+	} {
 		t.Run(test.name, func(t *testing.T) {
-			req := base
-			test.mutate(&req)
-			if _, _, err := inventory.MovementParams(req, uuid.New(), "movement:12345678"); err == nil {
-				t.Fatal("expected validation error")
+			f, input := changeFixture()
+			f.current.MovementType = test.oldType
+			input.MovementType = test.newType
+			input.Quantity = test.quantity
+			result, err := movement.NewMaintenance(f).Edit(context.Background(), input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(f.deltas) != 1 || !f.deltas[0].Equal(decimal.RequireFromString(test.want)) {
+				t.Fatalf("deltas=%v want %s", f.deltas, test.want)
+			}
+			if !f.committed || f.audit.ActorID != input.ActorID || f.updated.ActorID == nil || *f.updated.ActorID != *f.current.ActorID || result.Movement.CreatedAt != f.current.CreatedAt {
+				t.Fatal("edit changed creator or failed to audit the editor")
 			}
 		})
 	}
 }
 
-func TestStockMovementResponseExcludesPersistenceFields(t *testing.T) {
-	movement := db.StockMovement{
-		ID:             uuid.New(),
-		BusinessID:     uuid.New(),
-		VariantID:      uuid.New(),
-		LocationID:     uuid.New(),
-		MovementType:   "IN_PURCHASE",
-		Quantity:       decimal.NewFromInt(1),
-		CreatedBy:      uuid.NullUUID{UUID: uuid.New(), Valid: true},
-		IdempotencyKey: sql.NullString{String: "movement:12345678", Valid: true},
+func TestMovementEditReplayIgnoresEditor(t *testing.T) {
+	f, input := changeFixture()
+	input.Quantity = "5.000"
+	input.IdempotencyKey = f.current.IdempotencyKey
+	result, err := movement.NewMaintenance(f).Edit(context.Background(), input)
+	if err != nil || !result.Replayed || len(f.deltas) != 0 || f.action != "" || !f.committed {
+		t.Fatalf("replay=%+v err=%v writes=%v", result, err, f.deltas)
 	}
-	body, err := json.Marshal(inventory.MapStockMovement(movement))
-	if err != nil {
-		t.Fatal(err)
+	f, input = changeFixture()
+	input.IdempotencyKey = f.current.IdempotencyKey
+	if _, err := movement.NewMaintenance(f).Edit(context.Background(), input); !errors.Is(err, movement.ErrEditConflict) {
+		t.Fatalf("changed same-key payload: %v", err)
 	}
-	var payload map[string]any
-	if err := json.Unmarshal(body, &payload); err != nil {
-		t.Fatal(err)
+	if len(f.deltas) != 0 || f.committed {
+		t.Fatal("conflicting replay wrote state")
 	}
-	for _, forbidden := range []string{"business_id", "created_by", "idempotency_key"} {
-		if _, ok := payload[forbidden]; ok {
-			t.Fatalf("response exposed %s: %s", forbidden, body)
+}
+
+func TestMovementEditFailuresDoNotCommit(t *testing.T) {
+	for _, operation := range []string{"begin", "lock", "variant", "location", "delta", "update", "audit", "commit"} {
+		t.Run(operation, func(t *testing.T) {
+			f, input := changeFixture()
+			f.fail = operation
+			if _, err := movement.NewMaintenance(f).Edit(context.Background(), input); !errors.Is(err, changeFailure) {
+				t.Fatalf("failure lost: %v", err)
+			}
+			if f.committed || operation != "begin" && !f.rolledBack {
+				t.Fatal("failed edit did not abort")
+			}
+			if (operation == "variant" || operation == "location") && len(f.deltas) != 0 {
+				t.Fatal("ownership rejection changed stock")
+			}
+		})
+	}
+}
+
+func TestMovementEditRejectsVariantChangeBeforeWrites(t *testing.T) {
+	f, input := changeFixture()
+	input.VariantID = uuid.NewString()
+	_, err := movement.NewMaintenance(f).Edit(context.Background(), input)
+	var validation *movement.ValidationError
+	if !errors.As(err, &validation) || len(f.deltas) != 0 || f.committed {
+		t.Fatalf("immutable variant: %v", err)
+	}
+}
+
+func TestMovementDeleteUsesInverseSignAndAbortsFailures(t *testing.T) {
+	for _, kind := range []string{"IN_PURCHASE", "OUT_SALE"} {
+		t.Run(kind, func(t *testing.T) {
+			f, input := changeFixture()
+			f.current.MovementType = kind
+			err := movement.NewMaintenance(f).Delete(context.Background(), movement.DeleteInput{BusinessID: input.BusinessID, ActorID: input.ActorID, MovementID: input.MovementID})
+			want := decimal.NewFromInt(-5)
+			if kind == "OUT_SALE" {
+				want = want.Neg()
+			}
+			if err != nil || len(f.deltas) != 1 || !f.deltas[0].Equal(want) || !f.deleted || !f.committed || f.action != "inventory.movement.delete" {
+				t.Fatalf("delete sign or effects: %+v, %v", f, err)
+			}
+		})
+	}
+	for _, operation := range []string{"lock", "variant", "location", "delta", "delete", "audit", "commit"} {
+		t.Run(operation, func(t *testing.T) {
+			f, input := changeFixture()
+			f.fail = operation
+			err := movement.NewMaintenance(f).Delete(context.Background(), movement.DeleteInput{BusinessID: input.BusinessID, ActorID: input.ActorID, MovementID: input.MovementID})
+			if !errors.Is(err, changeFailure) || f.committed || !f.rolledBack {
+				t.Fatalf("delete failure: %v", err)
+			}
+		})
+	}
+}
+
+type listFake struct {
+	received movement.ListInput
+	calls    int
+}
+
+func (f *listFake) ListMovements(_ context.Context, input movement.ListInput) ([]movement.Movement, error) {
+	f.received = input
+	f.calls++
+	return []movement.Movement{}, nil
+}
+func (f *listFake) ListLevels(_ context.Context, input movement.ListInput) ([]movement.StockLevel, error) {
+	f.received = input
+	f.calls++
+	return []movement.StockLevel{}, nil
+}
+func TestInventoryReaderBoundsAndBusinessScope(t *testing.T) {
+	for _, levels := range []bool{false, true} {
+		f := &listFake{}
+		service := movement.NewReader(f)
+		list := func(input movement.ListInput) error {
+			if levels {
+				_, err := service.Levels(context.Background(), input)
+				return err
+			}
+			_, err := service.Movements(context.Background(), input)
+			return err
+		}
+		input := movement.ListInput{BusinessID: uuid.New()}
+		if err := list(input); err != nil {
+			t.Fatal(err)
+		}
+		if f.received.BusinessID != input.BusinessID || f.received.Limit != 25 || f.received.Offset != 0 {
+			t.Fatalf("lost defaults or tenant: %+v", f.received)
+		}
+		for _, bad := range []movement.ListInput{{Limit: -1}, {Limit: 101}, {Limit: 25, Offset: -1}, {Limit: 25, Offset: 2_000_000_001}} {
+			var validation *movement.ValidationError
+			if err := list(bad); !errors.As(err, &validation) {
+				t.Fatalf("invalid page: %v", err)
+			}
+		}
+		if f.calls != 1 {
+			t.Fatal("invalid request reached persistence")
 		}
 	}
 }

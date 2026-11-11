@@ -1,4 +1,3 @@
+// Package inventory owns the private stock ledger HTTP adapter. Movement,
+// stock and audit effects commit together for creation, editing and deletion.
 package inventory
-
-// Package inventory owns stock ledger domain rules. Stock levels must only
-// change in the same transaction that inserts a stock movement.

@@ -52,24 +52,15 @@ func movementHTTPError(err error) error {
 	if errors.As(err, &validation) {
 		return fiber.NewError(fiber.StatusBadRequest, validation.Error())
 	}
-	if errors.Is(err, movement.ErrConflict) {
+	if errors.Is(err, movement.ErrNotFound) {
+		return fiber.NewError(fiber.StatusNotFound, "not found")
+	}
+	if errors.Is(err, movement.ErrNegativeStock) || errors.Is(err, movement.ErrEditConflict) || errors.Is(err, movement.ErrConflict) {
 		return fiber.NewError(fiber.StatusConflict, err.Error())
 	}
 	return err
 }
 
 func mapMovementResult(result movement.Result) MovementCreatedResponse {
-	item, level := result.Movement, result.StockLevel
-	var cost *string
-	if item.UnitCost != nil {
-		value := item.UnitCost.String()
-		cost = &value
-	}
-	return MovementCreatedResponse{
-		Movement: StockMovementResponse{ID: item.ID, VariantID: item.VariantID, LocationID: item.LocationID,
-			MovementType: item.MovementType, Quantity: item.Quantity.String(), UnitCost: cost,
-			ReferenceType: item.ReferenceType, ReferenceID: item.ReferenceID, Notes: item.Notes, CreatedAt: item.CreatedAt},
-		StockLevel: StockLevelResponse{VariantID: level.VariantID, LocationID: level.LocationID,
-			QuantityOnHand: level.QuantityOnHand.String(), QuantityReserved: level.QuantityReserved.String(), UpdatedAt: level.UpdatedAt},
-	}
+	return MovementCreatedResponse{Movement: mapStockMovement(result.Movement), StockLevel: mapStockLevel(result.StockLevel)}
 }

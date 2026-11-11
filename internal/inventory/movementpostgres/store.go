@@ -72,7 +72,7 @@ func (t *transaction) DefaultLocation(ctx context.Context, businessID uuid.UUID)
 	return location.ID, err
 }
 func (t *transaction) Insert(ctx context.Context, data movement.Data) (movement.Movement, error) {
-	item, err := t.q.CreateStockMovement(ctx, Params(data))
+	item, err := t.q.CreateStockMovement(ctx, params(data))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return movement.Movement{}, movement.ErrDuplicate
 	}
@@ -91,8 +91,7 @@ func (t *transaction) AuditCreated(ctx context.Context, item movement.Movement) 
 	return err
 }
 
-// Params also bridges the legacy edit path while it still uses sqlc directly.
-func Params(data movement.Data) db.CreateStockMovementParams {
+func params(data movement.Data) db.CreateStockMovementParams {
 	return db.CreateStockMovementParams{
 		BusinessID: data.BusinessID, VariantID: data.VariantID, LocationID: data.LocationID,
 		MovementType: data.MovementType, Quantity: data.Quantity, UnitCost: nullDecimal(data.UnitCost),
