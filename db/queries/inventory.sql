@@ -61,9 +61,20 @@ ON CONFLICT (business_id, variant_id, location_id) DO UPDATE SET
     updated_at = now()
 RETURNING *;
 
+-- name: LockStockLocationKeys :many
+-- Location records exist even when stock rows do not. Reserve both locations
+-- in a stable order before acquiring any stock row locks. NO KEY UPDATE stays
+-- compatible with the foreign-key KEY SHARE locks of concurrent creation.
+SELECT id
+FROM inventory_locations
+WHERE business_id = sqlc.arg(business_id)
+  AND id = ANY(sqlc.arg(location_ids)::uuid[])
+ORDER BY id
+FOR NO KEY UPDATE;
+
 -- name: LockStockLocations :many
--- Transfers lock all existing stock rows in the same order before changing
--- either location. Missing destinations are protected by the guarded upsert.
+-- After reserving location keys, lock existing stock rows in location order.
+-- The guarded upsert still enforces nonnegative stock if creation adds a row.
 SELECT *
 FROM stock_levels
 WHERE business_id = sqlc.arg(business_id) AND variant_id = sqlc.arg(variant_id)

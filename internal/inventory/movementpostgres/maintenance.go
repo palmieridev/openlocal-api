@@ -46,6 +46,11 @@ func (t *changeTransaction) StockLevel(ctx context.Context, data movement.Data) 
 }
 
 func (t *changeTransaction) LockStockLocations(ctx context.Context, data movement.Data, locations []uuid.UUID) error {
+	// Lock stable location records first: locking only visible stock rows cannot
+	// preserve transfer ordering when creation inserts a missing destination.
+	if _, err := t.q.LockStockLocationKeys(ctx, db.LockStockLocationKeysParams{BusinessID: data.BusinessID, LocationIds: locations}); err != nil {
+		return err
+	}
 	_, err := t.q.LockStockLocations(ctx, db.LockStockLocationsParams{BusinessID: data.BusinessID, VariantID: data.VariantID, LocationIds: locations})
 	return err
 }

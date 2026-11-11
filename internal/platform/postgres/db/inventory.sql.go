@@ -462,6 +462,43 @@ func (q *Queries) ListStockMovements(ctx context.Context, arg ListStockMovements
 	return items, nil
 }
 
+const lockStockLocationKeys = `-- name: LockStockLocationKeys :many
+SELECT id
+FROM inventory_locations
+WHERE business_id = $1
+  AND id = ANY($2::uuid[])
+ORDER BY id
+FOR NO KEY UPDATE
+`
+
+type LockStockLocationKeysParams struct {
+	BusinessID  uuid.UUID   `json:"business_id"`
+	LocationIds []uuid.UUID `json:"location_ids"`
+}
+
+// Location records exist even when stock rows do not. Reserve both locations
+// in a stable order before acquiring any stock row locks. NO KEY UPDATE stays
+// compatible with the foreign-key KEY SHARE locks of concurrent creation.
+func (q *Queries) LockStockLocationKeys(ctx context.Context, arg LockStockLocationKeysParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, lockStockLocationKeys, arg.BusinessID, arg.LocationIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockStockLocations = `-- name: LockStockLocations :many
 SELECT business_id, variant_id, location_id, quantity_on_hand, quantity_reserved, updated_at
 FROM stock_levels
@@ -477,8 +514,8 @@ type LockStockLocationsParams struct {
 	LocationIds []uuid.UUID `json:"location_ids"`
 }
 
-// Transfers lock all existing stock rows in the same order before changing
-// either location. Missing destinations are protected by the guarded upsert.
+// After reserving location keys, lock existing stock rows in location order.
+// The guarded upsert still enforces nonnegative stock if creation adds a row.
 func (q *Queries) LockStockLocations(ctx context.Context, arg LockStockLocationsParams) ([]StockLevel, error) {
 	rows, err := q.db.Query(ctx, lockStockLocations, arg.BusinessID, arg.VariantID, arg.LocationIds)
 	if err != nil {

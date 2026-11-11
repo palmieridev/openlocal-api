@@ -28,7 +28,9 @@ type MaintenanceStore interface {
 
 // ChangeTransaction must lock the business-scoped movement until commit or
 // rollback. Stock deltas must check the resulting quantity atomically. All
-// movement, stock and audit writes share this transaction.
+// movement, stock and audit writes share this transaction. LockStockLocations
+// must preserve a consistent transfer order even when a stock row is absent
+// and another transaction creates it before the deltas are applied.
 type ChangeTransaction interface {
 	LockMovement(context.Context, uuid.UUID, uuid.UUID) (Movement, error)
 	RequireVariant(context.Context, uuid.UUID, uuid.UUID) error

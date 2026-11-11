@@ -298,3 +298,112 @@ func TestConcurrentOppositeLocationTransfers(t *testing.T) {
 	}
 	assertMovementCounts(t, pool, input.BusinessID, 2, 2, 2, 4)
 }
+
+func TestOppositeTransfersWithConcurrentDestinationCreation(t *testing.T) {
+	pool := createMovementPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	input := createMovementInput(t, pool)
+	q := db.New(pool)
+	store := movementpostgres.New(pool, q)
+	creator := movement.New(store)
+	maintenance := movement.NewMaintenance(store)
+	first, err := creator.Create(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// This destination sorts before the UUIDv4 source, but initially has no
+	// stock row. Existing-row ordering alone cannot reserve its position.
+	destination := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	if _, err := pool.Exec(ctx, "INSERT INTO inventory_locations(id,business_id,name) VALUES($1,$2,'Concurrent destination')", destination, input.BusinessID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = pool.Exec(ctx, `CREATE FUNCTION inventory_test_pause_missing_transfer() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+ IF NEW.business_id='`+input.BusinessID.String()+`'::uuid
+ AND NEW.location_id='`+first.Movement.LocationID.String()+`'::uuid AND NEW.quantity_on_hand=0 THEN
+  PERFORM pg_advisory_xact_lock(84129139);
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER inventory_test_pause_missing_transfer AFTER UPDATE ON stock_levels
+FOR EACH ROW EXECUTE FUNCTION inventory_test_pause_missing_transfer()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(), `DROP TRIGGER inventory_test_pause_missing_transfer ON stock_levels; DROP FUNCTION inventory_test_pause_missing_transfer()`); err != nil {
+			t.Error(err)
+		}
+	})
+	blocker, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var workers sync.WaitGroup
+	defer func() {
+		cancel()
+		_ = blocker.Rollback(context.Background())
+		workers.Wait()
+	}()
+	if _, err := blocker.Exec(ctx, "SELECT pg_advisory_xact_lock(84129139)"); err != nil {
+		t.Fatal(err)
+	}
+	dest := destination.String()
+	one := input
+	one.LocationID = &dest
+	one.IdempotencyKey = "transfer:" + uuid.NewString()
+	firstDone := make(chan error, 1)
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		_, err := maintenance.Edit(ctx, movement.EditInput{Input: one, MovementID: first.Movement.ID})
+		firstDone <- err
+	}()
+	// Transfer A->B has acquired its prelocks and reversed A. Freeze it
+	// before B exists, then create B through the ordinary production service.
+	waitInventoryLocks(t, ctx, pool, "UPDATE stock_levels", 1)
+	seed := input
+	seed.LocationID = &dest
+	seed.IdempotencyKey = "seed:" + uuid.NewString()
+	second, err := creator.Create(ctx, seed)
+	if err != nil {
+		t.Fatalf("concurrent destination creation: %v", err)
+	}
+	source := first.Movement.LocationID.String()
+	two := seed
+	two.LocationID = &source
+	two.IdempotencyKey = "transfer:" + uuid.NewString()
+	secondDone := make(chan error, 1)
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		_, err := maintenance.Edit(ctx, movement.EditInput{Input: two, MovementID: second.Movement.ID})
+		secondDone <- err
+	}()
+	// Before the fix B->A holds B's new stock row and waits for A. Stable
+	// location locks instead make it wait before holding either stock row.
+	waitInventoryLocks(t, ctx, pool, "-- name: LockStock", 1)
+	if err := blocker.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-firstDone; err != nil {
+		t.Errorf("first transfer must commit without deadlock: %v", err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Errorf("opposing transfer must commit without deadlock: %v", err)
+	}
+	for _, entry := range []struct{ movement, location uuid.UUID }{
+		{first.Movement.ID, destination}, {second.Movement.ID, first.Movement.LocationID},
+	} {
+		stored, err := q.GetStockMovementForUpdate(ctx, db.GetStockMovementForUpdateParams{BusinessID: input.BusinessID, ID: entry.movement})
+		if err != nil || stored.LocationID != entry.location {
+			t.Errorf("transfer association: %+v %v", stored, err)
+		}
+		level, err := q.GetStockLevel(ctx, db.GetStockLevelParams{BusinessID: input.BusinessID, VariantID: first.Movement.VariantID, LocationID: entry.location})
+		if err != nil || !level.QuantityOnHand.Equal(decimal.NewFromInt(5)) {
+			t.Errorf("transfer stock: %+v %v", level, err)
+		}
+	}
+	assertMovementCounts(t, pool, input.BusinessID, 2, 2, 2, 4)
+}
