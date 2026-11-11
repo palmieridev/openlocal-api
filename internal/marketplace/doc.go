@@ -1,4 +1,3 @@
+// Package marketplace owns public discovery routes and explicit HTTP projections.
+// The discovery package validates inputs; marketplacepostgres reads public data.
 package marketplace
-
-// Package marketplace owns public storefront and discovery rules. All public
-// APIs use explicit DTO projections.

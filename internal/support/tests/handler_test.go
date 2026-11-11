@@ -2,13 +2,13 @@ package support_test
 
 import (
 	"encoding/json"
-	"github.com/palmieridev/openlocal-api/internal/support"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/palmieridev/openlocal-api/internal/api"
+	"github.com/palmieridev/openlocal-api/internal/support"
 )
 
 func feedbackTestApp() *fiber.App {

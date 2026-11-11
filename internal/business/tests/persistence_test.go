@@ -3,6 +3,8 @@ package business_test
 import (
 	"context"
 	"fmt"
+	"testing"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/palmieridev/openlocal-api/internal/api"
@@ -11,7 +13,6 @@ import (
 	"github.com/palmieridev/openlocal-api/internal/business/businesspostgres"
 	"github.com/palmieridev/openlocal-api/internal/business/profile"
 	"github.com/palmieridev/openlocal-api/internal/clerk"
-	"testing"
 )
 
 type organizationClient struct{ created, deleted []string }

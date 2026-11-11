@@ -1,9 +1,7 @@
 package api
 
 import (
-	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"strings"
@@ -15,7 +13,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
-
 	"github.com/palmieridev/openlocal-api/internal/auth"
 	"github.com/palmieridev/openlocal-api/internal/clerk"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
@@ -142,43 +139,6 @@ func RoleAllowed(role string, allowed ...string) bool {
 		}
 	}
 	return false
-}
-
-func Audit(q *db.Queries, ctx context.Context, businessID, userID uuid.UUID, action, entityType string, entityID uuid.UUID) error {
-	_, err := q.CreateAuditLog(ctx, db.CreateAuditLogParams{
-		BusinessID:  uuid.NullUUID{UUID: businessID, Valid: true},
-		ActorUserID: uuid.NullUUID{UUID: userID, Valid: true},
-		Action:      action,
-		EntityType:  entityType,
-		EntityID:    uuid.NullUUID{UUID: entityID, Valid: true},
-		Metadata:    []byte(`{}`),
-	})
-	return err
-}
-
-// AuditWithMetadata writes through the supplied queries, including its transaction.
-// A zero UUID represents an absent business, actor, or entity. Metadata must be
-// JSON serializable; nil is stored as an empty object.
-func AuditWithMetadata(q *db.Queries, ctx context.Context, businessID, userID uuid.UUID, action, entityType string, entityID uuid.UUID, metadata map[string]any) error {
-	if metadata == nil {
-		metadata = map[string]any{}
-	}
-	data, err := json.Marshal(metadata)
-	if err != nil {
-		return err
-	}
-	_, err = q.CreateAuditLog(ctx, db.CreateAuditLogParams{
-		BusinessID:  uuid.NullUUID{UUID: businessID, Valid: businessID != uuid.Nil},
-		ActorUserID: uuid.NullUUID{UUID: userID, Valid: userID != uuid.Nil},
-		Action:      action, EntityType: entityType,
-		EntityID: uuid.NullUUID{UUID: entityID, Valid: entityID != uuid.Nil},
-		Metadata: data,
-	})
-	return err
-}
-
-func Rollback(ctx context.Context, tx pgx.Tx) {
-	_ = tx.Rollback(ctx)
 }
 
 func BusinessIDFromQuery(c *fiber.Ctx) (uuid.UUID, error) {

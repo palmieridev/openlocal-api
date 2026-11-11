@@ -2,10 +2,10 @@ package analytics
 
 import (
 	"errors"
-	"github.com/palmieridev/openlocal-api/internal/analytics/analyticspostgres"
-	"github.com/palmieridev/openlocal-api/internal/analytics/reporting"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/palmieridev/openlocal-api/internal/analytics/analyticspostgres"
+	"github.com/palmieridev/openlocal-api/internal/analytics/reporting"
 	"github.com/palmieridev/openlocal-api/internal/api"
 	v "github.com/palmieridev/openlocal-api/internal/platform/validator"
 )

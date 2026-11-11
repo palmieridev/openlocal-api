@@ -2,6 +2,7 @@ package businessclerk
 
 import (
 	"context"
+
 	"github.com/palmieridev/openlocal-api/internal/business/profile"
 	"github.com/palmieridev/openlocal-api/internal/clerk"
 )

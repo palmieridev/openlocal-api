@@ -7,6 +7,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/palmieridev/openlocal-api/internal/audit"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -106,5 +107,5 @@ func (s *Store) Revoke(ctx context.Context, in application.Revocation) (applicat
 	return grant(g), translate(err)
 }
 func (s *Store) Audit(ctx context.Context, in application.Change) error {
-	return api.AuditWithMetadata(s.q, ctx, in.BusinessID, in.ActorID, "access_grant."+in.Action, "access_grant", in.GrantID, map[string]any{"internal_reason": in.Reason, "before": in.Before, "after": in.After})
+	return audit.WithMetadata(s.q, ctx, in.BusinessID, in.ActorID, "access_grant."+in.Action, "access_grant", in.GrantID, map[string]any{"internal_reason": in.Reason, "before": in.Before, "after": in.After})
 }

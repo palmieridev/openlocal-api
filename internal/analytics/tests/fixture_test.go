@@ -3,6 +3,13 @@ package analytics_test
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -10,12 +17,6 @@ import (
 	"github.com/palmieridev/openlocal-api/internal/api"
 	"github.com/palmieridev/openlocal-api/internal/auth"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
-	"io"
-	"net/http/httptest"
-	"os"
-	"strings"
-	"testing"
-	"time"
 )
 
 type fixture struct {

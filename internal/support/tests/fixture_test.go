@@ -3,27 +3,23 @@ package support_test
 import (
 	"context"
 	"encoding/json"
-	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/palmieridev/openlocal-api/internal/api"
-	"github.com/palmieridev/openlocal-api/internal/auth"
-	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
-	"github.com/palmieridev/openlocal-api/internal/support"
 	"io"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/palmieridev/openlocal-api/internal/api"
+	"github.com/palmieridev/openlocal-api/internal/support"
 )
 
 type fixture struct {
-	pool     *pgxpool.Pool
-	q        *db.Queries
-	app      *fiber.App
-	rt       api.Runtime
-	identity auth.Context
+	pool *pgxpool.Pool
+	app  *fiber.App
+	rt   api.Runtime
 }
 
 func setup(t *testing.T) *fixture {
@@ -49,35 +45,9 @@ func setup(t *testing.T) *fixture {
 	if err = pool.Ping(ctx); err != nil {
 		t.Fatal(err)
 	}
-	f := &fixture{pool: pool, q: db.New(pool), rt: api.NewRuntime(nil, pool, nil), app: fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})}
-	f.identity = auth.Context{ClerkUserID: "user_support_" + uuid.NewString(), ClerkOrgID: "org_support_" + uuid.NewString(), Role: "owner"}
-	user, err := f.q.UpsertUserFromClerk(ctx, db.UpsertUserFromClerkParams{ClerkUserID: f.identity.ClerkUserID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.identity.UserID = user.ID
-	t.Cleanup(func() {
-		_, err := pool.Exec(context.Background(), "DELETE FROM users WHERE id=$1", user.ID)
-		if err != nil {
-			t.Error(err)
-		}
-	})
+	f := &fixture{pool: pool, rt: api.NewRuntime(nil, pool, nil), app: fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})}
 	support.NewHandler(f.rt).RegisterPublicRoutes(f.app)
 	return f
-}
-func (f *fixture) business(t *testing.T, status string) db.Business {
-	t.Helper()
-	b, err := f.q.CreateBusiness(context.Background(), db.CreateBusinessParams{Name: "support fixture", Slug: "support-" + uuid.NewString(), BusinessType: "retail", Status: status, Timezone: "America/Tijuana", LocationMode: "fixed"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, err := f.pool.Exec(context.Background(), "DELETE FROM businesses WHERE id=$1", b.ID)
-		if err != nil {
-			t.Error(err)
-		}
-	})
-	return b
 }
 func (f *fixture) request(t *testing.T, method, path, body string, status int) []byte {
 	t.Helper()

@@ -3,8 +3,9 @@ package marketplace_test
 import (
 	"context"
 	"errors"
-	"github.com/palmieridev/openlocal-api/internal/marketplace/discovery"
 	"testing"
+
+	"github.com/palmieridev/openlocal-api/internal/marketplace/discovery"
 )
 
 func TestDiscoveryNormalizesReachAndBoundsBeforeStorage(t *testing.T) {

@@ -3,9 +3,10 @@ package savedbusinesses_test
 import (
 	"context"
 	"errors"
+	"testing"
+
 	"github.com/google/uuid"
 	"github.com/palmieridev/openlocal-api/internal/savedbusinesses/personal"
-	"testing"
 )
 
 type savedStore struct {

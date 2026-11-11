@@ -3,12 +3,13 @@ package analytics_test
 import (
 	"context"
 	"errors"
+	"math"
+	"testing"
+
 	"github.com/google/uuid"
 	"github.com/palmieridev/openlocal-api/internal/analytics/analyticspostgres"
 	"github.com/palmieridev/openlocal-api/internal/analytics/reporting"
 	"github.com/shopspring/decimal"
-	"math"
-	"testing"
 )
 
 type reportStore struct {

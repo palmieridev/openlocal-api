@@ -3,10 +3,12 @@ package businesspostgres
 import (
 	"context"
 	"errors"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/palmieridev/openlocal-api/internal/api"
+	"github.com/palmieridev/openlocal-api/internal/audit"
 	"github.com/palmieridev/openlocal-api/internal/business/profile"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 )
@@ -107,7 +109,7 @@ func (t *transaction) Create(ctx context.Context, actor profile.Actor, org strin
 	if _, err = t.q.CreateInventoryLocation(ctx, db.CreateInventoryLocationParams{BusinessID: b.ID, Name: "Default", IsDefault: true}); err != nil {
 		return profile.Business{}, err
 	}
-	if err = api.Audit(t.q, ctx, b.ID, actor.ID, "business.create", "business", b.ID); err != nil {
+	if err = audit.Write(t.q, ctx, b.ID, actor.ID, "business.create", "business", b.ID); err != nil {
 		return profile.Business{}, err
 	}
 	return mapBusiness(b, areas), nil
@@ -126,7 +128,7 @@ func (t *transaction) Update(ctx context.Context, id profile.Identity, data prof
 	if err != nil {
 		return profile.Business{}, err
 	}
-	if err = api.Audit(t.q, ctx, b.ID, id.ActorID, "business.update", "business", b.ID); err != nil {
+	if err = audit.Write(t.q, ctx, b.ID, id.ActorID, "business.update", "business", b.ID); err != nil {
 		return profile.Business{}, err
 	}
 	return mapBusiness(b, areas), nil
@@ -144,7 +146,7 @@ func (t *transaction) ReplaceHours(ctx context.Context, id profile.Identity, hou
 			return nil, err
 		}
 	}
-	if err := api.Audit(t.q, ctx, id.BusinessID, id.ActorID, "business.hours.update", "business", id.BusinessID); err != nil {
+	if err := audit.Write(t.q, ctx, id.BusinessID, id.ActorID, "business.hours.update", "business", id.BusinessID); err != nil {
 		return nil, err
 	}
 	rows, err := t.q.ListBusinessHours(ctx, id.BusinessID)

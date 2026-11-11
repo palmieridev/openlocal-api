@@ -2,13 +2,14 @@ package businesspostgres
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/palmieridev/openlocal-api/internal/api"
 	"github.com/palmieridev/openlocal-api/internal/business/profile"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	"github.com/shopspring/decimal"
-	"time"
 )
 
 func nullDecimal(value *decimal.Decimal) decimal.NullDecimal {

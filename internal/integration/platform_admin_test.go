@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/palmieridev/openlocal-api/internal/audit"
 	"github.com/google/uuid"
-	"github.com/palmieridev/openlocal-api/internal/api"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 )
 
@@ -26,7 +26,7 @@ func TestAuditMetadataUsesCallerTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := api.AuditWithMetadata(db.New(nested), ctx, business.ID, actor.ID, "platform_admin.test", "business", entity, map[string]any{"before": map[string]any{"tier": "free"}, "after": map[string]any{"tier": "essential"}, "reason": "private pilot"}); err != nil {
+	if err := audit.WithMetadata(db.New(nested), ctx, business.ID, actor.ID, "platform_admin.test", "business", entity, map[string]any{"before": map[string]any{"tier": "free"}, "after": map[string]any{"tier": "essential"}, "reason": "private pilot"}); err != nil {
 		t.Fatal(err)
 	}
 	rows, err := db.New(nested).AdminListActivity(ctx, db.AdminListActivityParams{BusinessID: uuid.NullUUID{UUID: business.ID, Valid: true}, LimitCount: 10})

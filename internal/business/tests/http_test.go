@@ -3,13 +3,14 @@ package business_test
 import (
 	"context"
 	"fmt"
-	"github.com/palmieridev/openlocal-api/internal/business"
-	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	"io"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/palmieridev/openlocal-api/internal/business"
+	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 )
 
 func (f *fixture) member(t *testing.T, b db.Business, role string) {

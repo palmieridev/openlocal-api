@@ -1,9 +1,10 @@
 package marketplace
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/palmieridev/openlocal-api/internal/marketplace/discovery"
-	"time"
 )
 
 type ProductResponse struct {

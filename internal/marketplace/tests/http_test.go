@@ -4,13 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
+	"testing"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/palmieridev/openlocal-api/internal/marketplace"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	"github.com/shopspring/decimal"
-	"strings"
-	"testing"
 )
 
 func TestPublicBusinessProjectionsPreserveHoursAndHideIdentity(t *testing.T) {

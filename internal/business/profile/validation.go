@@ -1,12 +1,13 @@
 package profile
 
 import (
-	"github.com/palmieridev/openlocal-api/internal/geography"
-	"github.com/shopspring/decimal"
 	"net/mail"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/palmieridev/openlocal-api/internal/geography"
+	"github.com/shopspring/decimal"
 )
 
 func Parse(req Input) (Data, error) {

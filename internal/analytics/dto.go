@@ -1,9 +1,10 @@
 package analytics
 
 import (
+	"strconv"
+
 	"github.com/google/uuid"
 	"github.com/palmieridev/openlocal-api/internal/analytics/reporting"
-	"strconv"
 )
 
 type ABCResponse struct {

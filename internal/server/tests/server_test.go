@@ -1,4 +1,4 @@
-package server
+package server_test
 
 import (
 	"net/http/httptest"
@@ -9,6 +9,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/palmieridev/openlocal-api/internal/auth"
 	"github.com/palmieridev/openlocal-api/internal/config"
+	"github.com/palmieridev/openlocal-api/internal/server"
 )
 
 func secureTestConfig() config.Config {
@@ -25,7 +26,7 @@ func secureTestConfig() config.Config {
 func TestGlobalRateLimitReturnsJSONError(t *testing.T) {
 	cfg := secureTestConfig()
 	cfg.GlobalRateLimitMax = 2
-	app := New(Deps{Config: cfg})
+	app := server.New(server.Deps{Config: cfg})
 
 	for requestNumber := 1; requestNumber <= 3; requestNumber++ {
 		res, err := app.Test(httptest.NewRequest(fiber.MethodGet, "/healthz", nil))
@@ -49,7 +50,7 @@ func TestGlobalRateLimitReturnsJSONError(t *testing.T) {
 func TestWebhookHasStricterRateLimit(t *testing.T) {
 	cfg := secureTestConfig()
 	cfg.WebhookRateLimitMax = 2
-	app := New(Deps{Config: cfg})
+	app := server.New(server.Deps{Config: cfg})
 
 	for requestNumber := 1; requestNumber <= 3; requestNumber++ {
 		res, err := app.Test(httptest.NewRequest(fiber.MethodPost, "/api/v1/webhooks/clerk", strings.NewReader(`{}`)))
@@ -65,7 +66,7 @@ func TestWebhookHasStricterRateLimit(t *testing.T) {
 func TestWebhookLimitDoesNotCountPublicRequests(t *testing.T) {
 	cfg := secureTestConfig()
 	cfg.WebhookRateLimitMax = 1
-	app := New(Deps{Config: cfg})
+	app := server.New(server.Deps{Config: cfg})
 
 	for requestNumber := 1; requestNumber <= 2; requestNumber++ {
 		res, err := app.Test(httptest.NewRequest(fiber.MethodGet, "/api/v1/marketplace/search?limit=invalid", nil))
@@ -81,7 +82,7 @@ func TestWebhookLimitDoesNotCountPublicRequests(t *testing.T) {
 func TestPublicLimitDoesNotCountPrivateRequests(t *testing.T) {
 	cfg := secureTestConfig()
 	cfg.PublicRateLimitMax = 1
-	app := New(Deps{Config: cfg})
+	app := server.New(server.Deps{Config: cfg})
 
 	for requestNumber := 1; requestNumber <= 2; requestNumber++ {
 		res, err := app.Test(httptest.NewRequest(fiber.MethodGet, "/api/v1/me", nil))
@@ -95,7 +96,7 @@ func TestPublicLimitDoesNotCountPrivateRequests(t *testing.T) {
 }
 
 func TestSupportFeedbackRouteIsPublic(t *testing.T) {
-	app := New(Deps{Config: secureTestConfig()})
+	app := server.New(server.Deps{Config: secureTestConfig()})
 	req := httptest.NewRequest(fiber.MethodPost, "/api/v1/public/support/feedback", strings.NewReader(
 		`{"doc_id":"faq","locale":"en","verdict":"up","comment":null,"path":null}`,
 	))
@@ -111,7 +112,7 @@ func TestSupportFeedbackRouteIsPublic(t *testing.T) {
 }
 
 func TestCORSDoesNotAdvertiseTestAuthHeaders(t *testing.T) {
-	app := New(Deps{Config: secureTestConfig()})
+	app := server.New(server.Deps{Config: secureTestConfig()})
 	req := httptest.NewRequest(fiber.MethodOptions, "/healthz", nil)
 	req.Header.Set(fiber.HeaderOrigin, "https://app.example")
 	req.Header.Set(fiber.HeaderAccessControlRequestMethod, fiber.MethodGet)
@@ -141,7 +142,7 @@ func TestPlatformAdminRoutesRejectBeforeValidationOrDatabaseAccess(t *testing.T)
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := secureTestConfig()
 			cfg.PlatformAdminUserIDs = tc.allowlist
-			app := New(Deps{Config: cfg, Auth: auth.Middleware{AllowTestAuth: tc.name != "unverified test header"}})
+			app := server.New(server.Deps{Config: cfg, Auth: auth.Middleware{AllowTestAuth: tc.name != "unverified test header"}})
 			for _, path := range paths {
 				req := httptest.NewRequest("GET", path, nil)
 				req.Header.Set("X-Test-Clerk-User-ID", tc.user)

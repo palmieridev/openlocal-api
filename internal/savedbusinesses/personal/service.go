@@ -4,8 +4,9 @@ package personal
 import (
 	"context"
 	"errors"
-	"github.com/google/uuid"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 var ErrInvalid = errors.New("invalid saved-business input")

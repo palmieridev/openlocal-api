@@ -4,6 +4,7 @@ package savedbusinesses
 
 import (
 	"errors"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/palmieridev/openlocal-api/internal/api"

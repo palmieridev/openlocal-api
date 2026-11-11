@@ -5,10 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/shopspring/decimal"
 	"math"
 	"strings"
+
+	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 )
 
 var ErrNotFound = errors.New("not found")

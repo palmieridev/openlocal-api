@@ -1,9 +1,7 @@
-package api
+package api_test
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"net/http/httptest"
 	"testing"
 
@@ -11,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/palmieridev/openlocal-api/internal/api"
 	"github.com/palmieridev/openlocal-api/internal/auth"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 )
@@ -64,8 +63,8 @@ func TestRequirePlatformAdmin(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			recorder := &queryRecorder{}
-			rt := Runtime{Q: db.New(recorder)}
-			app := fiber.New(fiber.Config{ErrorHandler: ErrorHandler})
+			rt := api.Runtime{Q: db.New(recorder)}
+			app := fiber.New(fiber.Config{ErrorHandler: api.ErrorHandler})
 			app.Get("/", func(c *fiber.Ctx) error {
 				if tc.identity != nil {
 					auth.SetFiber(c, *tc.identity)
@@ -88,47 +87,5 @@ func TestRequirePlatformAdmin(t *testing.T) {
 				t.Fatalf("status/calls=%d/%d want %d/%d", res.StatusCode, recorder.calls, tc.status, tc.calls)
 			}
 		})
-	}
-}
-
-func TestAuditWithMetadata(t *testing.T) {
-	businessID, userID, entityID := uuid.New(), uuid.New(), uuid.New()
-	recorder := &queryRecorder{}
-	q := db.New(recorder)
-	metadata := map[string]any{"before": map[string]any{"tier": "free"}, "after": map[string]any{"tier": "essential"}, "reason": "pilot"}
-	if err := AuditWithMetadata(q, context.Background(), businessID, userID, "platform_admin.grant_created", "access_grant", entityID, metadata); err != nil {
-		t.Fatal(err)
-	}
-	if recorder.calls != 1 || recorder.args[0].(uuid.NullUUID).UUID != businessID || recorder.args[1].(uuid.NullUUID).UUID != userID || recorder.args[4].(uuid.NullUUID).UUID != entityID {
-		t.Fatalf("unexpected audit arguments: %v", recorder.args)
-	}
-	var stored map[string]any
-	if err := json.Unmarshal(recorder.args[5].([]byte), &stored); err != nil || stored["reason"] != "pilot" {
-		t.Fatalf("metadata=%v err=%v", stored, err)
-	}
-	if err := AuditWithMetadata(q, context.Background(), uuid.Nil, uuid.Nil, "platform_admin.test", "test", uuid.Nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	if recorder.args[0].(uuid.NullUUID).Valid || recorder.args[1].(uuid.NullUUID).Valid || recorder.args[4].(uuid.NullUUID).Valid || string(recorder.args[5].([]byte)) != "{}" {
-		t.Fatal("nil values not represented as documented")
-	}
-	calls := recorder.calls
-	if err := AuditWithMetadata(q, context.Background(), businessID, userID, "test", "test", entityID, map[string]any{"bad": make(chan int)}); err == nil || recorder.calls != calls {
-		t.Fatal("invalid metadata must fail before insertion")
-	}
-	want := errors.New("insert failed")
-	recorder.err = want
-	if err := AuditWithMetadata(q, context.Background(), businessID, userID, "test", "test", entityID, nil); !errors.Is(err, want) {
-		t.Fatalf("got %v want insert error", err)
-	}
-}
-
-func TestAuditPreservesExistingBehavior(t *testing.T) {
-	recorder := &queryRecorder{}
-	if err := Audit(db.New(recorder), context.Background(), uuid.Nil, uuid.Nil, "test", "test", uuid.Nil); err != nil {
-		t.Fatal(err)
-	}
-	if !recorder.args[0].(uuid.NullUUID).Valid || !recorder.args[1].(uuid.NullUUID).Valid || !recorder.args[4].(uuid.NullUUID).Valid || string(recorder.args[5].([]byte)) != "{}" {
-		t.Fatal("legacy Audit behavior changed")
 	}
 }

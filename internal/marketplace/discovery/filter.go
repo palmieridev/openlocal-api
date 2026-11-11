@@ -1,9 +1,10 @@
 package discovery
 
 import (
+	"strings"
+
 	"github.com/palmieridev/openlocal-api/internal/geography"
 	"github.com/shopspring/decimal"
-	"strings"
 )
 
 func Parse(in Input) (Filter, error) {

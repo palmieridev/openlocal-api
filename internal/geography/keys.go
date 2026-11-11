@@ -1,9 +1,10 @@
 package geography
 
 import (
-	"golang.org/x/text/unicode/norm"
 	"strings"
 	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // SearchKey normalizes human-entered geographic names for stable matching.

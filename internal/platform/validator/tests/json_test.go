@@ -1,11 +1,12 @@
-package validator
+package validator_test
 
 import (
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
-	"net/http/httptest"
+	"github.com/palmieridev/openlocal-api/internal/platform/validator"
 )
 
 func TestDecodeStrictRejectsUnknownField(t *testing.T) {
@@ -15,7 +16,7 @@ func TestDecodeStrictRejectsUnknownField(t *testing.T) {
 	app := fiber.New()
 	app.Post("/", func(c *fiber.Ctx) error {
 		var req request
-		if err := DecodeStrict(c, &req); err != nil {
+		if err := validator.DecodeStrict(c, &req); err != nil {
 			return err
 		}
 		return c.SendStatus(fiber.StatusOK)
@@ -33,7 +34,7 @@ func TestDecodeStrictRejectsUnknownField(t *testing.T) {
 func TestPageRejectsOverLimit(t *testing.T) {
 	app := fiber.New()
 	app.Get("/", func(c *fiber.Ctx) error {
-		_, _, err := Page(c)
+		_, _, err := validator.Page(c)
 		if err != nil {
 			return err
 		}
@@ -54,7 +55,7 @@ func TestPageRejectsMalformedIntegers(t *testing.T) {
 		t.Run(query, func(t *testing.T) {
 			app := fiber.New()
 			app.Get("/", func(c *fiber.Ctx) error {
-				_, _, err := Page(c)
+				_, _, err := validator.Page(c)
 				return err
 			})
 
@@ -70,34 +71,34 @@ func TestPageRejectsMalformedIntegers(t *testing.T) {
 }
 
 func TestGeographicKeysNormalizeAccentsAndFormatting(t *testing.T) {
-	if got := SearchKey("  Coyoacán, CDMX  "); got != "coyoacan-cdmx" {
-		t.Fatalf("SearchKey() = %q", got)
+	if got := validator.SearchKey("  Coyoacán, CDMX  "); got != "coyoacan-cdmx" {
+		t.Fatalf("validator.SearchKey() = %q", got)
 	}
-	if SearchKey("México") != SearchKey("Mexico") {
+	if validator.SearchKey("México") != validator.SearchKey("Mexico") {
 		t.Fatal("accent variants should have the same key")
 	}
-	if got := PostalKey(" 06 700 "); got != "06700" {
-		t.Fatalf("PostalKey() = %q", got)
+	if got := validator.PostalKey(" 06 700 "); got != "06700" {
+		t.Fatalf("validator.PostalKey() = %q", got)
 	}
 }
 
 func TestIdempotencyKeyValidation(t *testing.T) {
-	if _, err := IdempotencyKey("movement:01HZY8Q8Q4N7ZB7M2D92VFPD3T"); err != nil {
+	if _, err := validator.IdempotencyKey("movement:01HZY8Q8Q4N7ZB7M2D92VFPD3T"); err != nil {
 		t.Fatalf("expected key to pass: %v", err)
 	}
 	for _, value := range []string{"", "short", "contains spaces"} {
-		if _, err := IdempotencyKey(value); err == nil {
+		if _, err := validator.IdempotencyKey(value); err == nil {
 			t.Fatalf("expected %q to fail", value)
 		}
 	}
 }
 
 func TestSlugNormalizesAndValidates(t *testing.T) {
-	slug := Slug(" Café Local  123 ")
+	slug := validator.Slug(" Café Local  123 ")
 	if slug != "caf-local-123" {
 		t.Fatalf("unexpected slug %q", slug)
 	}
-	if err := ValidateSlug("bad--slug"); err == nil {
+	if err := validator.ValidateSlug("bad--slug"); err == nil {
 		t.Fatal("expected invalid slug")
 	}
 }

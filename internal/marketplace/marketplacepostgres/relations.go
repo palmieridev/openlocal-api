@@ -2,6 +2,7 @@ package marketplacepostgres
 
 import (
 	"fmt"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/palmieridev/openlocal-api/internal/api"

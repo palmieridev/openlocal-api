@@ -2,6 +2,7 @@ package marketplace
 
 import (
 	"errors"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/palmieridev/openlocal-api/internal/api"
 	"github.com/palmieridev/openlocal-api/internal/marketplace/discovery"

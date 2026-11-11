@@ -1,4 +1,3 @@
+// Package business owns private profile and hours HTTP adapters. Its profile
+// package owns application rules; concrete adapters retain provider and DB I/O.
 package business
-
-// Package business owns business profile domain rules. HTTP DTOs are kept at
-// the server edge and sqlc models stay in the persistence package.

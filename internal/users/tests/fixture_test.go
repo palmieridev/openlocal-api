@@ -3,6 +3,13 @@ package users_test
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -10,12 +17,6 @@ import (
 	"github.com/palmieridev/openlocal-api/internal/auth"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	"github.com/palmieridev/openlocal-api/internal/users"
-	"io"
-	"net/http/httptest"
-	"os"
-	"strings"
-	"testing"
-	"time"
 )
 
 type fixture struct {
@@ -64,20 +65,6 @@ func setup(t *testing.T) *fixture {
 	})
 	users.NewHandler(f.rt).RegisterRoutes(f.app.Group("", func(c *fiber.Ctx) error { auth.SetFiber(c, f.identity); return c.Next() }))
 	return f
-}
-func (f *fixture) business(t *testing.T, status string) db.Business {
-	t.Helper()
-	b, err := f.q.CreateBusiness(context.Background(), db.CreateBusinessParams{Name: "users fixture", Slug: "users-" + uuid.NewString(), BusinessType: "retail", Status: status, Timezone: "America/Tijuana", LocationMode: "fixed"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, err := f.pool.Exec(context.Background(), "DELETE FROM businesses WHERE id=$1", b.ID)
-		if err != nil {
-			t.Error(err)
-		}
-	})
-	return b
 }
 func (f *fixture) request(t *testing.T, method, path, body string, status int) []byte {
 	t.Helper()

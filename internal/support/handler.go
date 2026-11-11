@@ -2,12 +2,12 @@ package support
 
 import (
 	"errors"
-	"github.com/palmieridev/openlocal-api/internal/support/feedback"
-	"github.com/palmieridev/openlocal-api/internal/support/feedbackpostgres"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/palmieridev/openlocal-api/internal/api"
 	v "github.com/palmieridev/openlocal-api/internal/platform/validator"
+	"github.com/palmieridev/openlocal-api/internal/support/feedback"
+	"github.com/palmieridev/openlocal-api/internal/support/feedbackpostgres"
 )
 
 type Handler struct{ service feedback.Service }

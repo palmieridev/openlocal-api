@@ -1,8 +1,9 @@
 package users_test
 
 import (
-	"github.com/palmieridev/openlocal-api/internal/auth"
 	"testing"
+
+	"github.com/palmieridev/openlocal-api/internal/auth"
 )
 
 func TestMeProjectsOnlyAuthenticatedLocalIdentity(t *testing.T) {

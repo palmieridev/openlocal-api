@@ -4,6 +4,7 @@ package discovery
 import (
 	"context"
 	"errors"
+
 	"github.com/google/uuid"
 	"github.com/palmieridev/openlocal-api/internal/business/profile"
 	"github.com/shopspring/decimal"

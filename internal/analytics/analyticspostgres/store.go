@@ -3,6 +3,7 @@ package analyticspostgres
 import (
 	"context"
 	"errors"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/palmieridev/openlocal-api/internal/analytics/reporting"

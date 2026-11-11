@@ -2,11 +2,14 @@ package analytics_test
 
 import (
 	"context"
+	"testing"
+
 	"github.com/google/uuid"
 	"github.com/palmieridev/openlocal-api/internal/analytics"
+	"github.com/palmieridev/openlocal-api/internal/inventory/movement"
+	"github.com/palmieridev/openlocal-api/internal/inventory/movementpostgres"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	"github.com/shopspring/decimal"
-	"testing"
 )
 
 func (f *fixture) member(t *testing.T, b db.Business, role string) {
@@ -92,5 +95,36 @@ func TestAnalyticsPrivateRoleAndPaginationContracts(t *testing.T) {
 		f.request(t, "GET", path+"?business_id="+b.ID.String(), "", 403)
 		f.identity.Role = "owner"
 		f.request(t, "GET", path+"?business_id="+uuid.NewString(), "", 403)
+	}
+}
+
+func TestEOQCountsOnlySalesWithinRequestedPeriodAndTenant(t *testing.T) {
+	f := setup(t)
+	b := f.business(t, "draft")
+	other := f.business(t, "draft")
+	f.member(t, b, "owner")
+	v := f.variant(t, b)
+	foreign := f.variant(t, other)
+	ctx := context.Background()
+	store := movementpostgres.New(f.pool, f.q)
+	service := movement.New(store)
+	for _, sale := range []struct {
+		business, variant uuid.UUID
+		kind, quantity    string
+	}{{b.ID, v.ID, "IN_PURCHASE", "100"}, {b.ID, v.ID, "OUT_SALE", "12"}, {b.ID, v.ID, "OUT_SALE", "7"}, {b.ID, v.ID, "OUT_LOSS", "3"}, {other.ID, foreign.ID, "IN_PURCHASE", "100"}, {other.ID, foreign.ID, "OUT_SALE", "99"}} {
+		result, err := service.Create(ctx, movement.Input{BusinessID: sale.business, ActorID: f.identity.UserID, VariantID: sale.variant.String(), MovementType: sale.kind, Quantity: sale.quantity, IdempotencyKey: uuid.NewString()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sale.quantity == "7" {
+			if _, err = f.pool.Exec(ctx, "UPDATE stock_movements SET created_at=now()-interval '100 days' WHERE id=$1", result.Movement.ID); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	data := f.request(t, "GET", "/analytics/eoq?business_id="+b.ID.String()+"&variant_id="+v.ID.String()+"&period_days=90&estimated_order_cost=25&estimated_holding_cost_percent=10", "", 200)
+	got := decode[analytics.EOQResponse](t, data)
+	if got.Demand != "12" || got.EstimatedEOQ != "77.460" || got.OrderCost != "25" || got.HoldingCostRate != "0.1" {
+		t.Fatalf("EOQ projection %s", data)
 	}
 }

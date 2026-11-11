@@ -2,12 +2,13 @@ package savedbusinesses_test
 
 import (
 	"context"
+	"testing"
+
 	"github.com/google/uuid"
 	"github.com/palmieridev/openlocal-api/internal/api"
 	"github.com/palmieridev/openlocal-api/internal/auth"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	"github.com/palmieridev/openlocal-api/internal/savedbusinesses"
-	"testing"
 )
 
 func TestSavedBusinessesLifecycleAndUserIsolation(t *testing.T) {

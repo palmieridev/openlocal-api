@@ -1,10 +1,11 @@
 package marketplacepostgres
 
 import (
+	"strings"
+
 	"github.com/palmieridev/openlocal-api/internal/api"
 	"github.com/palmieridev/openlocal-api/internal/marketplace/discovery"
 	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
-	"strings"
 )
 
 func mapProducts(rows []db.SearchMarketplaceProductsRow) []discovery.Product {
