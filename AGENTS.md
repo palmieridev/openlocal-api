@@ -196,10 +196,16 @@ in `internal/accessgrants/tests`; grant input validation uses registered routes
 and the same disposable billing database. These suites use external test packages
 and production services, routes, or payment adapters rather than private test shims.
 
+Platform administrator inspection tests live in `internal/platformadmin/tests`.
+They and the grant administration transaction/concurrency tests in
+`internal/accessgrants/tests` share the explicit disposable billing DSN above.
+CI enables them in both PGMQ configurations. Without that DSN their database
+cases skip; fast authorization and application validation tests still run.
+
 Run the billing/access suites with `OPENLOCAL_BILLING_TEST_DATABASE_URL` set:
 
 ```sh
-go test ./internal/billing/... ./internal/accessgrants/... ./internal/entitlements/...
+go test ./internal/billing/... ./internal/accessgrants/... ./internal/entitlements/... ./internal/platformadmin/...
 ```
 
 Without the explicit DSN, their database cases skip; the provider-stub and pure
