@@ -38,22 +38,22 @@ func TestParseRejectsInvalidBoundaryFields(t *testing.T) {
 	}
 }
 
-func TestHoursParamsValidatesSchedule(t *testing.T) {
+func TestHoursValidationRejectsInvalidSchedules(t *testing.T) {
 	open := "09:00"
 	close := "18:30"
 	tests := []struct {
-		name string
-		req  struct{ Hours []profile.Hour }
+		name  string
+		hours []profile.Hour
 	}{
-		{"invalid day", struct{ Hours []profile.Hour }{Hours: []profile.Hour{{DayOfWeek: 7, IsClosed: true}}}},
-		{"duplicate day", struct{ Hours []profile.Hour }{Hours: []profile.Hour{{DayOfWeek: 1, IsClosed: true}, {DayOfWeek: 1, IsClosed: true}}}},
-		{"missing close", struct{ Hours []profile.Hour }{Hours: []profile.Hour{{DayOfWeek: 1, OpensAt: &open}}}},
-		{"times on closed day", struct{ Hours []profile.Hour }{Hours: []profile.Hour{{DayOfWeek: 1, OpensAt: &open, ClosesAt: &close, IsClosed: true}}}},
-		{"same times", struct{ Hours []profile.Hour }{Hours: []profile.Hour{{DayOfWeek: 1, OpensAt: &open, ClosesAt: &open}}}},
+		{"invalid day", []profile.Hour{{DayOfWeek: 7, IsClosed: true}}},
+		{"duplicate day", []profile.Hour{{DayOfWeek: 1, IsClosed: true}, {DayOfWeek: 1, IsClosed: true}}},
+		{"missing close", []profile.Hour{{DayOfWeek: 1, OpensAt: &open}}},
+		{"times on closed day", []profile.Hour{{DayOfWeek: 1, OpensAt: &open, ClosesAt: &close, IsClosed: true}}},
+		{"same times", []profile.Hour{{DayOfWeek: 1, OpensAt: &open, ClosesAt: &open}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := profile.ParseHours(test.req.Hours); err == nil {
+			if _, err := profile.ParseHours(test.hours); err == nil {
 				t.Fatal("expected validation error")
 			}
 		})

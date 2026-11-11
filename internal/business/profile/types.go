@@ -102,6 +102,10 @@ type Reader interface {
 	ActiveBusiness(context.Context, uuid.UUID, string) (Business, error)
 	Hours(context.Context, uuid.UUID) ([]Hour, error)
 }
+
+// Transaction operations retain profile, membership, default location, reach and
+// audit effects on the same database transaction. LockBusiness serializes
+// replacements and checks the actor's local write membership.
 type Transaction interface {
 	LockBusiness(context.Context, Identity) (Business, error)
 	Create(context.Context, Actor, string, Data) (Business, error)

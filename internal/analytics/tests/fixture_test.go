@@ -58,6 +58,11 @@ func setup(t *testing.T) *fixture {
 	}
 	f.identity.UserID = user.ID
 	t.Cleanup(func() {
+		// Audit FKs retain records with NULL identities after domain deletion.
+		// Remove this fixture's actor-owned audit rows before deleting its user.
+		if _, err := pool.Exec(context.Background(), "DELETE FROM audit_logs WHERE actor_user_id=$1", user.ID); err != nil {
+			t.Error(err)
+		}
 		_, err := pool.Exec(context.Background(), "DELETE FROM users WHERE id=$1", user.ID)
 		if err != nil {
 			t.Error(err)

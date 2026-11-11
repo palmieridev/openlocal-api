@@ -37,7 +37,7 @@ func stringLength(value, field string, min, max int) error {
 }
 
 func (s Service) Create(ctx context.Context, req Input) (uuid.UUID, error) {
-	params, err := Normalize(req)
+	params, err := normalize(req)
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -47,7 +47,7 @@ func (s Service) Create(ctx context.Context, req Input) (uuid.UUID, error) {
 	return s.store.CreateFeedback(ctx, params)
 }
 
-func Normalize(req Input) (Input, error) {
+func normalize(req Input) (Input, error) {
 	docID := req.DocID
 	if err := stringLength(docID, "doc_id", 1, 128); err != nil {
 		return Input{}, err
