@@ -99,3 +99,25 @@ SELECT openlocal_fail_job(sqlc.arg(message_id)::bigint,sqlc.arg(payload)::jsonb)
 
 -- name: CleanJobArchive :exec
 SELECT openlocal_clean_job_archive();
+
+-- name: SaveOperationSettings :one
+-- Variant ownership is checked in the application and again at the SQL boundary.
+INSERT INTO business_modules(business_id,module,enabled,settings)
+SELECT sqlc.arg(business_id),sqlc.arg(module),sqlc.arg(enabled),sqlc.arg(settings)::jsonb
+WHERE NOT EXISTS (
+    SELECT 1 FROM jsonb_array_elements(COALESCE(
+        NULLIF(sqlc.arg(settings)::jsonb->'variant_rules','null'::jsonb),
+        '[]'::jsonb
+    )) AS rule
+    WHERE NOT EXISTS (
+        SELECT 1 FROM product_variants v
+        WHERE v.business_id=sqlc.arg(business_id) AND v.id=(rule->>'variant_id')::uuid
+    )
+)
+ON CONFLICT(business_id,module) DO UPDATE
+SET enabled=EXCLUDED.enabled,settings=EXCLUDED.settings
+RETURNING *;
+
+-- name: ExtendOperationAccess :exec
+UPDATE request_access SET expires_at=sqlc.arg(expires_at)
+WHERE public_id=sqlc.arg(public_id) AND business_id=sqlc.arg(business_id);

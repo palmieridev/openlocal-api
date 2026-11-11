@@ -436,7 +436,14 @@ func (q *Queries) PendingAppointmentsForPhone(ctx context.Context, arg PendingAp
 }
 
 const saveAppointmentResource = `-- name: SaveAppointmentResource :one
-INSERT INTO appointment_resources(id,business_id,name,active,service_ids,hours,closed_dates) VALUES($1,$2,$3,$4,$5,$6,$7)
+INSERT INTO appointment_resources(id,business_id,name,active,service_ids,hours,closed_dates) SELECT $1,$2,$3,$4,$5,$6,$7
+WHERE NOT EXISTS (
+    SELECT 1 FROM unnest($5::uuid[]) AS assignment(service_id)
+    WHERE NOT EXISTS (
+        SELECT 1 FROM services s
+        WHERE s.business_id=$2 AND s.id=assignment.service_id
+    )
+)
 ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,active=EXCLUDED.active,service_ids=EXCLUDED.service_ids,hours=EXCLUDED.hours,closed_dates=EXCLUDED.closed_dates
 WHERE appointment_resources.business_id=EXCLUDED.business_id RETURNING id, business_id, name, active, service_ids, hours, closed_dates
 `
