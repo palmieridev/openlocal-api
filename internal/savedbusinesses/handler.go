@@ -3,36 +3,32 @@
 package savedbusinesses
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/palmieridev/openlocal-api/internal/api"
-	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	v "github.com/palmieridev/openlocal-api/internal/platform/validator"
-	"time"
+	"github.com/palmieridev/openlocal-api/internal/savedbusinesses/personal"
+	"github.com/palmieridev/openlocal-api/internal/savedbusinesses/savedpostgres"
 )
 
-type Handler struct{ rt api.Runtime }
-
-func NewHandler(rt api.Runtime) Handler { return Handler{rt} }
-func (h Handler) RegisterRoutes(r fiber.Router) {
-	r = r.Group("/me/saved-businesses", func(c *fiber.Ctx) error { c.Set("Cache-Control", "no-store"); return c.Next() })
-	r.Get("", h.list)
-	r.Get("/:business_id", h.state)
-	r.Put("/:business_id", h.save)
-	r.Delete("/:business_id", h.remove)
+type Handler struct {
+	rt      api.Runtime
+	service *personal.Service
 }
 
-type SavedBusiness struct {
-	BusinessID uuid.UUID `json:"business_id"`
-	SavedAt    time.Time `json:"saved_at"`
-	Available  bool      `json:"available"`
-	Name       *string   `json:"name"`
-	Slug       *string   `json:"slug"`
-	LogoURL    *string   `json:"logo_url"`
+func NewHandler(rt api.Runtime) Handler {
+	return Handler{rt: rt, service: personal.New(savedpostgres.New(rt.Q))}
 }
-type SavedState struct {
-	Saved bool `json:"saved"`
+func httpError(err error) error {
+	if errors.Is(err, personal.ErrNotFound) {
+		return fiber.NewError(404, "not found")
+	}
+	if errors.Is(err, personal.ErrInvalid) {
+		return api.Fail(400, "invalid_request", err.Error())
+	}
+	return err
 }
 
 func (h Handler) identity(c *fiber.Ctx) (uuid.UUID, uuid.UUID, error) {
@@ -46,69 +42,63 @@ func (h Handler) identity(c *fiber.Ctx) (uuid.UUID, uuid.UUID, error) {
 func (h Handler) state(c *fiber.Ctx) error {
 	user, id, e := h.identity(c)
 	if e != nil {
-		return e
+		return httpError(e)
 	}
-	saved, e := h.rt.Q.IsBusinessSaved(c.Context(), db.IsBusinessSavedParams{UserID: user, BusinessID: id})
+	saved, e := h.service.State(c.Context(), user, id)
 	if e != nil {
-		return e
+		return httpError(e)
 	}
 	return c.JSON(SavedState{saved})
 }
 func (h Handler) save(c *fiber.Ctx) error {
 	user, id, e := h.identity(c)
 	if e != nil {
-		return e
+		return httpError(e)
 	}
 	if len(c.Body()) != 0 {
 		return api.Fail(400, "invalid_request", "request body must be empty")
 	}
-	_, e = h.rt.Q.SaveBusiness(c.Context(), db.SaveBusinessParams{UserID: user, BusinessID: id})
+	e = h.service.Save(c.Context(), user, id)
 	if e != nil {
-		return e
+		return httpError(e)
 	}
 	return c.JSON(SavedState{true})
 }
 func (h Handler) remove(c *fiber.Ctx) error {
 	user, id, e := h.identity(c)
 	if e != nil {
-		return e
+		return httpError(e)
 	}
-	if e = h.rt.Q.RemoveSavedBusiness(c.Context(), db.RemoveSavedBusinessParams{UserID: user, BusinessID: id}); e != nil {
-		return e
+	if e = h.service.Remove(c.Context(), user, id); e != nil {
+		return httpError(e)
 	}
 	return c.SendStatus(204)
 }
 func (h Handler) list(c *fiber.Ctx) error {
 	_, u, e := h.rt.CurrentUser(c)
 	if e != nil {
-		return e
+		return httpError(e)
 	}
 	scope := "saved:" + u.ID.String()
 	cursor, limit, e := api.ParseCursor(c, scope)
 	if e != nil {
-		return e
+		return httpError(e)
 	}
 	if cursor.Module != "" {
 		return api.Fail(400, "invalid_request", "invalid cursor")
 	}
-	rows, e := h.rt.Q.ListSavedBusinesses(c.Context(), db.ListSavedBusinessesParams{UserID: u.ID, BeforeAt: pgtype.Timestamptz{Time: cursor.At, Valid: !cursor.At.IsZero()}, BeforeID: cursor.ID, PageLimit: limit + 1})
+
+	result, e := h.service.List(c.Context(), u.ID, personal.Page{BeforeAt: cursor.At, BeforeID: cursor.ID, Limit: limit})
 	if e != nil {
-		return e
+		return httpError(e)
 	}
 	page := api.CursorPage[SavedBusiness]{Items: []SavedBusiness{}, Limit: limit}
-	if len(rows) > int(limit) {
-		last := rows[limit-1]
-		page.NextCursor = api.EncodeCursor(scope, last.CreatedAt.Time, last.BusinessID, "")
-		rows = rows[:limit]
+	if result.HasMore {
+		last := result.Items[len(result.Items)-1]
+		page.NextCursor = api.EncodeCursor(scope, last.SavedAt, last.BusinessID, "")
 	}
-	for _, r := range rows {
-		item := SavedBusiness{BusinessID: r.BusinessID, SavedAt: r.CreatedAt.Time, Available: r.Status == "active"}
-		if item.Available {
-			item.Name = &r.Name
-			item.Slug = &r.Slug
-			item.LogoURL = api.StringPtr(r.LogoUrl)
-		}
-		page.Items = append(page.Items, item)
+	for _, r := range result.Items {
+		page.Items = append(page.Items, SavedBusiness{BusinessID: r.BusinessID, SavedAt: r.SavedAt, Available: r.Available, Name: r.Name, Slug: r.Slug, LogoURL: r.LogoURL})
 	}
 	return c.JSON(page)
 }

@@ -1,29 +1,19 @@
 package support
 
 import (
-	"context"
+	"errors"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
 	"github.com/palmieridev/openlocal-api/internal/api"
 	v "github.com/palmieridev/openlocal-api/internal/platform/validator"
+	"github.com/palmieridev/openlocal-api/internal/support/feedback"
+	"github.com/palmieridev/openlocal-api/internal/support/feedbackpostgres"
 )
 
-type feedbackService interface {
-	Create(context.Context, FeedbackRequest) (uuid.UUID, error)
-}
-
-type Handler struct {
-	service feedbackService
-}
+type Handler struct{ service feedback.Service }
 
 func NewHandler(rt api.Runtime) Handler {
-	service := NewService(rt.Q)
-	return Handler{service: service}
-}
-
-func (h Handler) RegisterPublicRoutes(public fiber.Router) {
-	public.Post("/public/support/feedback", h.createFeedback)
+	return Handler{service: feedback.New(feedbackpostgres.New(rt.Q))}
 }
 
 func (h Handler) createFeedback(c *fiber.Ctx) error {
@@ -31,8 +21,15 @@ func (h Handler) createFeedback(c *fiber.Ctx) error {
 	if err := v.DecodeStrict(c, &req); err != nil {
 		return err
 	}
-	id, err := h.service.Create(c.Context(), req)
+	id, err := h.service.Create(c.Context(), feedback.Input{DocID: req.DocID, Locale: req.Locale, Verdict: req.Verdict, Comment: req.Comment, Path: req.Path})
 	if err != nil {
+		var validation *feedback.ValidationError
+		if errors.As(err, &validation) {
+			return fiber.NewError(400, validation.Message)
+		}
+		if errors.Is(err, feedback.ErrUnavailable) {
+			return fiber.NewError(503, err.Error())
+		}
 		return err
 	}
 	return c.Status(fiber.StatusCreated).JSON(FeedbackCreatedResponse{ID: id.String()})

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/palmieridev/openlocal-api/internal/audit"
 	"net/http/httptest"
 	"net/url"
 	"testing"
@@ -146,7 +147,7 @@ func TestPlatformAdminBusinessSearchDetailAndActivity(t *testing.T) {
 	adminGet[any](t, app, "/api/v1/admin/businesses/invalid", actor.ClerkUserID, 400)
 	action := "platform_admin.test_" + suffix
 	for i := 0; i < 3; i++ {
-		if err := api.AuditWithMetadata(q, ctx, first.ID, actor.ID, action, "business", first.ID, map[string]any{"index": i}); err != nil {
+		if err := audit.WithMetadata(q, ctx, first.ID, actor.ID, action, "business", first.ID, map[string]any{"index": i}); err != nil {
 			t.Fatal(err)
 		}
 	}

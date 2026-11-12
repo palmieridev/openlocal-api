@@ -2606,7 +2606,7 @@ paths:
         - $ref: "#/components/parameters/OffsetQuery"
       responses:
         "200":
-          description: ABC classification.
+          description: ABC classification from sales whose product, variant, movement, and location belong to the authorized business.
   /api/v1/analytics/pareto:
     get:
       tags:
@@ -2617,7 +2617,7 @@ paths:
         - $ref: "#/components/parameters/OffsetQuery"
       responses:
         "200":
-          description: Pareto data from the ABC calculation.
+          description: Pareto data from the same tenant-scoped ABC calculation.
   /api/v1/analytics/eoq:
     get:
       tags:
@@ -2653,11 +2653,17 @@ paths:
             default: "20"
       responses:
         "200":
-          description: EOQ recommendation from demand and manual cost assumptions.
+          description: EOQ recommendation for a variant owned by the authorized business, from demand and manual cost assumptions.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/EOQ"
+        "404":
+          description: Variant does not exist in the authorized business. Foreign and missing variants receive the same response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/analytics/low-stock:
     get:
       tags:

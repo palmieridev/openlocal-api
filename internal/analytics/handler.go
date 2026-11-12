@@ -1,29 +1,22 @@
 package analytics
 
 import (
-	"math"
-	"strconv"
+	"errors"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/palmieridev/openlocal-api/internal/analytics/analyticspostgres"
+	"github.com/palmieridev/openlocal-api/internal/analytics/reporting"
 	"github.com/palmieridev/openlocal-api/internal/api"
-	db "github.com/palmieridev/openlocal-api/internal/platform/postgres/db"
 	v "github.com/palmieridev/openlocal-api/internal/platform/validator"
-	"github.com/shopspring/decimal"
 )
 
 type Handler struct {
-	rt api.Runtime
+	rt      api.Runtime
+	service *reporting.Service
 }
 
 func NewHandler(rt api.Runtime) Handler {
-	return Handler{rt: rt}
-}
-
-func (h Handler) RegisterPrivateRoutes(private fiber.Router) {
-	private.Get("/analytics/abc", h.getABC)
-	private.Get("/analytics/pareto", h.getABC)
-	private.Get("/analytics/eoq", h.getEOQ)
-	private.Get("/analytics/low-stock", h.getLowStock)
+	return Handler{rt: rt, service: reporting.New(analyticspostgres.New(rt.Q))}
 }
 
 func (h Handler) getABC(c *fiber.Ctx) error {
@@ -31,18 +24,20 @@ func (h Handler) getABC(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager"); err != nil {
+	_, user, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager")
+	if err != nil {
 		return err
 	}
+	identity := reporting.Identity{BusinessID: businessID, ActorID: user.ID}
 	limit, offset, err := v.Page(c)
 	if err != nil {
 		return err
 	}
-	items, err := h.rt.Q.GetABCAnalysis(c.Context(), db.GetABCAnalysisParams{BusinessID: businessID, Limit: limit, Offset: offset})
+	items, err := h.service.ABC(c.Context(), identity, reporting.Page{Limit: limit, Offset: offset})
 	if err != nil {
-		return err
+		return httpError(err)
 	}
-	return c.JSON(MapABC(items))
+	return c.JSON(abcResponses(items))
 }
 
 func (h Handler) getLowStock(c *fiber.Ctx) error {
@@ -50,18 +45,20 @@ func (h Handler) getLowStock(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager"); err != nil {
+	_, user, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager")
+	if err != nil {
 		return err
 	}
+	identity := reporting.Identity{BusinessID: businessID, ActorID: user.ID}
 	limit, offset, err := v.Page(c)
 	if err != nil {
 		return err
 	}
-	items, err := h.rt.Q.GetLowStock(c.Context(), db.GetLowStockParams{BusinessID: businessID, Limit: limit, Offset: offset})
+	items, err := h.service.LowStock(c.Context(), identity, reporting.Page{Limit: limit, Offset: offset})
 	if err != nil {
-		return err
+		return httpError(err)
 	}
-	return c.JSON(MapLowStock(items))
+	return c.JSON(lowStockResponses(items))
 }
 
 func (h Handler) getEOQ(c *fiber.Ctx) error {
@@ -69,9 +66,11 @@ func (h Handler) getEOQ(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	if _, _, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager"); err != nil {
+	_, user, err := h.rt.RequireBusinessRole(c, businessID, "owner", "manager")
+	if err != nil {
 		return err
 	}
+	identity := reporting.Identity{BusinessID: businessID, ActorID: user.ID}
 	variantID, err := v.ParseUUID(c.Query("variant_id"), "variant_id")
 	if err != nil {
 		return err
@@ -80,38 +79,20 @@ func (h Handler) getEOQ(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	orderCost, err := v.ParseDecimal(api.DefaultQuery(c, "estimated_order_cost", "100"), "estimated_order_cost")
+
+	result, err := h.service.EOQ(c.Context(), identity, reporting.EOQInput{VariantID: variantID, PeriodDays: periodDays, OrderCost: c.Query("estimated_order_cost"), HoldingPercent: c.Query("estimated_holding_cost_percent")})
 	if err != nil {
-		return err
+		return httpError(err)
 	}
-	if err := v.DecimalRange(orderCost, "estimated_order_cost", decimal.Zero, decimal.RequireFromString("9999999999.99"), 2); err != nil {
-		return err
+	return c.JSON(eoqResponse(result))
+}
+func httpError(err error) error {
+	var validation *reporting.ValidationError
+	if errors.As(err, &validation) {
+		return fiber.NewError(400, validation.Message)
 	}
-	holdingPercent, err := v.ParseDecimal(api.DefaultQuery(c, "estimated_holding_cost_percent", "20"), "estimated_holding_cost_percent")
-	if err != nil {
-		return err
+	if errors.Is(err, reporting.ErrNotFound) {
+		return fiber.NewError(404, "not found")
 	}
-	if err := v.DecimalRange(holdingPercent, "estimated_holding_cost_percent", decimal.Zero, decimal.NewFromInt(1000), 4); err != nil {
-		return err
-	}
-	demand, err := h.rt.Q.GetDemandForEOQ(c.Context(), db.GetDemandForEOQParams{BusinessID: businessID, VariantID: variantID, Column3: periodDays})
-	if err != nil {
-		return err
-	}
-	holdingCost := holdingPercent.Div(decimal.NewFromInt(100))
-	eoq := 0.0
-	if demand.IsPositive() && orderCost.IsPositive() && holdingCost.IsPositive() {
-		d, _ := demand.Float64()
-		sCost, _ := orderCost.Float64()
-		hCost, _ := holdingCost.Float64()
-		eoq = math.Sqrt((2 * d * sCost) / hCost)
-	}
-	return c.JSON(fiber.Map{
-		"variant_id":        variantID,
-		"period_days":       periodDays,
-		"demand":            demand.String(),
-		"estimated_eoq":     strconv.FormatFloat(eoq, 'f', 3, 64),
-		"order_cost":        orderCost.String(),
-		"holding_cost_rate": holdingCost.String(),
-	})
+	return err
 }

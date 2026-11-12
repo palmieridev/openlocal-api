@@ -1,4 +1,3 @@
+// Package audit writes sensitive-change records through caller-supplied sqlc
+// queries. Owning adapters control the transaction and its other writes.
 package audit
-
-// Package audit owns audit log conventions for sensitive business and
-// inventory changes.

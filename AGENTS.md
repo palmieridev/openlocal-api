@@ -218,7 +218,12 @@ database whose name starts with `openlocal_operations_test`. CI clones the migra
 test database and explicitly enables this suite in both PGMQ configurations.
 Without this DSN, operations database cases skip.
 
-Cross-package operations/access-grant, saved-business, and worker queue flows live
+Cross-package operations/access-grant and worker queue flows live
 in `internal/integration`. They require `OPENLOCAL_INTEGRATION_TESTS=1` and an
 explicit local `DATABASE_URL` named with the `openlocal_movement_test` prefix.
 Their fixtures clean up customer records and queue messages for their business.
+
+Business, marketplace, analytics, saved-business, support, and user HTTP/persistence
+suites reuse `OPENLOCAL_CATALOG_TEST_DATABASE_URL` and its guarded local
+`openlocal_catalog_test` prefix. Each suite owns and cleans up its fixtures; CI
+sets this DSN in both PGMQ configurations. Fast application tests run without it.
