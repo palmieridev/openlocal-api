@@ -2606,7 +2606,7 @@ paths:
         - $ref: "#/components/parameters/OffsetQuery"
       responses:
         "200":
-          description: ABC classification.
+          description: ABC classification from sales whose product, variant, movement, and location belong to the authorized business.
   /api/v1/analytics/pareto:
     get:
       tags:
@@ -2617,7 +2617,7 @@ paths:
         - $ref: "#/components/parameters/OffsetQuery"
       responses:
         "200":
-          description: Pareto data from the ABC calculation.
+          description: Pareto data from the same tenant-scoped ABC calculation.
   /api/v1/analytics/eoq:
     get:
       tags:

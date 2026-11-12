@@ -2,7 +2,7 @@
 WITH product_values AS (
     SELECT p.id AS product_id, p.name, COALESCE(SUM(pss.sales_revenue), 0)::numeric AS value
     FROM products p
-    LEFT JOIN product_sales_summary pss ON pss.product_id = p.id
+    LEFT JOIN product_sales_summary pss ON pss.product_id = p.id AND pss.business_id = p.business_id
     WHERE p.business_id = $1
     GROUP BY p.id, p.name
 ),
